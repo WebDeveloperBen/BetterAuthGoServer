@@ -13,7 +13,8 @@ func TestRateLimitingApplied(t *testing.T) {
 		t.Skip("Skipping e2e test in short mode")
 	}
 
-	env := Setup(t)
+	// Use rate limiting setup with limit of 10 requests/minute
+	env := SetupWithRateLimiting(t, 10)
 	defer env.Cleanup(t)
 
 	t.Run("SignInRateLimited", func(t *testing.T) {
@@ -67,7 +68,8 @@ func TestIPSpoofingPrevention(t *testing.T) {
 		t.Skip("Skipping e2e test in short mode")
 	}
 
-	env := Setup(t)
+	// Use rate limiting setup with limit of 10 requests/minute
+	env := SetupWithRateLimiting(t, 10)
 	defer env.Cleanup(t)
 
 	t.Run("UntrustedXForwardedForIgnored", func(t *testing.T) {
@@ -317,7 +319,8 @@ func TestConcurrentRateLimiting(t *testing.T) {
 		t.Skip("Skipping e2e test in short mode")
 	}
 
-	env := Setup(t)
+	// Use rate limiting setup with limit of 10 requests/minute
+	env := SetupWithRateLimiting(t, 10)
 	defer env.Cleanup(t)
 
 	t.Run("ConcurrentRequestsRateLimited", func(t *testing.T) {

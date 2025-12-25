@@ -1,11 +1,8 @@
 package auth
 
 import (
-	"crypto/subtle"
 	"net/http"
 	"strings"
-
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
 // RequireAuth is middleware that requires a valid session
@@ -63,78 +60,6 @@ func (a *Auth) OptionalAuth(next http.Handler) http.Handler {
 	})
 }
 
-// CSRF is middleware that provides CSRF protection
-func (a *Auth) CSRF(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !a.config.CSRFEnabled {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// Skip CSRF for safe methods
-		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
-			// Set CSRF token cookie if not present
-			a.ensureCSRFCookie(w, r)
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// Validate CSRF token for state-changing methods
-		cookieToken := a.getCSRFCookie(r)
-		headerToken := r.Header.Get(a.config.CSRFHeaderName)
-
-		if cookieToken == "" {
-			writeError(w, http.StatusForbidden, ErrCSRFTokenMissing)
-			return
-		}
-
-		if headerToken == "" {
-			writeError(w, http.StatusForbidden, ErrCSRFTokenMissing)
-			return
-		}
-
-		// Constant-time comparison
-		if subtle.ConstantTimeCompare([]byte(cookieToken), []byte(headerToken)) != 1 {
-			writeError(w, http.StatusForbidden, ErrCSRFTokenMismatch)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
-
-// ensureCSRFCookie sets a CSRF cookie if not present
-func (a *Auth) ensureCSRFCookie(w http.ResponseWriter, r *http.Request) {
-	if _, err := r.Cookie(a.config.CSRFCookieName); err == nil {
-		return // Cookie already exists
-	}
-
-	csrfToken, err := token.Generate()
-	if err != nil {
-		return
-	}
-
-	secure := strings.HasPrefix(a.config.BaseURL, "https://")
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     a.config.CSRFCookieName,
-		Value:    csrfToken,
-		Path:     "/",
-		HttpOnly: false, // Must be readable by JavaScript
-		Secure:   secure,
-		SameSite: http.SameSiteStrictMode,
-	})
-}
-
-// getCSRFCookie retrieves the CSRF token from the cookie
-func (a *Auth) getCSRFCookie(r *http.Request) string {
-	cookie, err := r.Cookie(a.config.CSRFCookieName)
-	if err != nil {
-		return ""
-	}
-	return cookie.Value
-}
-
 // CORS is middleware that handles CORS headers
 func (a *Auth) CORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -159,6 +84,25 @@ func (a *Auth) CORS(next http.Handler) http.Handler {
 	})
 }
 
+// RequireAdmin returns middleware that requires the user to have admin role
+func (a *Auth) RequireAdmin(next http.Handler) http.Handler {
+	return a.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := GetUserFromContext(r.Context())
+		if user == nil {
+			writeError(w, http.StatusUnauthorized, ErrSessionNotFound)
+			return
+		}
+
+		// Check if user has admin role
+		if user.Role != "admin" {
+			writeError(w, http.StatusForbidden, ErrForbidden)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	}))
+}
+
 // isOriginTrusted checks if an origin is in the trusted origins list
 func (a *Auth) isOriginTrusted(origin string) bool {
 	if origin == "" {
@@ -177,4 +121,15 @@ func (a *Auth) isOriginTrusted(origin string) bool {
 	}
 
 	return false
+}
+
+// AuthMiddleware returns middleware that can be used to protect routes
+// outside the auth handler
+func (a *Auth) AuthMiddleware() func(http.Handler) http.Handler {
+	return a.RequireAuth
+}
+
+// OptionalAuthMiddleware returns middleware that loads the session if present
+func (a *Auth) OptionalAuthMiddleware() func(http.Handler) http.Handler {
+	return a.OptionalAuth
 }

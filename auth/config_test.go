@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -313,12 +316,12 @@ func TestWithTrustedProxies(t *testing.T) {
 
 func TestWithHooks(t *testing.T) {
 	cfg := DefaultConfig()
-	hooks := Hooks{
-		OnUserCreated: func(ctx context.Context, user *User) error {
+	h := hooks.Hooks{
+		OnUserCreated: func(ctx context.Context, user *models.User) error {
 			return nil
 		},
 	}
-	WithHooks(hooks)(&cfg)
+	WithHooks(h)(&cfg)
 
 	if cfg.Hooks.OnUserCreated == nil {
 		t.Error("OnUserCreated hook should be set")

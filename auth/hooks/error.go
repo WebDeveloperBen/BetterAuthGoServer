@@ -1,4 +1,6 @@
-package auth
+// Package hooks provides extensibility points for the auth system.
+// It includes event hooks, middleware chains, and context utilities.
+package hooks
 
 import (
 	"encoding/json"

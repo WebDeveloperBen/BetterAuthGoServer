@@ -17,6 +17,9 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
 	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
@@ -46,12 +49,12 @@ func main() {
 		auth.WithSecret(secret),
 		auth.WithBaseURL(baseURL),
 		auth.WithTrustedOrigins(baseURL, "http://localhost:3000"),
-		auth.WithHooks(auth.Hooks{
-			OnUserCreated: func(ctx context.Context, user *auth.User) error {
+		auth.WithHooks(hooks.Hooks{
+			OnUserCreated: func(ctx context.Context, user *models.User) error {
 				slog.Info("New user created", "id", user.ID, "email", user.Email)
 				return nil
 			},
-			OnPasswordResetRequested: func(ctx context.Context, user *auth.User, token string) error {
+			OnPasswordResetRequested: func(ctx context.Context, user *models.User, token string) error {
 				// In production, send email with reset link
 				slog.Info("Password reset requested",
 					"user_id", user.ID,
@@ -59,7 +62,7 @@ func main() {
 				)
 				return nil
 			},
-			OnEmailVerificationRequested: func(ctx context.Context, user *auth.User, token string) error {
+			OnEmailVerificationRequested: func(ctx context.Context, user *models.User, token string) error {
 				// In production, send verification email
 				slog.Info("Email verification requested",
 					"user_id", user.ID,
@@ -94,7 +97,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Mount auth handler at /auth
-	mux.Handle("/auth/", http.StripPrefix("/auth", authService.Handler()))
+	mux.Handle("/auth/", http.StripPrefix("/auth", handlers.NewRouter(authService)))
 
 	// Example protected route
 	mux.Handle("GET /api/profile", authService.AuthMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

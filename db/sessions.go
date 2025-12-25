@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/uptrace/bun"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
 
 // Session model for Bun
@@ -26,11 +26,11 @@ type Session struct {
 	User *User `bun:"rel:belongs-to,join:user_id=id"`
 }
 
-func toAuthSession(s *Session) *auth.Session {
+func toModelsSession(s *Session) *models.Session {
 	if s == nil {
 		return nil
 	}
-	return &auth.Session{
+	return &models.Session{
 		ID:        s.ID,
 		UserID:    s.UserID,
 		TokenHash: s.TokenHash,
@@ -42,7 +42,7 @@ func toAuthSession(s *Session) *auth.Session {
 	}
 }
 
-func toBunSession(s *auth.Session) *Session {
+func toBunSession(s *models.Session) *Session {
 	if s == nil {
 		return nil
 	}
@@ -58,13 +58,13 @@ func toBunSession(s *auth.Session) *Session {
 	}
 }
 
-func (s *Store) CreateSession(ctx context.Context, session *auth.Session) error {
+func (s *Store) CreateSession(ctx context.Context, session *models.Session) error {
 	bunSession := toBunSession(session)
 	_, err := s.db.NewInsert().Model(bunSession).Exec(ctx)
 	return err
 }
 
-func (s *Store) GetSessionByID(ctx context.Context, id string) (*auth.Session, error) {
+func (s *Store) GetSessionByID(ctx context.Context, id string) (*models.Session, error) {
 	session := new(Session)
 	err := s.db.NewSelect().Model(session).Where("id = ?", id).Scan(ctx)
 	if err == sql.ErrNoRows {
@@ -73,10 +73,10 @@ func (s *Store) GetSessionByID(ctx context.Context, id string) (*auth.Session, e
 	if err != nil {
 		return nil, err
 	}
-	return toAuthSession(session), nil
+	return toModelsSession(session), nil
 }
 
-func (s *Store) GetSessionByTokenHash(ctx context.Context, tokenHash string) (*auth.Session, error) {
+func (s *Store) GetSessionByTokenHash(ctx context.Context, tokenHash string) (*models.Session, error) {
 	session := new(Session)
 	err := s.db.NewSelect().Model(session).Where("token_hash = ?", tokenHash).Scan(ctx)
 	if err == sql.ErrNoRows {
@@ -85,10 +85,10 @@ func (s *Store) GetSessionByTokenHash(ctx context.Context, tokenHash string) (*a
 	if err != nil {
 		return nil, err
 	}
-	return toAuthSession(session), nil
+	return toModelsSession(session), nil
 }
 
-func (s *Store) ListSessionsByUserID(ctx context.Context, userID string) ([]*auth.Session, error) {
+func (s *Store) ListSessionsByUserID(ctx context.Context, userID string) ([]*models.Session, error) {
 	var sessions []Session
 	err := s.db.NewSelect().Model(&sessions).
 		Where("user_id = ?", userID).
@@ -97,9 +97,9 @@ func (s *Store) ListSessionsByUserID(ctx context.Context, userID string) ([]*aut
 	if err != nil {
 		return nil, err
 	}
-	result := make([]*auth.Session, len(sessions))
+	result := make([]*models.Session, len(sessions))
 	for i := range sessions {
-		result[i] = toAuthSession(&sessions[i])
+		result[i] = toModelsSession(&sessions[i])
 	}
 	return result, nil
 }

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/uptrace/bun"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
 
 // User model for Bun
@@ -26,11 +26,11 @@ type User struct {
 	UpdatedAt     time.Time  `bun:"updated_at,notnull,default:current_timestamp"`
 }
 
-func toAuthUser(u *User) *auth.User {
+func toModelsUser(u *User) *models.User {
 	if u == nil {
 		return nil
 	}
-	return &auth.User{
+	return &models.User{
 		ID:            u.ID,
 		Email:         u.Email,
 		EmailVerified: u.EmailVerified,
@@ -45,7 +45,7 @@ func toAuthUser(u *User) *auth.User {
 	}
 }
 
-func toBunUser(u *auth.User) *User {
+func toBunUser(u *models.User) *User {
 	if u == nil {
 		return nil
 	}
@@ -64,13 +64,13 @@ func toBunUser(u *auth.User) *User {
 	}
 }
 
-func (s *Store) CreateUser(ctx context.Context, user *auth.User) error {
+func (s *Store) CreateUser(ctx context.Context, user *models.User) error {
 	bunUser := toBunUser(user)
 	_, err := s.db.NewInsert().Model(bunUser).Exec(ctx)
 	return err
 }
 
-func (s *Store) GetUserByID(ctx context.Context, id string) (*auth.User, error) {
+func (s *Store) GetUserByID(ctx context.Context, id string) (*models.User, error) {
 	user := new(User)
 	err := s.db.NewSelect().Model(user).Where("id = ?", id).Scan(ctx)
 	if err == sql.ErrNoRows {
@@ -79,10 +79,10 @@ func (s *Store) GetUserByID(ctx context.Context, id string) (*auth.User, error) 
 	if err != nil {
 		return nil, err
 	}
-	return toAuthUser(user), nil
+	return toModelsUser(user), nil
 }
 
-func (s *Store) GetUserByEmail(ctx context.Context, email string) (*auth.User, error) {
+func (s *Store) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	user := new(User)
 	err := s.db.NewSelect().Model(user).Where("email = ?", email).Scan(ctx)
 	if err == sql.ErrNoRows {
@@ -91,10 +91,10 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (*auth.User, e
 	if err != nil {
 		return nil, err
 	}
-	return toAuthUser(user), nil
+	return toModelsUser(user), nil
 }
 
-func (s *Store) UpdateUser(ctx context.Context, user *auth.User) error {
+func (s *Store) UpdateUser(ctx context.Context, user *models.User) error {
 	bunUser := toBunUser(user)
 	_, err := s.db.NewUpdate().Model(bunUser).WherePK().Exec(ctx)
 	return err
@@ -118,7 +118,7 @@ func (s *Store) DeleteUser(ctx context.Context, id string) error {
 // AdminStore implementation
 
 // ListUsers returns a paginated list of users
-func (s *Store) ListUsers(ctx context.Context, opts auth.ListUsersOptions) (*auth.ListUsersResult, error) {
+func (s *Store) ListUsers(ctx context.Context, opts models.ListUsersOptions) (*models.ListUsersResult, error) {
 	var users []User
 
 	query := s.db.NewSelect().Model(&users)
@@ -156,14 +156,14 @@ func (s *Store) ListUsers(ctx context.Context, opts auth.ListUsersOptions) (*aut
 		return nil, err
 	}
 
-	// Convert to auth users
-	authUsers := make([]*auth.User, len(users))
+	// Convert to models users
+	modelsUsers := make([]*models.User, len(users))
 	for i, u := range users {
-		authUsers[i] = toAuthUser(&u)
+		modelsUsers[i] = toModelsUser(&u)
 	}
 
-	return &auth.ListUsersResult{
-		Users: authUsers,
+	return &models.ListUsersResult{
+		Users: modelsUsers,
 		Total: int64(total),
 	}, nil
 }

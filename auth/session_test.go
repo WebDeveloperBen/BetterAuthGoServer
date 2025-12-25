@@ -8,11 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
 func TestSessionFromContext_WithSession(t *testing.T) {
-	session := &Session{
+	session := &models.Session{
 		ID:     "session-123",
 		UserID: "user-123",
 	}
@@ -48,7 +49,7 @@ func TestSessionFromContext_WrongType(t *testing.T) {
 }
 
 func TestContextWithSession(t *testing.T) {
-	session := &Session{
+	session := &models.Session{
 		ID:     "session-456",
 		UserID: "user-456",
 	}
@@ -56,7 +57,7 @@ func TestContextWithSession(t *testing.T) {
 	ctx := contextWithSession(context.Background(), session)
 
 	// Verify session can be retrieved
-	if retrieved, ok := ctx.Value(sessionContextKey).(*Session); ok {
+	if retrieved, ok := ctx.Value(sessionContextKey).(*models.Session); ok {
 		if retrieved.ID != "session-456" {
 			t.Errorf("session ID = %s, want session-456", retrieved.ID)
 		}
@@ -130,9 +131,9 @@ func TestGetIPAddress_XRealIPPrecedenceOverRemoteAddr(t *testing.T) {
 
 // mockSessionStore implements Store interface for session tests
 type mockSessionStore struct {
-	sessions          map[string]*Session
-	sessionsByToken   map[string]*Session
-	sessionsByUser    map[string][]*Session
+	sessions          map[string]*models.Session
+	sessionsByToken   map[string]*models.Session
+	sessionsByUser    map[string][]*models.Session
 	createSessionErr  error
 	getSessionErr     error
 	deleteSessionErr  error
@@ -142,13 +143,13 @@ type mockSessionStore struct {
 
 func newMockSessionStore() *mockSessionStore {
 	return &mockSessionStore{
-		sessions:        make(map[string]*Session),
-		sessionsByToken: make(map[string]*Session),
-		sessionsByUser:  make(map[string][]*Session),
+		sessions:        make(map[string]*models.Session),
+		sessionsByToken: make(map[string]*models.Session),
+		sessionsByUser:  make(map[string][]*models.Session),
 	}
 }
 
-func (m *mockSessionStore) CreateSession(ctx context.Context, session *Session) error {
+func (m *mockSessionStore) CreateSession(ctx context.Context, session *models.Session) error {
 	if m.createSessionErr != nil {
 		return m.createSessionErr
 	}
@@ -158,21 +159,21 @@ func (m *mockSessionStore) CreateSession(ctx context.Context, session *Session) 
 	return nil
 }
 
-func (m *mockSessionStore) GetSessionByID(ctx context.Context, id string) (*Session, error) {
+func (m *mockSessionStore) GetSessionByID(ctx context.Context, id string) (*models.Session, error) {
 	if m.getSessionErr != nil {
 		return nil, m.getSessionErr
 	}
 	return m.sessions[id], nil
 }
 
-func (m *mockSessionStore) GetSessionByTokenHash(ctx context.Context, tokenHash string) (*Session, error) {
+func (m *mockSessionStore) GetSessionByTokenHash(ctx context.Context, tokenHash string) (*models.Session, error) {
 	if m.getSessionErr != nil {
 		return nil, m.getSessionErr
 	}
 	return m.sessionsByToken[tokenHash], nil
 }
 
-func (m *mockSessionStore) ListSessionsByUserID(ctx context.Context, userID string) ([]*Session, error) {
+func (m *mockSessionStore) ListSessionsByUserID(ctx context.Context, userID string) ([]*models.Session, error) {
 	if m.getSessionErr != nil {
 		return nil, m.getSessionErr
 	}
@@ -219,55 +220,63 @@ func (m *mockSessionStore) DeleteExpiredSessions(ctx context.Context) error {
 }
 
 // Implement remaining Store interface methods (minimal stubs)
-func (m *mockSessionStore) CreateUser(ctx context.Context, user *User) error { return nil }
+func (m *mockSessionStore) CreateUser(ctx context.Context, user *models.User) error { return nil }
 
-func (m *mockSessionStore) GetUserByID(ctx context.Context, id string) (*User, error) {
+func (m *mockSessionStore) GetUserByID(ctx context.Context, id string) (*models.User, error) {
 	return nil, nil
 }
 
-func (m *mockSessionStore) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+func (m *mockSessionStore) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	return nil, nil
 }
-func (m *mockSessionStore) UpdateUser(ctx context.Context, user *User) error { return nil }
-func (m *mockSessionStore) DeleteUser(ctx context.Context, id string) error  { return nil }
+func (m *mockSessionStore) UpdateUser(ctx context.Context, user *models.User) error { return nil }
+func (m *mockSessionStore) DeleteUser(ctx context.Context, id string) error         { return nil }
 func (m *mockSessionStore) SetEmailVerified(ctx context.Context, userID string, verified bool) error {
 	return nil
 }
 
-func (m *mockSessionStore) CreateAccount(ctx context.Context, account *Account) error { return nil }
-func (m *mockSessionStore) GetAccountByID(ctx context.Context, id string) (*Account, error) {
+func (m *mockSessionStore) CreateAccount(ctx context.Context, account *models.Account) error {
+	return nil
+}
+func (m *mockSessionStore) GetAccountByID(ctx context.Context, id string) (*models.Account, error) {
 	return nil, nil
 }
 
-func (m *mockSessionStore) GetAccountByProvider(ctx context.Context, provider ProviderType, providerAccountID string) (*Account, error) {
+func (m *mockSessionStore) GetAccountByProvider(ctx context.Context, provider models.ProviderType, providerAccountID string) (*models.Account, error) {
 	return nil, nil
 }
 
-func (m *mockSessionStore) GetAccountByUserIDAndProvider(ctx context.Context, userID string, provider ProviderType) (*Account, error) {
+func (m *mockSessionStore) GetAccountByUserIDAndProvider(ctx context.Context, userID string, provider models.ProviderType) (*models.Account, error) {
 	return nil, nil
 }
 
-func (m *mockSessionStore) ListAccountsByUserID(ctx context.Context, userID string) ([]*Account, error) {
+func (m *mockSessionStore) ListAccountsByUserID(ctx context.Context, userID string) ([]*models.Account, error) {
 	return nil, nil
 }
-func (m *mockSessionStore) UpdateAccount(ctx context.Context, account *Account) error { return nil }
-func (m *mockSessionStore) DeleteAccount(ctx context.Context, id string) error        { return nil }
+func (m *mockSessionStore) UpdateAccount(ctx context.Context, account *models.Account) error {
+	return nil
+}
+func (m *mockSessionStore) DeleteAccount(ctx context.Context, id string) error { return nil }
 func (m *mockSessionStore) DeleteAccountsByUserID(ctx context.Context, userID string) error {
 	return nil
 }
 
-func (m *mockSessionStore) CreateVerification(ctx context.Context, v *Verification) error { return nil }
-func (m *mockSessionStore) GetVerificationByTokenHash(ctx context.Context, tokenHash string) (*Verification, error) {
+func (m *mockSessionStore) CreateVerification(ctx context.Context, v *models.Verification) error {
+	return nil
+}
+func (m *mockSessionStore) GetVerificationByTokenHash(ctx context.Context, tokenHash string) (*models.Verification, error) {
 	return nil, nil
 }
 func (m *mockSessionStore) DeleteVerification(ctx context.Context, id string) error { return nil }
 func (m *mockSessionStore) DeleteExpiredVerifications(ctx context.Context) error    { return nil }
-func (m *mockSessionStore) DeleteVerificationsByUserIDAndType(ctx context.Context, userID string, vType VerificationType) error {
+func (m *mockSessionStore) DeleteVerificationsByUserIDAndType(ctx context.Context, userID string, vType models.VerificationType) error {
 	return nil
 }
 
-func (m *mockSessionStore) CreateOAuthState(ctx context.Context, state *OAuthState) error { return nil }
-func (m *mockSessionStore) GetOAuthState(ctx context.Context, state string) (*OAuthState, error) {
+func (m *mockSessionStore) CreateOAuthState(ctx context.Context, state *models.OAuthState) error {
+	return nil
+}
+func (m *mockSessionStore) GetOAuthState(ctx context.Context, state string) (*models.OAuthState, error) {
 	return nil, nil
 }
 func (m *mockSessionStore) DeleteOAuthState(ctx context.Context, state string) error { return nil }
@@ -282,7 +291,7 @@ func TestValidateSession_Valid(t *testing.T) {
 	rawToken := "test-raw-token"
 	tokenHash := hasher.Hash(rawToken)
 
-	session := &Session{
+	session := &models.Session{
 		ID:        "session-123",
 		UserID:    "user-123",
 		TokenHash: tokenHash,
@@ -328,7 +337,7 @@ func TestValidateSession_Expired(t *testing.T) {
 	rawToken := "test-raw-token"
 	tokenHash := hasher.Hash(rawToken)
 
-	session := &Session{
+	session := &models.Session{
 		ID:        "session-123",
 		UserID:    "user-123",
 		TokenHash: tokenHash,
@@ -370,7 +379,7 @@ func TestListSessions_Active(t *testing.T) {
 
 	// Create sessions - some expired, some active
 	now := time.Now()
-	store.sessionsByUser["user-123"] = []*Session{
+	store.sessionsByUser["user-123"] = []*models.Session{
 		{ID: "session-1", UserID: "user-123", ExpiresAt: now.Add(24 * time.Hour)},
 		{ID: "session-2", UserID: "user-123", ExpiresAt: now.Add(-1 * time.Hour)}, // Expired
 		{ID: "session-3", UserID: "user-123", ExpiresAt: now.Add(48 * time.Hour)},
@@ -408,7 +417,7 @@ func TestListSessions_NoSessions(t *testing.T) {
 
 func TestRevokeSession(t *testing.T) {
 	store := newMockSessionStore()
-	store.sessions["session-123"] = &Session{ID: "session-123"}
+	store.sessions["session-123"] = &models.Session{ID: "session-123"}
 
 	auth := &Auth{store: store}
 
@@ -437,7 +446,7 @@ func TestRevokeSession_Error(t *testing.T) {
 
 func TestRevokeAllSessions(t *testing.T) {
 	store := newMockSessionStore()
-	store.sessionsByUser["user-123"] = []*Session{
+	store.sessionsByUser["user-123"] = []*models.Session{
 		{ID: "session-1"},
 		{ID: "session-2"},
 	}
@@ -458,7 +467,7 @@ func TestRevokeAllSessions(t *testing.T) {
 func TestRefreshSession_Valid(t *testing.T) {
 	store := newMockSessionStore()
 	originalTime := time.Now().Add(-1 * time.Hour)
-	session := &Session{
+	session := &models.Session{
 		ID:       "session-123",
 		LastUsed: originalTime,
 	}
@@ -491,9 +500,9 @@ func TestCleanupExpiredSessions(t *testing.T) {
 	store := newMockSessionStore()
 	now := time.Now()
 
-	store.sessions["active"] = &Session{ID: "active", ExpiresAt: now.Add(24 * time.Hour)}
-	store.sessions["expired1"] = &Session{ID: "expired1", ExpiresAt: now.Add(-1 * time.Hour)}
-	store.sessions["expired2"] = &Session{ID: "expired2", ExpiresAt: now.Add(-2 * time.Hour)}
+	store.sessions["active"] = &models.Session{ID: "active", ExpiresAt: now.Add(24 * time.Hour)}
+	store.sessions["expired1"] = &models.Session{ID: "expired1", ExpiresAt: now.Add(-1 * time.Hour)}
+	store.sessions["expired2"] = &models.Session{ID: "expired2", ExpiresAt: now.Add(-2 * time.Hour)}
 
 	auth := &Auth{store: store}
 

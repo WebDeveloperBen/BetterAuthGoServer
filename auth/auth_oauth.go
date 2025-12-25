@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
 )
 
@@ -24,6 +25,14 @@ func (a *Auth) RegisterOAuthProvider(provider oauth.Provider) {
 		}
 	}
 	a.oauth.RegisterProvider(provider)
+}
+
+// ListOAuthProviders returns the names of all registered OAuth providers
+func (a *Auth) ListOAuthProviders() []string {
+	if a.oauth == nil {
+		return []string{}
+	}
+	return a.oauth.ListProviders()
 }
 
 // BeginOAuth starts an OAuth flow
@@ -84,7 +93,7 @@ func (a *Auth) isValidRedirectURL(redirectTo string) bool {
 
 // CompleteOAuth completes an OAuth flow and creates/updates user and session
 // Returns user, session, redirectTo URL (validated during BeginOAuth), and error
-func (a *Auth) CompleteOAuth(ctx context.Context, providerName, code, state string, r *http.Request) (*User, *Session, string, error) {
+func (a *Auth) CompleteOAuth(ctx context.Context, providerName, code, state string, r *http.Request) (*models.User, *models.Session, string, error) {
 	if a.oauth == nil {
 		return nil, nil, "", ErrOAuthProviderNotFound
 	}
@@ -94,7 +103,7 @@ func (a *Auth) CompleteOAuth(ctx context.Context, providerName, code, state stri
 		return nil, nil, "", err
 	}
 
-	provider := ProviderType(providerName)
+	provider := models.ProviderType(providerName)
 
 	// Check if account already exists
 	account, err := a.store.GetAccountByProvider(ctx, provider, result.UserInfo.ID)
@@ -102,7 +111,7 @@ func (a *Auth) CompleteOAuth(ctx context.Context, providerName, code, state stri
 		return nil, nil, "", err
 	}
 
-	var user *User
+	var user *models.User
 	now := time.Now()
 
 	if account != nil {
@@ -142,7 +151,7 @@ func (a *Auth) CompleteOAuth(ctx context.Context, providerName, code, state stri
 
 		if user == nil {
 			// Create new user
-			user = &User{
+			user = &models.User{
 				ID:            uuid.New().String(),
 				Email:         result.UserInfo.Email,
 				EmailVerified: result.UserInfo.EmailVerified,
@@ -158,12 +167,12 @@ func (a *Auth) CompleteOAuth(ctx context.Context, providerName, code, state stri
 				return nil, nil, "", err
 			}
 
-			a.config.Hooks.fireUserCreated(ctx, a.config.Logger, user)
+			a.config.Hooks.FireUserCreated(ctx, a.config.Logger, user)
 		}
 
 		// Create OAuth account
 		providerID := result.UserInfo.ID
-		account = &Account{
+		account = &models.Account{
 			ID:                uuid.New().String(),
 			UserID:            user.ID,
 			Provider:          provider,
@@ -193,7 +202,7 @@ func (a *Auth) CompleteOAuth(ctx context.Context, providerName, code, state stri
 			return nil, nil, "", err
 		}
 
-		a.config.Hooks.fireOAuthAccountLinked(ctx, a.config.Logger, user, account)
+		a.config.Hooks.FireOAuthAccountLinked(ctx, a.config.Logger, user, account)
 	}
 
 	// Create session
@@ -202,7 +211,7 @@ func (a *Auth) CompleteOAuth(ctx context.Context, providerName, code, state stri
 		return nil, nil, "", err
 	}
 
-	a.config.Hooks.fireSignIn(ctx, a.config.Logger, user, session)
+	a.config.Hooks.FireSignIn(ctx, a.config.Logger, user, session)
 
 	// Return the validated redirect URL from state (validated during BeginOAuth)
 	redirectTo := ""
@@ -220,11 +229,11 @@ func (a *Auth) oauthStateStore() oauth.StateStore {
 
 // oauthStateStoreAdapter adapts the auth Store to oauth.StateStore
 type oauthStateStoreAdapter struct {
-	store Store
+	store models.Store
 }
 
 func (s *oauthStateStoreAdapter) CreateOAuthState(ctx context.Context, state *oauth.State) error {
-	authState := &OAuthState{
+	authState := &models.OAuthState{
 		State:      state.State,
 		Provider:   state.Provider,
 		Verifier:   state.Verifier,

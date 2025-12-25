@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
@@ -18,33 +19,33 @@ const (
 )
 
 // SessionFromContext extracts the session from the request context
-func SessionFromContext(ctx context.Context) *Session {
-	if session, ok := ctx.Value(sessionContextKey).(*Session); ok {
+func SessionFromContext(ctx context.Context) *models.Session {
+	if session, ok := ctx.Value(sessionContextKey).(*models.Session); ok {
 		return session
 	}
 	return nil
 }
 
 // GetUserFromContext extracts the user from the request context
-func GetUserFromContext(ctx context.Context) *User {
-	if user, ok := ctx.Value(userContextKey).(*User); ok {
+func GetUserFromContext(ctx context.Context) *models.User {
+	if user, ok := ctx.Value(userContextKey).(*models.User); ok {
 		return user
 	}
 	return nil
 }
 
 // contextWithSession adds a session to the context
-func contextWithSession(ctx context.Context, session *Session) context.Context {
+func contextWithSession(ctx context.Context, session *models.Session) context.Context {
 	return context.WithValue(ctx, sessionContextKey, session)
 }
 
 // contextWithUser adds a user to the context
-func contextWithUser(ctx context.Context, user *User) context.Context {
+func contextWithUser(ctx context.Context, user *models.User) context.Context {
 	return context.WithValue(ctx, userContextKey, user)
 }
 
 // ValidateSession validates a session token and returns the session if valid
-func (a *Auth) ValidateSession(ctx context.Context, rawToken string) (*Session, error) {
+func (a *Auth) ValidateSession(ctx context.Context, rawToken string) (*models.Session, error) {
 	tokenHash := a.tokenHasher.Hash(rawToken)
 
 	session, err := a.store.GetSessionByTokenHash(ctx, tokenHash)
@@ -68,14 +69,14 @@ func (a *Auth) ValidateSession(ctx context.Context, rawToken string) (*Session, 
 }
 
 // ListSessions returns all active sessions for a user
-func (a *Auth) ListSessions(ctx context.Context, userID string) ([]*Session, error) {
+func (a *Auth) ListSessions(ctx context.Context, userID string) ([]*models.Session, error) {
 	sessions, err := a.store.ListSessionsByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Filter out expired sessions
-	var activeSessions []*Session
+	var activeSessions []*models.Session
 	for _, s := range sessions {
 		if !s.IsExpired() {
 			activeSessions = append(activeSessions, s)
@@ -86,6 +87,11 @@ func (a *Auth) ListSessions(ctx context.Context, userID string) ([]*Session, err
 	}
 
 	return activeSessions, nil
+}
+
+// GetSessionByID retrieves a session by its ID
+func (a *Auth) GetSessionByID(ctx context.Context, sessionID string) (*models.Session, error) {
+	return a.store.GetSessionByID(ctx, sessionID)
 }
 
 // RevokeSession revokes a specific session by ID
@@ -99,7 +105,7 @@ func (a *Auth) RevokeAllSessions(ctx context.Context, userID string) error {
 }
 
 // RefreshSession extends the expiration of a session
-func (a *Auth) RefreshSession(ctx context.Context, sessionID string) (*Session, error) {
+func (a *Auth) RefreshSession(ctx context.Context, sessionID string) (*models.Session, error) {
 	session, err := a.store.GetSessionByID(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -123,7 +129,7 @@ func (a *Auth) CleanupExpiredSessions(ctx context.Context) error {
 }
 
 // createSession creates a new session for a user
-func (a *Auth) createSession(ctx context.Context, userID string, r *http.Request) (*Session, error) {
+func (a *Auth) createSession(ctx context.Context, userID string, r *http.Request) (*models.Session, error) {
 	rawToken, err := token.Generate()
 	if err != nil {
 		return nil, err
@@ -144,7 +150,7 @@ func (a *Auth) createSession(ctx context.Context, userID string, r *http.Request
 		userAgent = &ua
 	}
 
-	session := &Session{
+	session := &models.Session{
 		ID:        uuid.New().String(),
 		UserID:    userID,
 		TokenHash: tokenHash,

@@ -1,12 +1,12 @@
-package auth
+package hooks
 
 import (
 	"log/slog"
 )
 
-// AuthMiddleware is a function that processes hook context.
+// Middleware is a function that processes hook context.
 // Return nil to continue, or an error (preferably *APIError) to abort.
-type AuthMiddleware func(ctx *HookContext) error
+type Middleware func(ctx *Context) error
 
 // MiddlewareHooks holds global before/after middleware chains.
 // These run on every auth operation, allowing cross-cutting concerns
@@ -15,16 +15,16 @@ type MiddlewareHooks struct {
 	// Before runs before any auth operation.
 	// Returning an error aborts the operation.
 	// If an *APIError is returned, it's sent as the response.
-	Before []AuthMiddleware
+	Before []Middleware
 
 	// After runs after any auth operation completes successfully.
 	// Errors are logged but don't affect the response.
-	After []AuthMiddleware
+	After []Middleware
 }
 
 // RunBefore executes all before middleware in sequence.
 // Stops and returns on the first error.
-func (h *MiddlewareHooks) RunBefore(ctx *HookContext, logger *slog.Logger) error {
+func (h *MiddlewareHooks) RunBefore(ctx *Context, logger *slog.Logger) error {
 	if h == nil {
 		return nil
 	}
@@ -52,7 +52,7 @@ func (h *MiddlewareHooks) RunBefore(ctx *HookContext, logger *slog.Logger) error
 
 // RunAfter executes all after middleware in sequence.
 // Errors are logged but don't stop execution.
-func (h *MiddlewareHooks) RunAfter(ctx *HookContext, logger *slog.Logger) {
+func (h *MiddlewareHooks) RunAfter(ctx *Context, logger *slog.Logger) {
 	if h == nil {
 		return
 	}
@@ -70,15 +70,15 @@ func (h *MiddlewareHooks) RunAfter(ctx *HookContext, logger *slog.Logger) {
 	}
 }
 
-// CreateAuthMiddleware wraps a function as middleware.
+// CreateMiddleware wraps a function as middleware.
 // This is a convenience function for creating middleware.
-func CreateAuthMiddleware(fn func(ctx *HookContext) error) AuthMiddleware {
+func CreateMiddleware(fn func(ctx *Context) error) Middleware {
 	return fn
 }
 
 // ChainMiddleware combines multiple middleware into one.
-func ChainMiddleware(middlewares ...AuthMiddleware) AuthMiddleware {
-	return func(ctx *HookContext) error {
+func ChainMiddleware(middlewares ...Middleware) Middleware {
+	return func(ctx *Context) error {
 		for _, m := range middlewares {
 			if err := m(ctx); err != nil {
 				return err
@@ -92,13 +92,13 @@ func ChainMiddleware(middlewares ...AuthMiddleware) AuthMiddleware {
 }
 
 // SkipPaths returns middleware that skips execution for certain paths.
-func SkipPaths(middleware AuthMiddleware, paths ...string) AuthMiddleware {
+func SkipPaths(middleware Middleware, paths ...string) Middleware {
 	skipSet := make(map[string]bool)
 	for _, p := range paths {
 		skipSet[p] = true
 	}
 
-	return func(ctx *HookContext) error {
+	return func(ctx *Context) error {
 		if skipSet[ctx.Path] {
 			return nil
 		}
@@ -107,13 +107,13 @@ func SkipPaths(middleware AuthMiddleware, paths ...string) AuthMiddleware {
 }
 
 // OnlyPaths returns middleware that only runs for certain paths.
-func OnlyPaths(middleware AuthMiddleware, paths ...string) AuthMiddleware {
+func OnlyPaths(middleware Middleware, paths ...string) Middleware {
 	pathSet := make(map[string]bool)
 	for _, p := range paths {
 		pathSet[p] = true
 	}
 
-	return func(ctx *HookContext) error {
+	return func(ctx *Context) error {
 		if !pathSet[ctx.Path] {
 			return nil
 		}
@@ -122,8 +122,8 @@ func OnlyPaths(middleware AuthMiddleware, paths ...string) AuthMiddleware {
 }
 
 // LoggingMiddleware creates middleware that logs all auth operations.
-func LoggingMiddleware(logger *slog.Logger) AuthMiddleware {
-	return func(ctx *HookContext) error {
+func LoggingMiddleware(logger *slog.Logger) Middleware {
+	return func(ctx *Context) error {
 		logger.Info("auth operation",
 			"path", ctx.Path,
 			"method", ctx.Method,
@@ -135,8 +135,8 @@ func LoggingMiddleware(logger *slog.Logger) AuthMiddleware {
 
 // RequireEmailDomain creates middleware that requires emails to match a domain.
 // Only applies to sign-up operations.
-func RequireEmailDomain(domain string) AuthMiddleware {
-	return func(ctx *HookContext) error {
+func RequireEmailDomain(domain string) Middleware {
+	return func(ctx *Context) error {
 		if ctx.Path != "/sign-up" {
 			return nil
 		}
@@ -164,7 +164,7 @@ func RequireEmailDomain(domain string) AuthMiddleware {
 }
 
 // NewMiddlewareHooks creates a new MiddlewareHooks with the given before/after chains.
-func NewMiddlewareHooks(before []AuthMiddleware, after []AuthMiddleware) *MiddlewareHooks {
+func NewMiddlewareHooks(before []Middleware, after []Middleware) *MiddlewareHooks {
 	return &MiddlewareHooks{
 		Before: before,
 		After:  after,
@@ -172,21 +172,21 @@ func NewMiddlewareHooks(before []AuthMiddleware, after []AuthMiddleware) *Middle
 }
 
 // AddBefore adds middleware to the before chain
-func (h *MiddlewareHooks) AddBefore(middlewares ...AuthMiddleware) {
+func (h *MiddlewareHooks) AddBefore(middlewares ...Middleware) {
 	h.Before = append(h.Before, middlewares...)
 }
 
 // AddAfter adds middleware to the after chain
-func (h *MiddlewareHooks) AddAfter(middlewares ...AuthMiddleware) {
+func (h *MiddlewareHooks) AddAfter(middlewares ...Middleware) {
 	h.After = append(h.After, middlewares...)
 }
 
 // PrependBefore adds middleware to the beginning of the before chain
-func (h *MiddlewareHooks) PrependBefore(middlewares ...AuthMiddleware) {
+func (h *MiddlewareHooks) PrependBefore(middlewares ...Middleware) {
 	h.Before = append(middlewares, h.Before...)
 }
 
 // PrependAfter adds middleware to the beginning of the after chain
-func (h *MiddlewareHooks) PrependAfter(middlewares ...AuthMiddleware) {
+func (h *MiddlewareHooks) PrependAfter(middlewares ...Middleware) {
 	h.After = append(middlewares, h.After...)
 }

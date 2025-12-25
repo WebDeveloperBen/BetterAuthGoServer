@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
 	authjwt "github.com/webdeveloperben/BetterAuthGoServer/auth/jwt"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/kv"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
@@ -14,6 +15,11 @@ type Config struct {
 	// Required
 	Secret  string
 	BaseURL string
+
+	// SkipDefaults disables automatic registration of default plugins
+	// (rate limiting, CSRF, admin). Use this for minimal setups where
+	// you want full control over which features are enabled.
+	SkipDefaults bool
 
 	// Session
 	SessionDuration time.Duration
@@ -61,10 +67,10 @@ type Config struct {
 	TrustedProxies []string
 
 	// Hooks (per-event callbacks, backwards compatible)
-	Hooks Hooks
+	Hooks hooks.Hooks
 
 	// MiddlewareHooks (global before/after middleware chains)
-	MiddlewareHooks *MiddlewareHooks
+	MiddlewareHooks *hooks.MiddlewareHooks
 
 	// Plugins registry for extensibility
 	Plugins *plugin.Registry
@@ -124,6 +130,29 @@ func WithSecret(secret string) Option {
 func WithBaseURL(url string) Option {
 	return func(c *Config) {
 		c.BaseURL = url
+	}
+}
+
+// WithoutDefaults disables automatic registration of default plugins.
+// When enabled, you must explicitly Use() any plugins you want.
+// This is useful for minimal setups or when you want full control.
+//
+// Default plugins that are skipped:
+//   - Rate limiting
+//   - CSRF protection
+//   - Admin endpoints
+//   - Session cleanup
+//
+// Example:
+//
+//	auth := betterauth.New(store,
+//	    betterauth.WithSecret(secret),
+//	    betterauth.WithoutDefaults(),
+//	)
+//	auth.Use(jwt.Plugin()) // Only JWT, nothing else
+func WithoutDefaults() Option {
+	return func(c *Config) {
+		c.SkipDefaults = true
 	}
 }
 
@@ -250,28 +279,28 @@ func WithTrustedProxies(proxies ...string) Option {
 // WithHooks sets the per-event hooks for auth events.
 // These hooks are called after specific events like user creation, sign-in, etc.
 // For global middleware-style hooks, use WithMiddlewareHooks instead.
-func WithHooks(hooks Hooks) Option {
+func WithHooks(h hooks.Hooks) Option {
 	return func(c *Config) {
-		c.Hooks = hooks
+		c.Hooks = h
 	}
 }
 
 // WithMiddlewareHooks sets global before/after middleware hooks.
 // These hooks run on every auth operation, similar to HTTP middleware.
-// Before hooks can abort requests by returning an error (preferably *APIError).
+// Before hooks can abort requests by returning an error (preferably *hooks.APIError).
 // After hooks run after successful operations; errors are logged but don't affect responses.
-func WithMiddlewareHooks(hooks *MiddlewareHooks) Option {
+func WithMiddlewareHooks(h *hooks.MiddlewareHooks) Option {
 	return func(c *Config) {
-		c.MiddlewareHooks = hooks
+		c.MiddlewareHooks = h
 	}
 }
 
 // WithBeforeHook adds a single before middleware hook.
 // This is a convenience method for adding a single hook without creating a MiddlewareHooks struct.
-func WithBeforeHook(fn func(ctx *HookContext) error) Option {
+func WithBeforeHook(fn func(ctx *hooks.Context) error) Option {
 	return func(c *Config) {
 		if c.MiddlewareHooks == nil {
-			c.MiddlewareHooks = &MiddlewareHooks{}
+			c.MiddlewareHooks = &hooks.MiddlewareHooks{}
 		}
 		c.MiddlewareHooks.Before = append(c.MiddlewareHooks.Before, fn)
 	}
@@ -279,10 +308,10 @@ func WithBeforeHook(fn func(ctx *HookContext) error) Option {
 
 // WithAfterHook adds a single after middleware hook.
 // This is a convenience method for adding a single hook without creating a MiddlewareHooks struct.
-func WithAfterHook(fn func(ctx *HookContext) error) Option {
+func WithAfterHook(fn func(ctx *hooks.Context) error) Option {
 	return func(c *Config) {
 		if c.MiddlewareHooks == nil {
-			c.MiddlewareHooks = &MiddlewareHooks{}
+			c.MiddlewareHooks = &hooks.MiddlewareHooks{}
 		}
 		c.MiddlewareHooks.After = append(c.MiddlewareHooks.After, fn)
 	}

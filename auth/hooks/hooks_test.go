@@ -1,4 +1,4 @@
-package auth
+package hooks
 
 import (
 	"bytes"
@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
 
 func TestHooks_Fire_NilFn(t *testing.T) {
@@ -69,13 +71,13 @@ func TestHooks_FireUserCreated_NilHook(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 	// Should not panic with nil hook
-	h.fireUserCreated(context.Background(), logger, &User{ID: "user-123"})
+	h.FireUserCreated(context.Background(), logger, &models.User{ID: "user-123"})
 }
 
 func TestHooks_FireUserCreated_WithHook(t *testing.T) {
-	var capturedUser *User
+	var capturedUser *models.User
 	h := &Hooks{
-		OnUserCreated: func(ctx context.Context, user *User) error {
+		OnUserCreated: func(ctx context.Context, user *models.User) error {
 			capturedUser = user
 			return nil
 		},
@@ -83,8 +85,8 @@ func TestHooks_FireUserCreated_WithHook(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	user := &User{ID: "user-123", Email: "test@example.com"}
-	h.fireUserCreated(context.Background(), logger, user)
+	user := &models.User{ID: "user-123", Email: "test@example.com"}
+	h.FireUserCreated(context.Background(), logger, user)
 
 	if capturedUser == nil {
 		t.Fatal("hook should have been called")
@@ -96,14 +98,14 @@ func TestHooks_FireUserCreated_WithHook(t *testing.T) {
 
 func TestHooks_FireUserCreated_Error(t *testing.T) {
 	h := &Hooks{
-		OnUserCreated: func(ctx context.Context, user *User) error {
+		OnUserCreated: func(ctx context.Context, user *models.User) error {
 			return errors.New("user creation hook failed")
 		},
 	}
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	h.fireUserCreated(context.Background(), logger, &User{ID: "user-123"})
+	h.FireUserCreated(context.Background(), logger, &models.User{ID: "user-123"})
 
 	output := buf.String()
 	if !strings.Contains(output, "OnUserCreated") {
@@ -117,13 +119,13 @@ func TestHooks_FireUserUpdated_NilHook(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 	// Should not panic with nil hook
-	h.FireUserUpdated(context.Background(), logger, &User{ID: "user-123"})
+	h.FireUserUpdated(context.Background(), logger, &models.User{ID: "user-123"})
 }
 
 func TestHooks_FireUserUpdated_WithHook(t *testing.T) {
-	var capturedUser *User
+	var capturedUser *models.User
 	h := &Hooks{
-		OnUserUpdated: func(ctx context.Context, user *User) error {
+		OnUserUpdated: func(ctx context.Context, user *models.User) error {
 			capturedUser = user
 			return nil
 		},
@@ -131,7 +133,7 @@ func TestHooks_FireUserUpdated_WithHook(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	user := &User{ID: "user-456", Email: "updated@example.com"}
+	user := &models.User{ID: "user-456", Email: "updated@example.com"}
 	h.FireUserUpdated(context.Background(), logger, user)
 
 	if capturedUser == nil {
@@ -148,14 +150,14 @@ func TestHooks_FireSignIn_NilHook(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 	// Should not panic with nil hook
-	h.fireSignIn(context.Background(), logger, &User{ID: "user-123"}, &Session{ID: "session-123"})
+	h.FireSignIn(context.Background(), logger, &models.User{ID: "user-123"}, &models.Session{ID: "session-123"})
 }
 
 func TestHooks_FireSignIn_WithHook(t *testing.T) {
-	var capturedUser *User
-	var capturedSession *Session
+	var capturedUser *models.User
+	var capturedSession *models.Session
 	h := &Hooks{
-		OnSignIn: func(ctx context.Context, user *User, session *Session) error {
+		OnSignIn: func(ctx context.Context, user *models.User, session *models.Session) error {
 			capturedUser = user
 			capturedSession = session
 			return nil
@@ -164,9 +166,9 @@ func TestHooks_FireSignIn_WithHook(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	user := &User{ID: "user-123"}
-	session := &Session{ID: "session-123"}
-	h.fireSignIn(context.Background(), logger, user, session)
+	user := &models.User{ID: "user-123"}
+	session := &models.Session{ID: "session-123"}
+	h.FireSignIn(context.Background(), logger, user, session)
 
 	if capturedUser == nil || capturedSession == nil {
 		t.Fatal("hook should have been called with user and session")
@@ -185,14 +187,14 @@ func TestHooks_FireSignOut_NilHook(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 	// Should not panic with nil hook
-	h.fireSignOut(context.Background(), logger, &User{ID: "user-123"}, &Session{ID: "session-123"})
+	h.FireSignOut(context.Background(), logger, &models.User{ID: "user-123"}, &models.Session{ID: "session-123"})
 }
 
 func TestHooks_FireSignOut_WithHook(t *testing.T) {
-	var capturedUser *User
-	var capturedSession *Session
+	var capturedUser *models.User
+	var capturedSession *models.Session
 	h := &Hooks{
-		OnSignOut: func(ctx context.Context, user *User, session *Session) error {
+		OnSignOut: func(ctx context.Context, user *models.User, session *models.Session) error {
 			capturedUser = user
 			capturedSession = session
 			return nil
@@ -201,9 +203,9 @@ func TestHooks_FireSignOut_WithHook(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	user := &User{ID: "user-123"}
-	session := &Session{ID: "session-123"}
-	h.fireSignOut(context.Background(), logger, user, session)
+	user := &models.User{ID: "user-123"}
+	session := &models.Session{ID: "session-123"}
+	h.FireSignOut(context.Background(), logger, user, session)
 
 	if capturedUser == nil || capturedSession == nil {
 		t.Fatal("hook should have been called")
@@ -216,13 +218,13 @@ func TestHooks_FirePasswordChanged_NilHook(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 	// Should not panic with nil hook
-	h.firePasswordChanged(context.Background(), logger, &User{ID: "user-123"})
+	h.FirePasswordChanged(context.Background(), logger, &models.User{ID: "user-123"})
 }
 
 func TestHooks_FirePasswordChanged_WithHook(t *testing.T) {
 	called := false
 	h := &Hooks{
-		OnPasswordChanged: func(ctx context.Context, user *User) error {
+		OnPasswordChanged: func(ctx context.Context, user *models.User) error {
 			called = true
 			return nil
 		},
@@ -230,7 +232,7 @@ func TestHooks_FirePasswordChanged_WithHook(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	h.firePasswordChanged(context.Background(), logger, &User{ID: "user-123"})
+	h.FirePasswordChanged(context.Background(), logger, &models.User{ID: "user-123"})
 
 	if !called {
 		t.Error("hook should have been called")
@@ -243,13 +245,13 @@ func TestHooks_FirePasswordResetRequested_NilHook(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 	// Should not panic with nil hook
-	h.firePasswordResetRequested(context.Background(), logger, &User{ID: "user-123"}, "reset-token")
+	h.FirePasswordResetRequested(context.Background(), logger, &models.User{ID: "user-123"}, "reset-token")
 }
 
 func TestHooks_FirePasswordResetRequested_WithHook(t *testing.T) {
 	var capturedToken string
 	h := &Hooks{
-		OnPasswordResetRequested: func(ctx context.Context, user *User, token string) error {
+		OnPasswordResetRequested: func(ctx context.Context, user *models.User, token string) error {
 			capturedToken = token
 			return nil
 		},
@@ -257,7 +259,7 @@ func TestHooks_FirePasswordResetRequested_WithHook(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	h.firePasswordResetRequested(context.Background(), logger, &User{ID: "user-123"}, "my-reset-token")
+	h.FirePasswordResetRequested(context.Background(), logger, &models.User{ID: "user-123"}, "my-reset-token")
 
 	if capturedToken != "my-reset-token" {
 		t.Errorf("capturedToken = %s, want my-reset-token", capturedToken)
@@ -270,13 +272,13 @@ func TestHooks_FireEmailVerified_NilHook(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 	// Should not panic with nil hook
-	h.fireEmailVerified(context.Background(), logger, &User{ID: "user-123"})
+	h.FireEmailVerified(context.Background(), logger, &models.User{ID: "user-123"})
 }
 
 func TestHooks_FireEmailVerified_WithHook(t *testing.T) {
 	called := false
 	h := &Hooks{
-		OnEmailVerified: func(ctx context.Context, user *User) error {
+		OnEmailVerified: func(ctx context.Context, user *models.User) error {
 			called = true
 			return nil
 		},
@@ -284,7 +286,7 @@ func TestHooks_FireEmailVerified_WithHook(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	h.fireEmailVerified(context.Background(), logger, &User{ID: "user-123"})
+	h.FireEmailVerified(context.Background(), logger, &models.User{ID: "user-123"})
 
 	if !called {
 		t.Error("hook should have been called")
@@ -297,13 +299,13 @@ func TestHooks_FireEmailVerificationRequested_NilHook(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 	// Should not panic with nil hook
-	h.fireEmailVerificationRequested(context.Background(), logger, &User{ID: "user-123"}, "verify-token")
+	h.FireEmailVerificationRequested(context.Background(), logger, &models.User{ID: "user-123"}, "verify-token")
 }
 
 func TestHooks_FireEmailVerificationRequested_WithHook(t *testing.T) {
 	var capturedToken string
 	h := &Hooks{
-		OnEmailVerificationRequested: func(ctx context.Context, user *User, token string) error {
+		OnEmailVerificationRequested: func(ctx context.Context, user *models.User, token string) error {
 			capturedToken = token
 			return nil
 		},
@@ -311,7 +313,7 @@ func TestHooks_FireEmailVerificationRequested_WithHook(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	h.fireEmailVerificationRequested(context.Background(), logger, &User{ID: "user-123"}, "my-verify-token")
+	h.FireEmailVerificationRequested(context.Background(), logger, &models.User{ID: "user-123"}, "my-verify-token")
 
 	if capturedToken != "my-verify-token" {
 		t.Errorf("capturedToken = %s, want my-verify-token", capturedToken)
@@ -324,14 +326,14 @@ func TestHooks_FireOAuthAccountLinked_NilHook(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 	// Should not panic with nil hook
-	h.fireOAuthAccountLinked(context.Background(), logger, &User{ID: "user-123"}, &Account{ID: "account-123"})
+	h.FireOAuthAccountLinked(context.Background(), logger, &models.User{ID: "user-123"}, &models.Account{ID: "account-123"})
 }
 
 func TestHooks_FireOAuthAccountLinked_WithHook(t *testing.T) {
-	var capturedUser *User
-	var capturedAccount *Account
+	var capturedUser *models.User
+	var capturedAccount *models.Account
 	h := &Hooks{
-		OnOAuthAccountLinked: func(ctx context.Context, user *User, account *Account) error {
+		OnOAuthAccountLinked: func(ctx context.Context, user *models.User, account *models.Account) error {
 			capturedUser = user
 			capturedAccount = account
 			return nil
@@ -340,9 +342,9 @@ func TestHooks_FireOAuthAccountLinked_WithHook(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	user := &User{ID: "user-123"}
-	account := &Account{ID: "account-123", Provider: "google"}
-	h.fireOAuthAccountLinked(context.Background(), logger, user, account)
+	user := &models.User{ID: "user-123"}
+	account := &models.Account{ID: "account-123", Provider: "google"}
+	h.FireOAuthAccountLinked(context.Background(), logger, user, account)
 
 	if capturedUser == nil || capturedAccount == nil {
 		t.Fatal("hook should have been called")
@@ -357,20 +359,20 @@ func TestHooks_AllHooksNil(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 	ctx := context.Background()
-	user := &User{ID: "user-123"}
-	session := &Session{ID: "session-123"}
-	account := &Account{ID: "account-123"}
+	user := &models.User{ID: "user-123"}
+	session := &models.Session{ID: "session-123"}
+	account := &models.Account{ID: "account-123"}
 
 	// None of these should panic
-	h.fireUserCreated(ctx, logger, user)
+	h.FireUserCreated(ctx, logger, user)
 	h.FireUserUpdated(ctx, logger, user)
-	h.fireSignIn(ctx, logger, user, session)
-	h.fireSignOut(ctx, logger, user, session)
-	h.firePasswordChanged(ctx, logger, user)
-	h.firePasswordResetRequested(ctx, logger, user, "token")
-	h.fireEmailVerified(ctx, logger, user)
-	h.fireEmailVerificationRequested(ctx, logger, user, "token")
-	h.fireOAuthAccountLinked(ctx, logger, user, account)
+	h.FireSignIn(ctx, logger, user, session)
+	h.FireSignOut(ctx, logger, user, session)
+	h.FirePasswordChanged(ctx, logger, user)
+	h.FirePasswordResetRequested(ctx, logger, user, "token")
+	h.FireEmailVerified(ctx, logger, user)
+	h.FireEmailVerificationRequested(ctx, logger, user, "token")
+	h.FireOAuthAccountLinked(ctx, logger, user, account)
 
 	// No errors should be logged
 	if buf.Len() > 0 {
@@ -380,51 +382,51 @@ func TestHooks_AllHooksNil(t *testing.T) {
 
 func TestHooks_AllHooksError(t *testing.T) {
 	h := &Hooks{
-		OnUserCreated: func(ctx context.Context, user *User) error {
+		OnUserCreated: func(ctx context.Context, user *models.User) error {
 			return errors.New("error1")
 		},
-		OnUserUpdated: func(ctx context.Context, user *User) error {
+		OnUserUpdated: func(ctx context.Context, user *models.User) error {
 			return errors.New("error2")
 		},
-		OnSignIn: func(ctx context.Context, user *User, session *Session) error {
+		OnSignIn: func(ctx context.Context, user *models.User, session *models.Session) error {
 			return errors.New("error3")
 		},
-		OnSignOut: func(ctx context.Context, user *User, session *Session) error {
+		OnSignOut: func(ctx context.Context, user *models.User, session *models.Session) error {
 			return errors.New("error4")
 		},
-		OnPasswordChanged: func(ctx context.Context, user *User) error {
+		OnPasswordChanged: func(ctx context.Context, user *models.User) error {
 			return errors.New("error5")
 		},
-		OnPasswordResetRequested: func(ctx context.Context, user *User, token string) error {
+		OnPasswordResetRequested: func(ctx context.Context, user *models.User, token string) error {
 			return errors.New("error6")
 		},
-		OnEmailVerified: func(ctx context.Context, user *User) error {
+		OnEmailVerified: func(ctx context.Context, user *models.User) error {
 			return errors.New("error7")
 		},
-		OnEmailVerificationRequested: func(ctx context.Context, user *User, token string) error {
+		OnEmailVerificationRequested: func(ctx context.Context, user *models.User, token string) error {
 			return errors.New("error8")
 		},
-		OnOAuthAccountLinked: func(ctx context.Context, user *User, account *Account) error {
+		OnOAuthAccountLinked: func(ctx context.Context, user *models.User, account *models.Account) error {
 			return errors.New("error9")
 		},
 	}
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 	ctx := context.Background()
-	user := &User{ID: "user-123"}
-	session := &Session{ID: "session-123"}
-	account := &Account{ID: "account-123"}
+	user := &models.User{ID: "user-123"}
+	session := &models.Session{ID: "session-123"}
+	account := &models.Account{ID: "account-123"}
 
 	// All hooks should be called and errors logged
-	h.fireUserCreated(ctx, logger, user)
+	h.FireUserCreated(ctx, logger, user)
 	h.FireUserUpdated(ctx, logger, user)
-	h.fireSignIn(ctx, logger, user, session)
-	h.fireSignOut(ctx, logger, user, session)
-	h.firePasswordChanged(ctx, logger, user)
-	h.firePasswordResetRequested(ctx, logger, user, "token")
-	h.fireEmailVerified(ctx, logger, user)
-	h.fireEmailVerificationRequested(ctx, logger, user, "token")
-	h.fireOAuthAccountLinked(ctx, logger, user, account)
+	h.FireSignIn(ctx, logger, user, session)
+	h.FireSignOut(ctx, logger, user, session)
+	h.FirePasswordChanged(ctx, logger, user)
+	h.FirePasswordResetRequested(ctx, logger, user, "token")
+	h.FireEmailVerified(ctx, logger, user)
+	h.FireEmailVerificationRequested(ctx, logger, user, "token")
+	h.FireOAuthAccountLinked(ctx, logger, user, account)
 
 	output := buf.String()
 	// All 9 errors should be logged
@@ -439,7 +441,7 @@ func TestHooks_ContextPassed(t *testing.T) {
 	var capturedValue string
 
 	h := &Hooks{
-		OnUserCreated: func(ctx context.Context, user *User) error {
+		OnUserCreated: func(ctx context.Context, user *models.User) error {
 			if v, ok := ctx.Value(key).(string); ok {
 				capturedValue = v
 			}
@@ -450,7 +452,7 @@ func TestHooks_ContextPassed(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 	ctx := context.WithValue(context.Background(), key, "test-value")
-	h.fireUserCreated(ctx, logger, &User{ID: "user-123"})
+	h.FireUserCreated(ctx, logger, &models.User{ID: "user-123"})
 
 	if capturedValue != "test-value" {
 		t.Errorf("context value not passed to hook, got: %s", capturedValue)
@@ -463,5 +465,5 @@ func TestHooks_EmptyStruct(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 
 	// Should work with value receiver too
-	h.fireUserCreated(context.Background(), logger, &User{ID: "user-123"})
+	h.FireUserCreated(context.Background(), logger, &models.User{ID: "user-123"})
 }

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/uptrace/bun"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
 
 // Account model for Bun
@@ -29,14 +29,14 @@ type Account struct {
 	User *User `bun:"rel:belongs-to,join:user_id=id"`
 }
 
-func toAuthAccount(a *Account) *auth.Account {
+func toModelsAccount(a *Account) *models.Account {
 	if a == nil {
 		return nil
 	}
-	return &auth.Account{
+	return &models.Account{
 		ID:                    a.ID,
 		UserID:                a.UserID,
-		Provider:              auth.ProviderType(a.Provider),
+		Provider:              models.ProviderType(a.Provider),
 		ProviderAccountID:     a.ProviderAccountID,
 		PasswordHash:          a.PasswordHash,
 		AccessToken:           a.AccessToken,
@@ -48,7 +48,7 @@ func toAuthAccount(a *Account) *auth.Account {
 	}
 }
 
-func toBunAccount(a *auth.Account) *Account {
+func toBunAccount(a *models.Account) *Account {
 	if a == nil {
 		return nil
 	}
@@ -67,13 +67,13 @@ func toBunAccount(a *auth.Account) *Account {
 	}
 }
 
-func (s *Store) CreateAccount(ctx context.Context, account *auth.Account) error {
+func (s *Store) CreateAccount(ctx context.Context, account *models.Account) error {
 	bunAccount := toBunAccount(account)
 	_, err := s.db.NewInsert().Model(bunAccount).Exec(ctx)
 	return err
 }
 
-func (s *Store) GetAccountByID(ctx context.Context, id string) (*auth.Account, error) {
+func (s *Store) GetAccountByID(ctx context.Context, id string) (*models.Account, error) {
 	account := new(Account)
 	err := s.db.NewSelect().Model(account).Where("id = ?", id).Scan(ctx)
 	if err == sql.ErrNoRows {
@@ -82,10 +82,10 @@ func (s *Store) GetAccountByID(ctx context.Context, id string) (*auth.Account, e
 	if err != nil {
 		return nil, err
 	}
-	return toAuthAccount(account), nil
+	return toModelsAccount(account), nil
 }
 
-func (s *Store) GetAccountByUserIDAndProvider(ctx context.Context, userID string, provider auth.ProviderType) (*auth.Account, error) {
+func (s *Store) GetAccountByUserIDAndProvider(ctx context.Context, userID string, provider models.ProviderType) (*models.Account, error) {
 	account := new(Account)
 	err := s.db.NewSelect().Model(account).
 		Where("user_id = ?", userID).
@@ -97,10 +97,10 @@ func (s *Store) GetAccountByUserIDAndProvider(ctx context.Context, userID string
 	if err != nil {
 		return nil, err
 	}
-	return toAuthAccount(account), nil
+	return toModelsAccount(account), nil
 }
 
-func (s *Store) GetAccountByProvider(ctx context.Context, provider auth.ProviderType, providerAccountID string) (*auth.Account, error) {
+func (s *Store) GetAccountByProvider(ctx context.Context, provider models.ProviderType, providerAccountID string) (*models.Account, error) {
 	account := new(Account)
 	err := s.db.NewSelect().Model(account).
 		Where("provider = ?", string(provider)).
@@ -112,23 +112,23 @@ func (s *Store) GetAccountByProvider(ctx context.Context, provider auth.Provider
 	if err != nil {
 		return nil, err
 	}
-	return toAuthAccount(account), nil
+	return toModelsAccount(account), nil
 }
 
-func (s *Store) ListAccountsByUserID(ctx context.Context, userID string) ([]*auth.Account, error) {
+func (s *Store) ListAccountsByUserID(ctx context.Context, userID string) ([]*models.Account, error) {
 	var accounts []Account
 	err := s.db.NewSelect().Model(&accounts).Where("user_id = ?", userID).Scan(ctx)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]*auth.Account, len(accounts))
+	result := make([]*models.Account, len(accounts))
 	for i := range accounts {
-		result[i] = toAuthAccount(&accounts[i])
+		result[i] = toModelsAccount(&accounts[i])
 	}
 	return result, nil
 }
 
-func (s *Store) UpdateAccount(ctx context.Context, account *auth.Account) error {
+func (s *Store) UpdateAccount(ctx context.Context, account *models.Account) error {
 	bunAccount := toBunAccount(account)
 	bunAccount.UpdatedAt = time.Now()
 	_, err := s.db.NewUpdate().Model(bunAccount).WherePK().Exec(ctx)

@@ -52,10 +52,10 @@ func (m *mockRoutesPlugin) Routes() []Route {
 // mockMiddlewarePlugin provides middleware
 type mockMiddlewarePlugin struct {
 	mockPlugin
-	middleware []func(http.Handler) http.Handler
+	middleware []Middleware
 }
 
-func (m *mockMiddlewarePlugin) Middleware() []func(http.Handler) http.Handler {
+func (m *mockMiddlewarePlugin) Middleware() []Middleware {
 	return m.middleware
 }
 
@@ -198,10 +198,13 @@ func TestRegistry_Init_CollectsRoutes(t *testing.T) {
 
 func TestRegistry_Init_CollectsMiddleware(t *testing.T) {
 	reg := NewRegistry(nil)
-	mw := func(h http.Handler) http.Handler { return h }
+	mw := Middleware{
+		Priority: 10,
+		Handler:  func(h http.Handler) http.Handler { return h },
+	}
 	plugin := &mockMiddlewarePlugin{
 		mockPlugin: mockPlugin{name: "middleware"},
-		middleware: []func(http.Handler) http.Handler{mw},
+		middleware: []Middleware{mw},
 	}
 	reg.Register(plugin)
 

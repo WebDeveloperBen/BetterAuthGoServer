@@ -9,15 +9,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/csrf"
 	authjwt "github.com/webdeveloperben/BetterAuthGoServer/auth/jwt"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/ratelimit"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
 // Auth is the main authentication orchestrator
 type Auth struct {
 	config Config
-	store  Store
+	store  models.Store
 
 	// Password hasher
 	hasher PasswordHasher
@@ -26,24 +29,29 @@ type Auth struct {
 	tokenHasher    *token.Hasher
 	tokenEncryptor *token.Encryptor
 
-	// Rate limiter
-	rateLimiter *RateLimiter
-
 	// OAuth service (optional)
 	oauth *OAuthService
 
 	// JWT service (optional)
 	jwt *authjwt.Service
 
-	// Plugin registry (optional)
+	// Plugin registry
 	plugins *plugin.Registry
 
 	// Cleanup control
 	stopCleanup chan struct{}
 }
 
-// New creates a new Auth instance
-func New(store Store, opts ...Option) (*Auth, error) {
+// New creates a new Auth instance.
+//
+// By default, Auth includes:
+//   - Rate limiting (via plugin)
+//   - CSRF protection
+//   - Session cleanup
+//   - Admin endpoints
+//
+// Use WithoutDefaults() to disable default features and manually Use() plugins.
+func New(store models.Store, opts ...Option) (*Auth, error) {
 	cfg := DefaultConfig()
 	for _, opt := range opts {
 		opt(&cfg)
@@ -57,51 +65,39 @@ func New(store Store, opts ...Option) (*Auth, error) {
 		return nil, ErrMissingStore
 	}
 
-	// Create rate limiter if enabled
-	var rateLimiter *RateLimiter
-	if cfg.RateLimitEnabled {
-		config := RateLimitConfig{
-			Window:      cfg.RateLimitWindow,
-			MaxRequests: cfg.AuthRateLimitMax,
-		}
-		if cfg.RateLimiterBackend != nil {
-			// Use custom backend (e.g., Redis)
-			rateLimiter = NewRateLimiterWithBackend(config, cfg.RateLimiterBackend)
-		} else {
-			// Use default in-memory backend
-			rateLimiter = NewRateLimiter(config)
-		}
-	}
-
+	// Create Auth instance
 	a := &Auth{
 		config:         cfg,
 		store:          store,
 		hasher:         NewArgon2PasswordHasher(),
 		tokenHasher:    token.NewHasher(cfg.Secret),
 		tokenEncryptor: token.NewEncryptor(cfg.Secret),
-		rateLimiter:    rateLimiter,
-		plugins:        cfg.Plugins,
 	}
 
-	// Initialize plugins if provided
-	if a.plugins != nil {
-		pluginCtx := plugin.Context{
-			BaseURL: cfg.BaseURL,
-			Secret:  cfg.Secret,
-		}
-		// Check if store provides DB access
-		if dbProvider, ok := store.(plugin.DBProvider); ok {
-			pluginCtx.DB = dbProvider.DB()
-		}
-		if err := a.plugins.Init(pluginCtx); err != nil {
-			return nil, err
-		}
-
-		// Merge plugin hooks with config hooks
-		a.mergePluginHooks()
+	// Initialize plugin registry
+	// Use provided registry or create a new one
+	if cfg.Plugins != nil {
+		a.plugins = cfg.Plugins
+	} else {
+		a.plugins = plugin.NewRegistry(cfg.Logger)
 	}
+
+	// Register default plugins if not skipping defaults
+	if !cfg.SkipDefaults {
+		a.registerDefaultPlugins()
+	}
+
+	// Initialize plugins with context that includes AuthCore
+	pluginCtx := a.buildPluginContext()
+	if err := a.plugins.Init(pluginCtx); err != nil {
+		return nil, err
+	}
+
+	// Merge plugin hooks with config hooks
+	a.mergePluginHooks()
 
 	// Initialize JWT service if enabled
+	// Note: In future phases, JWT will become a plugin
 	if cfg.JWTEnabled {
 		jwtCfg := authjwt.Config{
 			Algorithm:       cfg.JWTAlgorithm,
@@ -123,8 +119,8 @@ func New(store Store, opts ...Option) (*Auth, error) {
 		a.jwt = jwtSvc
 	}
 
-	// Start background cleanup if interval is configured
-	if cfg.SessionCleanupInterval > 0 {
+	// Start background cleanup if interval is configured and not skipping defaults
+	if cfg.SessionCleanupInterval > 0 && !cfg.SkipDefaults {
 		a.stopCleanup = make(chan struct{})
 		go a.runCleanup()
 	}
@@ -132,14 +128,41 @@ func New(store Store, opts ...Option) (*Auth, error) {
 	return a, nil
 }
 
+// registerDefaultPlugins registers the default plugins
+func (a *Auth) registerDefaultPlugins() {
+	// Rate limiting plugin
+	if a.config.RateLimitEnabled {
+		var opts []ratelimit.Option
+		opts = append(opts, ratelimit.WithLimit(a.config.AuthRateLimitMax, a.config.RateLimitWindow))
+		if a.config.RateLimiterBackend != nil {
+			opts = append(opts, ratelimit.WithBackend(a.config.RateLimiterBackend))
+		}
+		if len(a.config.TrustedProxies) > 0 {
+			opts = append(opts, ratelimit.WithTrustedProxies(a.config.TrustedProxies))
+		}
+		a.plugins.Register(ratelimit.NewPlugin(opts...))
+	}
+
+	// CSRF protection plugin
+	if a.config.CSRFEnabled {
+		var opts []csrf.Option
+		if a.config.CSRFCookieName != "" {
+			opts = append(opts, csrf.WithCookieName(a.config.CSRFCookieName))
+		}
+		if a.config.CSRFHeaderName != "" {
+			opts = append(opts, csrf.WithHeaderName(a.config.CSRFHeaderName))
+		}
+		a.plugins.Register(csrf.NewPlugin(opts...))
+	}
+
+	// Future: Admin plugin, etc.
+}
+
 // Close stops background goroutines and cleans up resources
 // Should be called when the Auth instance is no longer needed
 func (a *Auth) Close() {
 	if a.stopCleanup != nil {
 		close(a.stopCleanup)
-	}
-	if a.rateLimiter != nil {
-		a.rateLimiter.Close()
 	}
 	if a.plugins != nil {
 		a.plugins.Close()
@@ -158,7 +181,7 @@ func (a *Auth) mergePluginHooks() {
 	// Merge per-event hooks (plugin hooks run after config hooks)
 	if pluginHooks.OnUserCreated != nil {
 		prev := a.config.Hooks.OnUserCreated
-		a.config.Hooks.OnUserCreated = func(ctx context.Context, user *User) error {
+		a.config.Hooks.OnUserCreated = func(ctx context.Context, user *models.User) error {
 			if prev != nil {
 				if err := prev(ctx, user); err != nil {
 					return err
@@ -170,7 +193,7 @@ func (a *Auth) mergePluginHooks() {
 
 	if pluginHooks.OnSignIn != nil {
 		prev := a.config.Hooks.OnSignIn
-		a.config.Hooks.OnSignIn = func(ctx context.Context, user *User, session *Session) error {
+		a.config.Hooks.OnSignIn = func(ctx context.Context, user *models.User, session *models.Session) error {
 			if prev != nil {
 				if err := prev(ctx, user, session); err != nil {
 					return err
@@ -182,7 +205,7 @@ func (a *Auth) mergePluginHooks() {
 
 	if pluginHooks.OnSignOut != nil {
 		prev := a.config.Hooks.OnSignOut
-		a.config.Hooks.OnSignOut = func(ctx context.Context, user *User, session *Session) error {
+		a.config.Hooks.OnSignOut = func(ctx context.Context, user *models.User, session *models.Session) error {
 			if prev != nil {
 				if err := prev(ctx, user, session); err != nil {
 					return err
@@ -233,7 +256,7 @@ type SignUpRequest struct {
 }
 
 // SignUp creates a new user with email/password authentication
-func (a *Auth) SignUp(ctx context.Context, req SignUpRequest, r *http.Request) (*User, *Session, error) {
+func (a *Auth) SignUp(ctx context.Context, req SignUpRequest, r *http.Request) (*models.User, *models.Session, error) {
 	// Validate password
 	if err := a.validatePassword(req.Password); err != nil {
 		return nil, nil, err
@@ -264,7 +287,7 @@ func (a *Auth) SignUp(ctx context.Context, req SignUpRequest, r *http.Request) (
 	now := time.Now()
 
 	// Create user
-	user := &User{
+	user := &models.User{
 		ID:            uuid.New().String(),
 		Email:         req.Email,
 		Name:          req.Name,
@@ -277,10 +300,10 @@ func (a *Auth) SignUp(ctx context.Context, req SignUpRequest, r *http.Request) (
 	}
 
 	// Create email account
-	account := &Account{
+	account := &models.Account{
 		ID:           uuid.New().String(),
 		UserID:       user.ID,
-		Provider:     ProviderEmail,
+		Provider:     models.ProviderEmail,
 		PasswordHash: &passwordHash,
 		CreatedAt:    now,
 		UpdatedAt:    now,
@@ -292,23 +315,23 @@ func (a *Auth) SignUp(ctx context.Context, req SignUpRequest, r *http.Request) (
 	}
 
 	// Fire hook
-	a.config.Hooks.fireUserCreated(ctx, a.config.Logger, user)
+	a.config.Hooks.FireUserCreated(ctx, a.config.Logger, user)
 
 	// Auto sign-in if enabled
-	var session *Session
+	var session *models.Session
 	if a.config.AutoSignIn {
 		session, err = a.createSession(ctx, user.ID, r)
 		if err != nil {
 			return nil, nil, err
 		}
-		a.config.Hooks.fireSignIn(ctx, a.config.Logger, user, session)
+		a.config.Hooks.FireSignIn(ctx, a.config.Logger, user, session)
 	}
 
 	return user, session, nil
 }
 
 // SignIn authenticates a user with email/password
-func (a *Auth) SignIn(ctx context.Context, email, password string, r *http.Request) (*User, *Session, error) {
+func (a *Auth) SignIn(ctx context.Context, email, password string, r *http.Request) (*models.User, *models.Session, error) {
 	// Run plugin validators before sign in
 	if a.plugins != nil {
 		if err := a.plugins.ValidateSignIn(ctx, email); err != nil {
@@ -328,7 +351,7 @@ func (a *Auth) SignIn(ctx context.Context, email, password string, r *http.Reque
 	}
 
 	// Get email account
-	account, err := a.store.GetAccountByUserIDAndProvider(ctx, user.ID, ProviderEmail)
+	account, err := a.store.GetAccountByUserIDAndProvider(ctx, user.ID, models.ProviderEmail)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -348,7 +371,7 @@ func (a *Auth) SignIn(ctx context.Context, email, password string, r *http.Reque
 	}
 
 	// Fire hook
-	a.config.Hooks.fireSignIn(ctx, a.config.Logger, user, session)
+	a.config.Hooks.FireSignIn(ctx, a.config.Logger, user, session)
 
 	return user, session, nil
 }
@@ -374,7 +397,7 @@ func (a *Auth) SignOut(ctx context.Context, sessionID string) error {
 
 	// Fire hook
 	if user != nil {
-		a.config.Hooks.fireSignOut(ctx, a.config.Logger, user, session)
+		a.config.Hooks.FireSignOut(ctx, a.config.Logger, user, session)
 	}
 
 	return nil
@@ -386,7 +409,7 @@ func (a *Auth) SignOutAll(ctx context.Context, userID string) error {
 }
 
 // GetUser retrieves a user by ID
-func (a *Auth) GetUser(ctx context.Context, userID string) (*User, error) {
+func (a *Auth) GetUser(ctx context.Context, userID string) (*models.User, error) {
 	user, err := a.store.GetUserByID(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -398,7 +421,7 @@ func (a *Auth) GetUser(ctx context.Context, userID string) (*User, error) {
 }
 
 // GetUserByEmail retrieves a user by email
-func (a *Auth) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+func (a *Auth) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	user, err := a.store.GetUserByEmail(ctx, email)
 	if err != nil {
 		return nil, err
@@ -421,7 +444,7 @@ func (a *Auth) RequestPasswordReset(ctx context.Context, email string) error {
 	}
 
 	// Delete any existing password reset tokens
-	_ = a.store.DeleteVerificationsByUserIDAndType(ctx, user.ID, VerificationTypePasswordReset)
+	_ = a.store.DeleteVerificationsByUserIDAndType(ctx, user.ID, models.VerificationTypePasswordReset)
 
 	// Create new token
 	rawToken, err := token.Generate()
@@ -432,11 +455,11 @@ func (a *Auth) RequestPasswordReset(ctx context.Context, email string) error {
 	tokenHash := a.tokenHasher.Hash(rawToken)
 	now := time.Now()
 
-	v := &Verification{
+	v := &models.Verification{
 		ID:        uuid.New().String(),
 		UserID:    user.ID,
 		TokenHash: tokenHash,
-		Type:      VerificationTypePasswordReset,
+		Type:      models.VerificationTypePasswordReset,
 		ExpiresAt: now.Add(a.config.PasswordResetExpiry),
 		CreatedAt: now,
 	}
@@ -446,7 +469,7 @@ func (a *Auth) RequestPasswordReset(ctx context.Context, email string) error {
 	}
 
 	// Fire hook with the raw token (for sending email)
-	a.config.Hooks.firePasswordResetRequested(ctx, a.config.Logger, user, rawToken)
+	a.config.Hooks.FirePasswordResetRequested(ctx, a.config.Logger, user, rawToken)
 
 	return nil
 }
@@ -466,7 +489,7 @@ func (a *Auth) ConfirmPasswordReset(ctx context.Context, rawToken, newPassword s
 	if verification == nil {
 		return ErrVerificationNotFound
 	}
-	if verification.Type != VerificationTypePasswordReset {
+	if verification.Type != models.VerificationTypePasswordReset {
 		return ErrVerificationNotFound
 	}
 	if verification.IsExpired() {
@@ -475,7 +498,7 @@ func (a *Auth) ConfirmPasswordReset(ctx context.Context, rawToken, newPassword s
 	}
 
 	// Get email account
-	account, err := a.store.GetAccountByUserIDAndProvider(ctx, verification.UserID, ProviderEmail)
+	account, err := a.store.GetAccountByUserIDAndProvider(ctx, verification.UserID, models.ProviderEmail)
 	if err != nil {
 		return err
 	}
@@ -505,7 +528,7 @@ func (a *Auth) ConfirmPasswordReset(ctx context.Context, rawToken, newPassword s
 	// Fire hook
 	user, _ := a.store.GetUserByID(ctx, verification.UserID)
 	if user != nil {
-		a.config.Hooks.firePasswordChanged(ctx, a.config.Logger, user)
+		a.config.Hooks.FirePasswordChanged(ctx, a.config.Logger, user)
 	}
 
 	return nil
@@ -518,7 +541,7 @@ func (a *Auth) ChangePassword(ctx context.Context, userID, oldPassword, newPassw
 	}
 
 	// Get email account
-	account, err := a.store.GetAccountByUserIDAndProvider(ctx, userID, ProviderEmail)
+	account, err := a.store.GetAccountByUserIDAndProvider(ctx, userID, models.ProviderEmail)
 	if err != nil {
 		return err
 	}
@@ -550,7 +573,7 @@ func (a *Auth) ChangePassword(ctx context.Context, userID, oldPassword, newPassw
 	// Fire hook
 	user, _ := a.store.GetUserByID(ctx, userID)
 	if user != nil {
-		a.config.Hooks.firePasswordChanged(ctx, a.config.Logger, user)
+		a.config.Hooks.FirePasswordChanged(ctx, a.config.Logger, user)
 	}
 
 	return nil
@@ -570,7 +593,7 @@ func (a *Auth) SendVerificationEmail(ctx context.Context, userID string) error {
 	}
 
 	// Delete any existing email verification tokens
-	_ = a.store.DeleteVerificationsByUserIDAndType(ctx, userID, VerificationTypeEmail)
+	_ = a.store.DeleteVerificationsByUserIDAndType(ctx, userID, models.VerificationTypeEmail)
 
 	// Create new token
 	rawToken, err := token.Generate()
@@ -581,11 +604,11 @@ func (a *Auth) SendVerificationEmail(ctx context.Context, userID string) error {
 	tokenHash := a.tokenHasher.Hash(rawToken)
 	now := time.Now()
 
-	v := &Verification{
+	v := &models.Verification{
 		ID:        uuid.New().String(),
 		UserID:    userID,
 		TokenHash: tokenHash,
-		Type:      VerificationTypeEmail,
+		Type:      models.VerificationTypeEmail,
 		ExpiresAt: now.Add(a.config.EmailVerificationExpiry),
 		CreatedAt: now,
 	}
@@ -595,7 +618,7 @@ func (a *Auth) SendVerificationEmail(ctx context.Context, userID string) error {
 	}
 
 	// Fire hook with the raw token (for sending email)
-	a.config.Hooks.fireEmailVerificationRequested(ctx, a.config.Logger, user, rawToken)
+	a.config.Hooks.FireEmailVerificationRequested(ctx, a.config.Logger, user, rawToken)
 
 	return nil
 }
@@ -611,7 +634,7 @@ func (a *Auth) VerifyEmail(ctx context.Context, rawToken string) error {
 	if verification == nil {
 		return ErrVerificationNotFound
 	}
-	if verification.Type != VerificationTypeEmail {
+	if verification.Type != models.VerificationTypeEmail {
 		return ErrVerificationNotFound
 	}
 	if verification.IsExpired() {
@@ -629,7 +652,7 @@ func (a *Auth) VerifyEmail(ctx context.Context, rawToken string) error {
 	// Fire hook
 	user, _ := a.store.GetUserByID(ctx, verification.UserID)
 	if user != nil {
-		a.config.Hooks.fireEmailVerified(ctx, a.config.Logger, user)
+		a.config.Hooks.FireEmailVerified(ctx, a.config.Logger, user)
 	}
 
 	return nil
@@ -684,6 +707,6 @@ func (a *Auth) Config() Config {
 }
 
 // Store returns the store interface
-func (a *Auth) Store() Store {
+func (a *Auth) Store() models.Store {
 	return a.store
 }

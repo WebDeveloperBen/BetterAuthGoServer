@@ -1,14 +1,13 @@
 package auth
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
@@ -23,12 +22,12 @@ func newMockAdminStore() *mockAdminStore {
 	}
 }
 
-func (m *mockAdminStore) ListUsers(ctx context.Context, opts ListUsersOptions) (*ListUsersResult, error) {
-	var users []*User
+func (m *mockAdminStore) ListUsers(ctx context.Context, opts models.ListUsersOptions) (*models.ListUsersResult, error) {
+	var users []*models.User
 	for _, u := range m.users {
 		users = append(users, u)
 	}
-	return &ListUsersResult{
+	return &models.ListUsersResult{
 		Users: users,
 		Total: int64(len(users)),
 	}, nil
@@ -90,7 +89,7 @@ func createAdminSession(t *testing.T, auth *Auth, store *mockAdminStore) string 
 	tokenHash := auth.tokenHasher.Hash(rawToken)
 
 	// Create an admin user
-	user := &User{
+	user := &models.User{
 		ID:            "admin-user-id",
 		Email:         "admin@example.com",
 		EmailVerified: true,
@@ -102,7 +101,7 @@ func createAdminSession(t *testing.T, auth *Auth, store *mockAdminStore) string 
 	}
 	store.users[user.ID] = user
 
-	session := &Session{
+	session := &models.Session{
 		ID:        "admin-session-id",
 		UserID:    user.ID,
 		TokenHash: tokenHash,
@@ -122,7 +121,7 @@ func createRegularUserSession(t *testing.T, auth *Auth, store *mockAdminStore) s
 	tokenHash := auth.tokenHasher.Hash(rawToken)
 
 	// Create a regular user
-	user := &User{
+	user := &models.User{
 		ID:            "regular-user-id",
 		Email:         "user@example.com",
 		EmailVerified: true,
@@ -134,7 +133,7 @@ func createRegularUserSession(t *testing.T, auth *Auth, store *mockAdminStore) s
 	}
 	store.users[user.ID] = user
 
-	session := &Session{
+	session := &models.Session{
 		ID:        "user-session-id",
 		UserID:    user.ID,
 		TokenHash: tokenHash,
@@ -221,225 +220,6 @@ func TestRequireAdmin_NoSession(t *testing.T) {
 	}
 }
 
-func TestHandleAdminListUsers(t *testing.T) {
-	auth, store := createAdminTestAuth(t)
-	defer auth.Close()
-
-	adminToken := createAdminSession(t, auth, store)
-
-	// Add some test users
-	store.users["user-1"] = &User{
-		ID:        "user-1",
-		Email:     "user1@example.com",
-		Name:      "User 1",
-		Role:      "user",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-	store.users["user-2"] = &User{
-		ID:        "user-2",
-		Email:     "user2@example.com",
-		Name:      "User 2",
-		Role:      "user",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	handler := auth.Handler()
-
-	req := httptest.NewRequest("GET", "/admin/users", nil)
-	req.AddCookie(&http.Cookie{Name: "session", Value: adminToken})
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("Status = %d, want %d", rec.Code, http.StatusOK)
-	}
-
-	var response AdminListUsersResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	// Should have at least 3 users (admin + 2 test users)
-	if len(response.Users) < 3 {
-		t.Errorf("Expected at least 3 users, got %d", len(response.Users))
-	}
-}
-
-func TestHandleAdminBanUser(t *testing.T) {
-	auth, store := createAdminTestAuth(t)
-	defer auth.Close()
-
-	adminToken := createAdminSession(t, auth, store)
-
-	// Create a user to ban
-	targetUser := &User{
-		ID:        "target-user-id",
-		Email:     "target@example.com",
-		Name:      "Target User",
-		Role:      "user",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-	store.users[targetUser.ID] = targetUser
-
-	handler := auth.Handler()
-
-	body := `{"reason": "Test ban reason"}`
-	req := httptest.NewRequest("POST", "/admin/users/target-user-id/ban", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "session", Value: adminToken})
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNoContent {
-		t.Errorf("Status = %d, want %d. Body: %s", rec.Code, http.StatusNoContent, rec.Body.String())
-	}
-
-	// Verify user is banned
-	if !store.users[targetUser.ID].Banned {
-		t.Error("User should be banned")
-	}
-}
-
-func TestHandleAdminUnbanUser(t *testing.T) {
-	auth, store := createAdminTestAuth(t)
-	defer auth.Close()
-
-	adminToken := createAdminSession(t, auth, store)
-
-	// Create a banned user
-	reason := "Previous ban"
-	now := time.Now()
-	targetUser := &User{
-		ID:        "target-user-id",
-		Email:     "target@example.com",
-		Name:      "Target User",
-		Role:      "user",
-		Banned:    true,
-		BannedAt:  &now,
-		BanReason: &reason,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-	store.users[targetUser.ID] = targetUser
-
-	handler := auth.Handler()
-
-	req := httptest.NewRequest("POST", "/admin/users/target-user-id/unban", nil)
-	req.AddCookie(&http.Cookie{Name: "session", Value: adminToken})
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNoContent {
-		t.Errorf("Status = %d, want %d. Body: %s", rec.Code, http.StatusNoContent, rec.Body.String())
-	}
-
-	// Verify user is unbanned
-	if store.users[targetUser.ID].Banned {
-		t.Error("User should be unbanned")
-	}
-}
-
-func TestHandleAdminSetRole(t *testing.T) {
-	auth, store := createAdminTestAuth(t)
-	defer auth.Close()
-
-	adminToken := createAdminSession(t, auth, store)
-
-	// Create a user
-	targetUser := &User{
-		ID:        "target-user-id",
-		Email:     "target@example.com",
-		Name:      "Target User",
-		Role:      "user",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-	store.users[targetUser.ID] = targetUser
-
-	handler := auth.Handler()
-
-	body := `{"role": "moderator"}`
-	req := httptest.NewRequest("POST", "/admin/users/target-user-id/role", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "session", Value: adminToken})
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNoContent {
-		t.Errorf("Status = %d, want %d. Body: %s", rec.Code, http.StatusNoContent, rec.Body.String())
-	}
-
-	// Verify role is updated
-	if store.users[targetUser.ID].Role != "moderator" {
-		t.Errorf("User role = %s, want moderator", store.users[targetUser.ID].Role)
-	}
-}
-
-func TestHandleGetProfile(t *testing.T) {
-	auth, store := createAdminTestAuth(t)
-	defer auth.Close()
-
-	userToken := createRegularUserSession(t, auth, store)
-
-	handler := auth.Handler()
-
-	req := httptest.NewRequest("GET", "/profile", nil)
-	req.AddCookie(&http.Cookie{Name: "session", Value: userToken})
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("Status = %d, want %d. Body: %s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	var response UserResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	if response.Email != "user@example.com" {
-		t.Errorf("Email = %s, want user@example.com", response.Email)
-	}
-}
-
-func TestHandleUpdateProfile(t *testing.T) {
-	auth, store := createAdminTestAuth(t)
-	defer auth.Close()
-
-	userToken := createRegularUserSession(t, auth, store)
-
-	handler := auth.Handler()
-
-	body := `{"name": "Updated Name"}`
-	req := httptest.NewRequest("PATCH", "/profile", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "session", Value: userToken})
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("Status = %d, want %d. Body: %s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	var response UserResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	if response.Name != "Updated Name" {
-		t.Errorf("Name = %s, want Updated Name", response.Name)
-	}
-}
-
 func TestBannedUserCannotAuthenticate(t *testing.T) {
 	auth, store := createAdminTestAuth(t)
 	defer auth.Close()
@@ -448,7 +228,7 @@ func TestBannedUserCannotAuthenticate(t *testing.T) {
 	rawToken, _ := token.Generate()
 	tokenHash := auth.tokenHasher.Hash(rawToken)
 
-	user := &User{
+	user := &models.User{
 		ID:        "banned-user-id",
 		Email:     "banned@example.com",
 		Name:      "Banned User",
@@ -459,7 +239,7 @@ func TestBannedUserCannotAuthenticate(t *testing.T) {
 	}
 	store.users[user.ID] = user
 
-	session := &Session{
+	session := &models.Session{
 		ID:        "banned-session-id",
 		UserID:    user.ID,
 		TokenHash: tokenHash,

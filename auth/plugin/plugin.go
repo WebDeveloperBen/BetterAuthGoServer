@@ -38,6 +38,11 @@ type Context struct {
 
 	// Secret is the auth secret (for token generation, etc.)
 	Secret string
+
+	// Auth provides access to core authentication operations.
+	// This allows plugins to perform user lookups, session validation, etc.
+	// May be nil during early initialization phases.
+	Auth AuthCore
 }
 
 // RoutesProvider is implemented by plugins that add HTTP routes
@@ -59,6 +64,9 @@ type Route struct {
 
 	// RequireAuth indicates if this route requires authentication
 	RequireAuth bool
+
+	// Middleware is optional route-specific middleware
+	Middleware []func(http.Handler) http.Handler
 }
 
 // MigrationsProvider is implemented by plugins that need database tables
@@ -92,7 +100,23 @@ type Hooks struct {
 // MiddlewareProvider is implemented by plugins that add middleware
 type MiddlewareProvider interface {
 	// Middleware returns middleware to apply to auth routes
-	Middleware() []func(http.Handler) http.Handler
+	Middleware() []Middleware
+}
+
+// Middleware represents a middleware handler with ordering priority.
+// Lower priority values run first (e.g., rate limiting at 10 runs before auth at 50).
+type Middleware struct {
+	// Priority determines execution order. Lower values run first.
+	// Suggested ranges:
+	//   0-20:  Rate limiting, request validation
+	//   20-40: Authentication, authorization
+	//   40-60: Request transformation
+	//   60-80: Logging, metrics
+	//   80+:   Cleanup, response transformation
+	Priority int
+
+	// Handler is the middleware function
+	Handler func(http.Handler) http.Handler
 }
 
 // ValidatorProvider is implemented by plugins that add custom validation

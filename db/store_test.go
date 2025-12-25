@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
 
 // TestUserOperations tests all user-related store operations
@@ -23,7 +23,7 @@ func TestUserOperations(t *testing.T) {
 	t.Run("CreateUser", func(t *testing.T) {
 		tdb.truncateTables(t)
 
-		user := &auth.User{
+		user := &models.User{
 			ID:            uuid.New().String(),
 			Email:         "test@example.com",
 			Name:          "Test User",
@@ -53,14 +53,14 @@ func TestUserOperations(t *testing.T) {
 	t.Run("CreateUser_DuplicateEmail", func(t *testing.T) {
 		tdb.truncateTables(t)
 
-		user1 := &auth.User{
+		user1 := &models.User{
 			ID:        uuid.New().String(),
 			Email:     "duplicate@example.com",
 			Name:      "User 1",
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
-		user2 := &auth.User{
+		user2 := &models.User{
 			ID:        uuid.New().String(),
 			Email:     "duplicate@example.com",
 			Name:      "User 2",
@@ -82,7 +82,7 @@ func TestUserOperations(t *testing.T) {
 	t.Run("GetUserByEmail", func(t *testing.T) {
 		tdb.truncateTables(t)
 
-		user := &auth.User{
+		user := &models.User{
 			ID:        uuid.New().String(),
 			Email:     "findme@example.com",
 			Name:      "Find Me",
@@ -118,7 +118,7 @@ func TestUserOperations(t *testing.T) {
 	t.Run("UpdateUser", func(t *testing.T) {
 		tdb.truncateTables(t)
 
-		user := &auth.User{
+		user := &models.User{
 			ID:        uuid.New().String(),
 			Email:     "update@example.com",
 			Name:      "Original Name",
@@ -144,7 +144,7 @@ func TestUserOperations(t *testing.T) {
 	t.Run("SetEmailVerified", func(t *testing.T) {
 		tdb.truncateTables(t)
 
-		user := &auth.User{
+		user := &models.User{
 			ID:            uuid.New().String(),
 			Email:         "verify@example.com",
 			Name:          "Verify Me",
@@ -168,7 +168,7 @@ func TestUserOperations(t *testing.T) {
 	t.Run("DeleteUser", func(t *testing.T) {
 		tdb.truncateTables(t)
 
-		user := &auth.User{
+		user := &models.User{
 			ID:        uuid.New().String(),
 			Email:     "delete@example.com",
 			Name:      "Delete Me",
@@ -201,8 +201,8 @@ func TestAccountOperations(t *testing.T) {
 	ctx := context.Background()
 
 	// Helper to create a user
-	createUser := func(t *testing.T) *auth.User {
-		user := &auth.User{
+	createUser := func(t *testing.T) *models.User {
+		user := &models.User{
 			ID:        uuid.New().String(),
 			Email:     uuid.New().String() + "@example.com",
 			Name:      "Test User",
@@ -220,10 +220,10 @@ func TestAccountOperations(t *testing.T) {
 		user := createUser(t)
 
 		passwordHash := "$argon2id$v=19$m=65536,t=3,p=4$..."
-		account := &auth.Account{
+		account := &models.Account{
 			ID:           uuid.New().String(),
 			UserID:       user.ID,
-			Provider:     auth.ProviderEmail,
+			Provider:     models.ProviderEmail,
 			PasswordHash: &passwordHash,
 			CreatedAt:    time.Now(),
 			UpdatedAt:    time.Now(),
@@ -241,8 +241,8 @@ func TestAccountOperations(t *testing.T) {
 		if got == nil {
 			t.Fatal("GetAccountByID() returned nil")
 		}
-		if got.Provider != auth.ProviderEmail {
-			t.Errorf("GetAccountByID().Provider = %v, want %v", got.Provider, auth.ProviderEmail)
+		if got.Provider != models.ProviderEmail {
+			t.Errorf("GetAccountByID().Provider = %v, want %v", got.Provider, models.ProviderEmail)
 		}
 	})
 
@@ -252,10 +252,10 @@ func TestAccountOperations(t *testing.T) {
 
 		providerID := "google-123456"
 		accessToken := "encrypted-access-token"
-		account := &auth.Account{
+		account := &models.Account{
 			ID:                uuid.New().String(),
 			UserID:            user.ID,
-			Provider:          auth.ProviderGoogle,
+			Provider:          models.ProviderGoogle,
 			ProviderAccountID: &providerID,
 			AccessToken:       &accessToken,
 			CreatedAt:         time.Now(),
@@ -267,7 +267,7 @@ func TestAccountOperations(t *testing.T) {
 			t.Fatalf("CreateAccount() error = %v", err)
 		}
 
-		got, err := tdb.Store.GetAccountByProvider(ctx, auth.ProviderGoogle, providerID)
+		got, err := tdb.Store.GetAccountByProvider(ctx, models.ProviderGoogle, providerID)
 		if err != nil {
 			t.Fatalf("GetAccountByProvider() error = %v", err)
 		}
@@ -281,17 +281,17 @@ func TestAccountOperations(t *testing.T) {
 		user := createUser(t)
 
 		passwordHash := "hash"
-		account := &auth.Account{
+		account := &models.Account{
 			ID:           uuid.New().String(),
 			UserID:       user.ID,
-			Provider:     auth.ProviderEmail,
+			Provider:     models.ProviderEmail,
 			PasswordHash: &passwordHash,
 			CreatedAt:    time.Now(),
 			UpdatedAt:    time.Now(),
 		}
 		_ = tdb.Store.CreateAccount(ctx, account)
 
-		got, err := tdb.Store.GetAccountByUserIDAndProvider(ctx, user.ID, auth.ProviderEmail)
+		got, err := tdb.Store.GetAccountByUserIDAndProvider(ctx, user.ID, models.ProviderEmail)
 		if err != nil {
 			t.Fatalf("GetAccountByUserIDAndProvider() error = %v", err)
 		}
@@ -308,8 +308,8 @@ func TestAccountOperations(t *testing.T) {
 		user := createUser(t)
 
 		// Create multiple accounts
-		for _, provider := range []auth.ProviderType{auth.ProviderEmail, auth.ProviderGoogle} {
-			account := &auth.Account{
+		for _, provider := range []models.ProviderType{models.ProviderEmail, models.ProviderGoogle} {
+			account := &models.Account{
 				ID:        uuid.New().String(),
 				UserID:    user.ID,
 				Provider:  provider,
@@ -332,10 +332,10 @@ func TestAccountOperations(t *testing.T) {
 		tdb.truncateTables(t)
 		user := createUser(t)
 
-		account := &auth.Account{
+		account := &models.Account{
 			ID:        uuid.New().String(),
 			UserID:    user.ID,
-			Provider:  auth.ProviderGoogle,
+			Provider:  models.ProviderGoogle,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
@@ -359,10 +359,10 @@ func TestAccountOperations(t *testing.T) {
 		tdb.truncateTables(t)
 		user := createUser(t)
 
-		account := &auth.Account{
+		account := &models.Account{
 			ID:        uuid.New().String(),
 			UserID:    user.ID,
-			Provider:  auth.ProviderEmail,
+			Provider:  models.ProviderEmail,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
@@ -385,10 +385,10 @@ func TestAccountOperations(t *testing.T) {
 
 		// Create multiple accounts
 		for range 3 {
-			account := &auth.Account{
+			account := &models.Account{
 				ID:        uuid.New().String(),
 				UserID:    user.ID,
-				Provider:  auth.ProviderEmail,
+				Provider:  models.ProviderEmail,
 				CreatedAt: time.Now(),
 				UpdatedAt: time.Now(),
 			}
@@ -418,8 +418,8 @@ func TestSessionOperations(t *testing.T) {
 
 	ctx := context.Background()
 
-	createUser := func(t *testing.T) *auth.User {
-		user := &auth.User{
+	createUser := func(t *testing.T) *models.User {
+		user := &models.User{
 			ID:        uuid.New().String(),
 			Email:     uuid.New().String() + "@example.com",
 			Name:      "Test User",
@@ -438,7 +438,7 @@ func TestSessionOperations(t *testing.T) {
 
 		ipAddr := "192.168.1.1"
 		userAgent := "Mozilla/5.0"
-		session := &auth.Session{
+		session := &models.Session{
 			ID:        uuid.New().String(),
 			UserID:    user.ID,
 			TokenHash: "hash-" + uuid.New().String(),
@@ -471,7 +471,7 @@ func TestSessionOperations(t *testing.T) {
 		user := createUser(t)
 
 		tokenHash := "unique-token-hash-" + uuid.New().String()
-		session := &auth.Session{
+		session := &models.Session{
 			ID:        uuid.New().String(),
 			UserID:    user.ID,
 			TokenHash: tokenHash,
@@ -499,7 +499,7 @@ func TestSessionOperations(t *testing.T) {
 
 		// Create multiple sessions
 		for range 3 {
-			session := &auth.Session{
+			session := &models.Session{
 				ID:        uuid.New().String(),
 				UserID:    user.ID,
 				TokenHash: "hash-" + uuid.New().String(),
@@ -524,7 +524,7 @@ func TestSessionOperations(t *testing.T) {
 		user := createUser(t)
 
 		originalTime := time.Now().Add(-1 * time.Hour)
-		session := &auth.Session{
+		session := &models.Session{
 			ID:        uuid.New().String(),
 			UserID:    user.ID,
 			TokenHash: "hash-" + uuid.New().String(),
@@ -549,7 +549,7 @@ func TestSessionOperations(t *testing.T) {
 		tdb.truncateTables(t)
 		user := createUser(t)
 
-		session := &auth.Session{
+		session := &models.Session{
 			ID:        uuid.New().String(),
 			UserID:    user.ID,
 			TokenHash: "hash-" + uuid.New().String(),
@@ -575,7 +575,7 @@ func TestSessionOperations(t *testing.T) {
 		user := createUser(t)
 
 		for range 3 {
-			session := &auth.Session{
+			session := &models.Session{
 				ID:        uuid.New().String(),
 				UserID:    user.ID,
 				TokenHash: "hash-" + uuid.New().String(),
@@ -602,7 +602,7 @@ func TestSessionOperations(t *testing.T) {
 		user := createUser(t)
 
 		// Create expired session
-		expiredSession := &auth.Session{
+		expiredSession := &models.Session{
 			ID:        uuid.New().String(),
 			UserID:    user.ID,
 			TokenHash: "expired-" + uuid.New().String(),
@@ -613,7 +613,7 @@ func TestSessionOperations(t *testing.T) {
 		_ = tdb.Store.CreateSession(ctx, expiredSession)
 
 		// Create valid session
-		validSession := &auth.Session{
+		validSession := &models.Session{
 			ID:        uuid.New().String(),
 			UserID:    user.ID,
 			TokenHash: "valid-" + uuid.New().String(),
@@ -653,8 +653,8 @@ func TestVerificationOperations(t *testing.T) {
 
 	ctx := context.Background()
 
-	createUser := func(t *testing.T) *auth.User {
-		user := &auth.User{
+	createUser := func(t *testing.T) *models.User {
+		user := &models.User{
 			ID:        uuid.New().String(),
 			Email:     uuid.New().String() + "@example.com",
 			Name:      "Test User",
@@ -671,11 +671,11 @@ func TestVerificationOperations(t *testing.T) {
 		tdb.truncateTables(t)
 		user := createUser(t)
 
-		verification := &auth.Verification{
+		verification := &models.Verification{
 			ID:        uuid.New().String(),
 			UserID:    user.ID,
 			TokenHash: "verification-hash-" + uuid.New().String(),
-			Type:      auth.VerificationTypeEmail,
+			Type:      models.VerificationTypeEmail,
 			ExpiresAt: time.Now().Add(24 * time.Hour),
 			CreatedAt: time.Now(),
 		}
@@ -691,11 +691,11 @@ func TestVerificationOperations(t *testing.T) {
 		user := createUser(t)
 
 		tokenHash := "unique-verification-hash-" + uuid.New().String()
-		verification := &auth.Verification{
+		verification := &models.Verification{
 			ID:        uuid.New().String(),
 			UserID:    user.ID,
 			TokenHash: tokenHash,
-			Type:      auth.VerificationTypePasswordReset,
+			Type:      models.VerificationTypePasswordReset,
 			ExpiresAt: time.Now().Add(1 * time.Hour),
 			CreatedAt: time.Now(),
 		}
@@ -708,8 +708,8 @@ func TestVerificationOperations(t *testing.T) {
 		if got == nil {
 			t.Fatal("GetVerificationByTokenHash() returned nil")
 		}
-		if got.Type != auth.VerificationTypePasswordReset {
-			t.Errorf("GetVerificationByTokenHash().Type = %v, want %v", got.Type, auth.VerificationTypePasswordReset)
+		if got.Type != models.VerificationTypePasswordReset {
+			t.Errorf("GetVerificationByTokenHash().Type = %v, want %v", got.Type, models.VerificationTypePasswordReset)
 		}
 	})
 
@@ -718,11 +718,11 @@ func TestVerificationOperations(t *testing.T) {
 		user := createUser(t)
 
 		tokenHash := "delete-me-" + uuid.New().String()
-		verification := &auth.Verification{
+		verification := &models.Verification{
 			ID:        uuid.New().String(),
 			UserID:    user.ID,
 			TokenHash: tokenHash,
-			Type:      auth.VerificationTypeEmail,
+			Type:      models.VerificationTypeEmail,
 			ExpiresAt: time.Now().Add(24 * time.Hour),
 			CreatedAt: time.Now(),
 		}
@@ -745,11 +745,11 @@ func TestVerificationOperations(t *testing.T) {
 
 		// Create multiple email verifications
 		for range 3 {
-			verification := &auth.Verification{
+			verification := &models.Verification{
 				ID:        uuid.New().String(),
 				UserID:    user.ID,
 				TokenHash: "email-hash-" + uuid.New().String(),
-				Type:      auth.VerificationTypeEmail,
+				Type:      models.VerificationTypeEmail,
 				ExpiresAt: time.Now().Add(24 * time.Hour),
 				CreatedAt: time.Now(),
 			}
@@ -758,18 +758,18 @@ func TestVerificationOperations(t *testing.T) {
 
 		// Create a password reset verification
 		pwResetHash := "pw-reset-hash-" + uuid.New().String()
-		pwVerification := &auth.Verification{
+		pwVerification := &models.Verification{
 			ID:        uuid.New().String(),
 			UserID:    user.ID,
 			TokenHash: pwResetHash,
-			Type:      auth.VerificationTypePasswordReset,
+			Type:      models.VerificationTypePasswordReset,
 			ExpiresAt: time.Now().Add(1 * time.Hour),
 			CreatedAt: time.Now(),
 		}
 		_ = tdb.Store.CreateVerification(ctx, pwVerification)
 
 		// Delete only email verifications
-		err := tdb.Store.DeleteVerificationsByUserIDAndType(ctx, user.ID, auth.VerificationTypeEmail)
+		err := tdb.Store.DeleteVerificationsByUserIDAndType(ctx, user.ID, models.VerificationTypeEmail)
 		if err != nil {
 			t.Fatalf("DeleteVerificationsByUserIDAndType() error = %v", err)
 		}
@@ -787,11 +787,11 @@ func TestVerificationOperations(t *testing.T) {
 
 		// Create expired verification
 		expiredHash := "expired-" + uuid.New().String()
-		expiredV := &auth.Verification{
+		expiredV := &models.Verification{
 			ID:        uuid.New().String(),
 			UserID:    user.ID,
 			TokenHash: expiredHash,
-			Type:      auth.VerificationTypeEmail,
+			Type:      models.VerificationTypeEmail,
 			ExpiresAt: time.Now().Add(-1 * time.Hour), // Expired
 			CreatedAt: time.Now().Add(-2 * time.Hour),
 		}
@@ -799,11 +799,11 @@ func TestVerificationOperations(t *testing.T) {
 
 		// Create valid verification
 		validHash := "valid-" + uuid.New().String()
-		validV := &auth.Verification{
+		validV := &models.Verification{
 			ID:        uuid.New().String(),
 			UserID:    user.ID,
 			TokenHash: validHash,
-			Type:      auth.VerificationTypeEmail,
+			Type:      models.VerificationTypeEmail,
 			ExpiresAt: time.Now().Add(24 * time.Hour), // Not expired
 			CreatedAt: time.Now(),
 		}
@@ -844,7 +844,7 @@ func TestOAuthStateOperations(t *testing.T) {
 
 		verifier := "pkce-verifier"
 		redirectTo := "/dashboard"
-		state := &auth.OAuthState{
+		state := &models.OAuthState{
 			State:      uuid.New().String(),
 			Provider:   "google",
 			Verifier:   &verifier,
@@ -864,7 +864,7 @@ func TestOAuthStateOperations(t *testing.T) {
 
 		stateValue := uuid.New().String()
 		verifier := "pkce-verifier"
-		state := &auth.OAuthState{
+		state := &models.OAuthState{
 			State:     stateValue,
 			Provider:  "github",
 			Verifier:  &verifier,
@@ -904,7 +904,7 @@ func TestOAuthStateOperations(t *testing.T) {
 		tdb.truncateTables(t)
 
 		stateValue := uuid.New().String()
-		state := &auth.OAuthState{
+		state := &models.OAuthState{
 			State:     stateValue,
 			Provider:  "discord",
 			CreatedAt: time.Now(),
@@ -928,7 +928,7 @@ func TestOAuthStateOperations(t *testing.T) {
 
 		// Create expired state
 		expiredState := uuid.New().String()
-		expired := &auth.OAuthState{
+		expired := &models.OAuthState{
 			State:     expiredState,
 			Provider:  "google",
 			CreatedAt: time.Now().Add(-20 * time.Minute),
@@ -938,7 +938,7 @@ func TestOAuthStateOperations(t *testing.T) {
 
 		// Create valid state
 		validState := uuid.New().String()
-		valid := &auth.OAuthState{
+		valid := &models.OAuthState{
 			State:     validState,
 			Provider:  "google",
 			CreatedAt: time.Now(),

@@ -10,11 +10,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
 
 func TestToUserResponse(t *testing.T) {
 	image := "https://example.com/avatar.jpg"
-	user := &User{
+	user := &models.User{
 		ID:            "user-123",
 		Email:         "test@example.com",
 		EmailVerified: true,
@@ -42,7 +44,7 @@ func TestToUserResponse(t *testing.T) {
 }
 
 func TestToUserResponse_NilImage(t *testing.T) {
-	user := &User{
+	user := &models.User{
 		ID:            "user-123",
 		Email:         "test@example.com",
 		EmailVerified: false,
@@ -59,7 +61,7 @@ func TestToUserResponse_NilImage(t *testing.T) {
 
 func TestToSessionResponse(t *testing.T) {
 	expiresAt := time.Now().Add(24 * time.Hour)
-	session := &Session{
+	session := &models.Session{
 		ID:        "session-123",
 		ExpiresAt: expiresAt,
 	}
@@ -186,7 +188,7 @@ func TestSetSessionCookie(t *testing.T) {
 	}
 
 	expiresAt := time.Now().Add(24 * time.Hour)
-	session := &Session{
+	session := &models.Session{
 		ID:        "session-123",
 		RawToken:  "raw-token-value",
 		ExpiresAt: expiresAt,
@@ -232,7 +234,7 @@ func TestSetSessionCookie_HTTP(t *testing.T) {
 		},
 	}
 
-	session := &Session{
+	session := &models.Session{
 		ID:        "session-123",
 		RawToken:  "raw-token-value",
 		ExpiresAt: time.Now().Add(24 * time.Hour),
@@ -358,9 +360,9 @@ func TestGetSessionToken_InvalidBearerFormat(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		auth  string
-		want  string
+		name string
+		auth string
+		want string
 	}{
 		{"no Bearer prefix", "token-value", ""},
 		{"Basic auth", "Basic dXNlcjpwYXNz", ""},

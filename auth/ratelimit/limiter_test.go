@@ -1,4 +1,4 @@
-package auth
+package ratelimit
 
 import (
 	"net/http"
@@ -8,28 +8,54 @@ import (
 	"time"
 )
 
-func TestNewRateLimiter(t *testing.T) {
-	config := RateLimitConfig{
-		Window:      time.Minute,
-		MaxRequests: 10,
-	}
-
-	limiter := NewRateLimiter(config)
+func TestNew(t *testing.T) {
+	limiter := New()
 	defer limiter.Close()
 
 	if limiter == nil {
-		t.Fatal("NewRateLimiter returned nil")
+		t.Fatal("New returned nil")
 	}
-	if limiter.config.Window != time.Minute {
-		t.Errorf("Window = %v, want %v", limiter.config.Window, time.Minute)
+
+	cfg := limiter.Config()
+	if cfg.Window != time.Minute {
+		t.Errorf("Window = %v, want %v", cfg.Window, time.Minute)
 	}
-	if limiter.config.MaxRequests != 10 {
-		t.Errorf("MaxRequests = %d, want 10", limiter.config.MaxRequests)
+	if cfg.MaxRequests != 100 {
+		t.Errorf("MaxRequests = %d, want 100", cfg.MaxRequests)
 	}
 }
 
-func TestDefaultRateLimitConfig(t *testing.T) {
-	config := DefaultRateLimitConfig()
+func TestNew_WithOptions(t *testing.T) {
+	limiter := New(
+		WithWindow(5*time.Minute),
+		WithMaxRequests(50),
+	)
+	defer limiter.Close()
+
+	cfg := limiter.Config()
+	if cfg.Window != 5*time.Minute {
+		t.Errorf("Window = %v, want %v", cfg.Window, 5*time.Minute)
+	}
+	if cfg.MaxRequests != 50 {
+		t.Errorf("MaxRequests = %d, want 50", cfg.MaxRequests)
+	}
+}
+
+func TestWithLimit(t *testing.T) {
+	limiter := New(WithLimit(25, 2*time.Minute))
+	defer limiter.Close()
+
+	cfg := limiter.Config()
+	if cfg.Window != 2*time.Minute {
+		t.Errorf("Window = %v, want %v", cfg.Window, 2*time.Minute)
+	}
+	if cfg.MaxRequests != 25 {
+		t.Errorf("MaxRequests = %d, want 25", cfg.MaxRequests)
+	}
+}
+
+func TestDefaultConfig(t *testing.T) {
+	config := DefaultConfig()
 
 	if config.Window != time.Minute {
 		t.Errorf("Window = %v, want %v", config.Window, time.Minute)
@@ -37,15 +63,24 @@ func TestDefaultRateLimitConfig(t *testing.T) {
 	if config.MaxRequests != 100 {
 		t.Errorf("MaxRequests = %d, want 100", config.MaxRequests)
 	}
+	// KeyFunc is nil by default; New() sets it based on TrustedProxies
+	if config.KeyFunc != nil {
+		t.Error("KeyFunc should be nil in default config (New() sets it)")
+	}
 }
 
-func TestRateLimiter_Allow(t *testing.T) {
-	config := RateLimitConfig{
-		Window:      time.Minute,
-		MaxRequests: 5,
-	}
+func TestNew_DefaultKeyFunc(t *testing.T) {
+	// Without TrustedProxies, should use RemoteAddrKeyFunc
+	limiter := New()
+	defer limiter.Close()
 
-	limiter := NewRateLimiter(config)
+	if limiter.Config().KeyFunc == nil {
+		t.Error("KeyFunc should be set after New()")
+	}
+}
+
+func TestLimiter_Allow(t *testing.T) {
+	limiter := New(WithLimit(5, time.Minute))
 	defer limiter.Close()
 
 	key := "test-key"
@@ -68,13 +103,8 @@ func TestRateLimiter_Allow(t *testing.T) {
 	}
 }
 
-func TestRateLimiter_AllowN(t *testing.T) {
-	config := RateLimitConfig{
-		Window:      time.Minute,
-		MaxRequests: 10,
-	}
-
-	limiter := NewRateLimiter(config)
+func TestLimiter_AllowN(t *testing.T) {
+	limiter := New(WithLimit(10, time.Minute))
 	defer limiter.Close()
 
 	key := "test-key"
@@ -95,13 +125,8 @@ func TestRateLimiter_AllowN(t *testing.T) {
 	}
 }
 
-func TestRateLimiter_Remaining(t *testing.T) {
-	config := RateLimitConfig{
-		Window:      time.Minute,
-		MaxRequests: 10,
-	}
-
-	limiter := NewRateLimiter(config)
+func TestLimiter_Remaining(t *testing.T) {
+	limiter := New(WithLimit(10, time.Minute))
 	defer limiter.Close()
 
 	key := "test-key"
@@ -132,13 +157,8 @@ func TestRateLimiter_Remaining(t *testing.T) {
 	}
 }
 
-func TestRateLimiter_Reset(t *testing.T) {
-	config := RateLimitConfig{
-		Window:      time.Minute,
-		MaxRequests: 10,
-	}
-
-	limiter := NewRateLimiter(config)
+func TestLimiter_Reset(t *testing.T) {
+	limiter := New(WithLimit(10, time.Minute))
 	defer limiter.Close()
 
 	key := "test-key"
@@ -162,13 +182,8 @@ func TestRateLimiter_Reset(t *testing.T) {
 	}
 }
 
-func TestRateLimiter_WindowExpiry(t *testing.T) {
-	config := RateLimitConfig{
-		Window:      50 * time.Millisecond, // Short window for testing
-		MaxRequests: 2,
-	}
-
-	limiter := NewRateLimiter(config)
+func TestLimiter_WindowExpiry(t *testing.T) {
+	limiter := New(WithLimit(2, 50*time.Millisecond))
 	defer limiter.Close()
 
 	key := "test-key"
@@ -189,13 +204,8 @@ func TestRateLimiter_WindowExpiry(t *testing.T) {
 	}
 }
 
-func TestRateLimiter_Concurrent(t *testing.T) {
-	config := RateLimitConfig{
-		Window:      time.Minute,
-		MaxRequests: 100,
-	}
-
-	limiter := NewRateLimiter(config)
+func TestLimiter_Concurrent(t *testing.T) {
+	limiter := New(WithLimit(100, time.Minute))
 	defer limiter.Close()
 
 	key := "concurrent-key"
@@ -235,24 +245,15 @@ func TestRateLimiter_Concurrent(t *testing.T) {
 	}
 }
 
-func TestRateLimitMiddleware(t *testing.T) {
-	config := RateLimitConfig{
-		Window:      time.Minute,
-		MaxRequests: 3,
-	}
-
-	limiter := NewRateLimiter(config)
+func TestLimiter_Middleware(t *testing.T) {
+	limiter := New(WithLimit(3, time.Minute))
 	defer limiter.Close()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	middleware := limiter.RateLimitMiddleware(func(r *http.Request) string {
-		return "test-key"
-	})
-
-	wrapped := middleware(handler)
+	wrapped := limiter.Middleware()(handler)
 
 	// First 3 requests should succeed
 	for i := 0; i < 3; i++ {
@@ -356,14 +357,11 @@ func TestPathIPKeyFunc(t *testing.T) {
 	}
 }
 
-func TestRateLimiter_Close(t *testing.T) {
-	config := RateLimitConfig{
-		Window:      time.Minute,
-		MaxRequests: 10,
+func TestLimiter_Close(t *testing.T) {
+	limiter := New()
+
+	// Close should not panic or error
+	if err := limiter.Close(); err != nil {
+		t.Errorf("Close() error = %v", err)
 	}
-
-	limiter := NewRateLimiter(config)
-
-	// Close should not panic
-	limiter.Close()
 }

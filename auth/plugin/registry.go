@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 )
 
 // Registry manages plugin lifecycle and aggregates plugin capabilities
 type Registry struct {
 	plugins    []Plugin
 	routes     []Route
-	middleware []func(http.Handler) http.Handler
+	middleware []Middleware
 	hooks      Hooks
 	ctx        Context
 	logger     *slog.Logger
@@ -29,10 +30,42 @@ func NewRegistry(logger *slog.Logger) *Registry {
 	}
 }
 
-// Register adds a plugin to the registry
-// The plugin is not initialized until Init is called
+// Register adds a plugin to the registry.
+// The plugin is not initialized until Init is called.
+// Use this before calling Init().
 func (r *Registry) Register(p Plugin) {
 	r.plugins = append(r.plugins, p)
+}
+
+// AddPlugin adds and immediately initializes a plugin.
+// Use this after Init() has been called to add plugins dynamically.
+// Returns an error if the plugin fails to initialize.
+func (r *Registry) AddPlugin(p Plugin) error {
+	r.logger.Info("adding plugin", "name", p.Name())
+
+	if err := p.Init(r.ctx); err != nil {
+		return fmt.Errorf("failed to initialize plugin %s: %w", p.Name(), err)
+	}
+
+	r.plugins = append(r.plugins, p)
+
+	// Collect routes from plugin
+	if rp, ok := p.(RoutesProvider); ok {
+		r.routes = append(r.routes, rp.Routes()...)
+	}
+
+	// Collect middleware from plugin
+	if mp, ok := p.(MiddlewareProvider); ok {
+		r.middleware = append(r.middleware, mp.Middleware()...)
+	}
+
+	// Merge hooks from plugin
+	if hp, ok := p.(HooksProvider); ok {
+		r.mergeHooks(hp.Hooks())
+	}
+
+	r.logger.Info("plugin added", "name", p.Name())
+	return nil
 }
 
 // Init initializes all registered plugins with the provided context
@@ -86,9 +119,38 @@ func (r *Registry) Routes() []Route {
 	return r.routes
 }
 
-// Middleware returns all middleware from registered plugins
-func (r *Registry) Middleware() []func(http.Handler) http.Handler {
-	return r.middleware
+// Middleware returns all middleware from registered plugins, sorted by priority.
+// Lower priority values run first.
+func (r *Registry) Middleware() []Middleware {
+	// Return a sorted copy to avoid mutating the original
+	sorted := make([]Middleware, len(r.middleware))
+	copy(sorted, r.middleware)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Priority < sorted[j].Priority
+	})
+	return sorted
+}
+
+// MiddlewareHandlers returns just the handler functions, sorted by priority.
+// This is a convenience method for applying middleware to handlers.
+func (r *Registry) MiddlewareHandlers() []func(http.Handler) http.Handler {
+	sorted := r.Middleware()
+	handlers := make([]func(http.Handler) http.Handler, len(sorted))
+	for i, m := range sorted {
+		handlers[i] = m.Handler
+	}
+	return handlers
+}
+
+// ChainMiddleware applies all registered middleware to a handler.
+// Middleware is applied in priority order (lowest first).
+func (r *Registry) ChainMiddleware(handler http.Handler) http.Handler {
+	handlers := r.MiddlewareHandlers()
+	// Apply in reverse order so lowest priority wraps outermost
+	for i := len(handlers) - 1; i >= 0; i-- {
+		handler = handlers[i](handler)
+	}
+	return handler
 }
 
 // Hooks returns the merged hooks from all plugins

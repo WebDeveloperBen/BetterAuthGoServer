@@ -7,47 +7,48 @@ import (
 	"testing"
 	"time"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
 // mockStoreForMiddleware is a minimal mock store for middleware tests
 type mockStoreForMiddleware struct {
-	sessions map[string]*Session
-	users    map[string]*User
+	sessions map[string]*models.Session
+	users    map[string]*models.User
 }
 
 func newMockStoreForMiddleware() *mockStoreForMiddleware {
 	return &mockStoreForMiddleware{
-		sessions: make(map[string]*Session),
-		users:    make(map[string]*User),
+		sessions: make(map[string]*models.Session),
+		users:    make(map[string]*models.User),
 	}
 }
 
-func (m *mockStoreForMiddleware) CreateUser(ctx context.Context, user *User) error {
+func (m *mockStoreForMiddleware) CreateUser(ctx context.Context, user *models.User) error {
 	m.users[user.ID] = user
 	return nil
 }
-func (m *mockStoreForMiddleware) GetUserByID(ctx context.Context, id string) (*User, error) {
+func (m *mockStoreForMiddleware) GetUserByID(ctx context.Context, id string) (*models.User, error) {
 	if user, ok := m.users[id]; ok {
 		return user, nil
 	}
 	return nil, nil
 }
-func (m *mockStoreForMiddleware) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+func (m *mockStoreForMiddleware) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	return nil, nil
 }
-func (m *mockStoreForMiddleware) UpdateUser(ctx context.Context, user *User) error { return nil }
-func (m *mockStoreForMiddleware) DeleteUser(ctx context.Context, id string) error  { return nil }
+func (m *mockStoreForMiddleware) UpdateUser(ctx context.Context, user *models.User) error { return nil }
+func (m *mockStoreForMiddleware) DeleteUser(ctx context.Context, id string) error         { return nil }
 func (m *mockStoreForMiddleware) SetEmailVerified(ctx context.Context, userID string, v bool) error {
 	return nil
 }
 
-func (m *mockStoreForMiddleware) CreateSession(ctx context.Context, session *Session) error {
+func (m *mockStoreForMiddleware) CreateSession(ctx context.Context, session *models.Session) error {
 	m.sessions[session.TokenHash] = session
 	return nil
 }
 
-func (m *mockStoreForMiddleware) GetSessionByID(ctx context.Context, id string) (*Session, error) {
+func (m *mockStoreForMiddleware) GetSessionByID(ctx context.Context, id string) (*models.Session, error) {
 	for _, s := range m.sessions {
 		if s.ID == id {
 			return s, nil
@@ -56,11 +57,11 @@ func (m *mockStoreForMiddleware) GetSessionByID(ctx context.Context, id string) 
 	return nil, nil
 }
 
-func (m *mockStoreForMiddleware) GetSessionByTokenHash(ctx context.Context, tokenHash string) (*Session, error) {
+func (m *mockStoreForMiddleware) GetSessionByTokenHash(ctx context.Context, tokenHash string) (*models.Session, error) {
 	return m.sessions[tokenHash], nil
 }
 
-func (m *mockStoreForMiddleware) ListSessionsByUserID(ctx context.Context, userID string) ([]*Session, error) {
+func (m *mockStoreForMiddleware) ListSessionsByUserID(ctx context.Context, userID string) ([]*models.Session, error) {
 	return nil, nil
 }
 
@@ -74,22 +75,22 @@ func (m *mockStoreForMiddleware) DeleteSessionsByUserID(ctx context.Context, use
 }
 func (m *mockStoreForMiddleware) DeleteExpiredSessions(ctx context.Context) error { return nil }
 
-func (m *mockStoreForMiddleware) CreateAccount(ctx context.Context, account *Account) error {
+func (m *mockStoreForMiddleware) CreateAccount(ctx context.Context, account *models.Account) error {
 	return nil
 }
-func (m *mockStoreForMiddleware) GetAccountByID(ctx context.Context, id string) (*Account, error) {
+func (m *mockStoreForMiddleware) GetAccountByID(ctx context.Context, id string) (*models.Account, error) {
 	return nil, nil
 }
-func (m *mockStoreForMiddleware) GetAccountByUserIDAndProvider(ctx context.Context, userID string, provider ProviderType) (*Account, error) {
+func (m *mockStoreForMiddleware) GetAccountByUserIDAndProvider(ctx context.Context, userID string, provider models.ProviderType) (*models.Account, error) {
 	return nil, nil
 }
-func (m *mockStoreForMiddleware) GetAccountByProvider(ctx context.Context, provider ProviderType, providerAccountID string) (*Account, error) {
+func (m *mockStoreForMiddleware) GetAccountByProvider(ctx context.Context, provider models.ProviderType, providerAccountID string) (*models.Account, error) {
 	return nil, nil
 }
-func (m *mockStoreForMiddleware) ListAccountsByUserID(ctx context.Context, userID string) ([]*Account, error) {
+func (m *mockStoreForMiddleware) ListAccountsByUserID(ctx context.Context, userID string) ([]*models.Account, error) {
 	return nil, nil
 }
-func (m *mockStoreForMiddleware) UpdateAccount(ctx context.Context, account *Account) error {
+func (m *mockStoreForMiddleware) UpdateAccount(ctx context.Context, account *models.Account) error {
 	return nil
 }
 func (m *mockStoreForMiddleware) DeleteAccount(ctx context.Context, id string) error { return nil }
@@ -97,24 +98,24 @@ func (m *mockStoreForMiddleware) DeleteAccountsByUserID(ctx context.Context, use
 	return nil
 }
 
-func (m *mockStoreForMiddleware) CreateVerification(ctx context.Context, v *Verification) error {
+func (m *mockStoreForMiddleware) CreateVerification(ctx context.Context, v *models.Verification) error {
 	return nil
 }
-func (m *mockStoreForMiddleware) GetVerificationByTokenHash(ctx context.Context, tokenHash string) (*Verification, error) {
+func (m *mockStoreForMiddleware) GetVerificationByTokenHash(ctx context.Context, tokenHash string) (*models.Verification, error) {
 	return nil, nil
 }
 func (m *mockStoreForMiddleware) DeleteVerification(ctx context.Context, id string) error {
 	return nil
 }
-func (m *mockStoreForMiddleware) DeleteVerificationsByUserIDAndType(ctx context.Context, userID string, vType VerificationType) error {
+func (m *mockStoreForMiddleware) DeleteVerificationsByUserIDAndType(ctx context.Context, userID string, vType models.VerificationType) error {
 	return nil
 }
 func (m *mockStoreForMiddleware) DeleteExpiredVerifications(ctx context.Context) error { return nil }
 
-func (m *mockStoreForMiddleware) CreateOAuthState(ctx context.Context, state *OAuthState) error {
+func (m *mockStoreForMiddleware) CreateOAuthState(ctx context.Context, state *models.OAuthState) error {
 	return nil
 }
-func (m *mockStoreForMiddleware) GetOAuthState(ctx context.Context, stateValue string) (*OAuthState, error) {
+func (m *mockStoreForMiddleware) GetOAuthState(ctx context.Context, stateValue string) (*models.OAuthState, error) {
 	return nil, nil
 }
 func (m *mockStoreForMiddleware) DeleteOAuthState(ctx context.Context, stateValue string) error {
@@ -140,14 +141,14 @@ func createTestAuth(t *testing.T) (*Auth, *mockStoreForMiddleware) {
 	return auth, store
 }
 
-func createValidSession(t *testing.T, auth *Auth, store *mockStoreForMiddleware) (string, *Session) {
+func createValidSession(t *testing.T, auth *Auth, store *mockStoreForMiddleware) (string, *models.Session) {
 	t.Helper()
 
 	rawToken, _ := token.Generate()
 	tokenHash := auth.tokenHasher.Hash(rawToken)
 
 	// Create a user first
-	user := &User{
+	user := &models.User{
 		ID:            "test-user-id",
 		Email:         "test@example.com",
 		EmailVerified: true,
@@ -159,7 +160,7 @@ func createValidSession(t *testing.T, auth *Auth, store *mockStoreForMiddleware)
 	}
 	store.users[user.ID] = user
 
-	session := &Session{
+	session := &models.Session{
 		ID:        "test-session-id",
 		UserID:    "test-user-id",
 		TokenHash: tokenHash,
@@ -253,7 +254,7 @@ func TestRequireAuth_ExpiredSession(t *testing.T) {
 	tokenHash := auth.tokenHasher.Hash(rawToken)
 
 	// Create expired session
-	session := &Session{
+	session := &models.Session{
 		ID:        "expired-session",
 		UserID:    "test-user-id",
 		TokenHash: tokenHash,

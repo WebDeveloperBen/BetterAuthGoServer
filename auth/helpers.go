@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
 
 // JSON response helpers
@@ -36,7 +38,7 @@ type SessionResponse struct {
 }
 
 // toUserResponse converts a User to UserResponse
-func toUserResponse(u *User) *UserResponse {
+func toUserResponse(u *models.User) *UserResponse {
 	if u == nil {
 		return nil
 	}
@@ -55,7 +57,7 @@ func toUserResponse(u *User) *UserResponse {
 }
 
 // toSessionResponse converts a Session to SessionResponse
-func toSessionResponse(s *Session) *SessionResponse {
+func toSessionResponse(s *models.Session) *SessionResponse {
 	return &SessionResponse{
 		ID:        s.ID,
 		ExpiresAt: s.ExpiresAt,
@@ -84,7 +86,7 @@ func writeError(w http.ResponseWriter, status int, err error) {
 // SetSessionCookie sets the session cookie on the response
 // After setting the cookie, the RawToken is cleared from the session to minimize
 // the time sensitive data remains in memory
-func (a *Auth) SetSessionCookie(w http.ResponseWriter, session *Session) {
+func (a *Auth) SetSessionCookie(w http.ResponseWriter, session *models.Session) {
 	secure := strings.HasPrefix(a.config.BaseURL, "https://")
 
 	http.SetCookie(w, &http.Cookie{

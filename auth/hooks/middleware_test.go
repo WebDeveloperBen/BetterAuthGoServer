@@ -1,4 +1,4 @@
-package auth
+package hooks
 
 import (
 	"errors"
@@ -14,25 +14,25 @@ func TestMiddlewareHooks_RunBefore(t *testing.T) {
 
 	t.Run("runs all hooks in order", func(t *testing.T) {
 		var order []int
-		hooks := &MiddlewareHooks{
-			Before: []AuthMiddleware{
-				func(ctx *HookContext) error {
+		mh := &MiddlewareHooks{
+			Before: []Middleware{
+				func(ctx *Context) error {
 					order = append(order, 1)
 					return nil
 				},
-				func(ctx *HookContext) error {
+				func(ctx *Context) error {
 					order = append(order, 2)
 					return nil
 				},
-				func(ctx *HookContext) error {
+				func(ctx *Context) error {
 					order = append(order, 3)
 					return nil
 				},
 			},
 		}
 
-		ctx := &HookContext{Path: "/test"}
-		err := hooks.RunBefore(ctx, logger)
+		ctx := &Context{Path: "/test"}
+		err := mh.RunBefore(ctx, logger)
 
 		if err != nil {
 			t.Errorf("RunBefore returned error: %v", err)
@@ -45,25 +45,25 @@ func TestMiddlewareHooks_RunBefore(t *testing.T) {
 	t.Run("stops on first error", func(t *testing.T) {
 		var order []int
 		testErr := errors.New("hook error")
-		hooks := &MiddlewareHooks{
-			Before: []AuthMiddleware{
-				func(ctx *HookContext) error {
+		mh := &MiddlewareHooks{
+			Before: []Middleware{
+				func(ctx *Context) error {
 					order = append(order, 1)
 					return nil
 				},
-				func(ctx *HookContext) error {
+				func(ctx *Context) error {
 					order = append(order, 2)
 					return testErr
 				},
-				func(ctx *HookContext) error {
+				func(ctx *Context) error {
 					order = append(order, 3)
 					return nil
 				},
 			},
 		}
 
-		ctx := &HookContext{Path: "/test"}
-		err := hooks.RunBefore(ctx, logger)
+		ctx := &Context{Path: "/test"}
+		err := mh.RunBefore(ctx, logger)
 
 		if err != testErr {
 			t.Errorf("Expected testErr, got: %v", err)
@@ -74,9 +74,9 @@ func TestMiddlewareHooks_RunBefore(t *testing.T) {
 	})
 
 	t.Run("returns nil for nil hooks", func(t *testing.T) {
-		var hooks *MiddlewareHooks
-		ctx := &HookContext{Path: "/test"}
-		err := hooks.RunBefore(ctx, logger)
+		var mh *MiddlewareHooks
+		ctx := &Context{Path: "/test"}
+		err := mh.RunBefore(ctx, logger)
 
 		if err != nil {
 			t.Errorf("Expected nil, got: %v", err)
@@ -89,25 +89,25 @@ func TestMiddlewareHooks_RunAfter(t *testing.T) {
 
 	t.Run("runs all hooks even if one errors", func(t *testing.T) {
 		var order []int
-		hooks := &MiddlewareHooks{
-			After: []AuthMiddleware{
-				func(ctx *HookContext) error {
+		mh := &MiddlewareHooks{
+			After: []Middleware{
+				func(ctx *Context) error {
 					order = append(order, 1)
 					return nil
 				},
-				func(ctx *HookContext) error {
+				func(ctx *Context) error {
 					order = append(order, 2)
 					return errors.New("error")
 				},
-				func(ctx *HookContext) error {
+				func(ctx *Context) error {
 					order = append(order, 3)
 					return nil
 				},
 			},
 		}
 
-		ctx := &HookContext{Path: "/test"}
-		hooks.RunAfter(ctx, logger)
+		ctx := &Context{Path: "/test"}
+		mh.RunAfter(ctx, logger)
 
 		if len(order) != 3 {
 			t.Errorf("Expected all 3 hooks to run, got %d", len(order))
@@ -115,15 +115,15 @@ func TestMiddlewareHooks_RunAfter(t *testing.T) {
 	})
 }
 
-func TestCreateAuthMiddleware(t *testing.T) {
+func TestCreateMiddleware(t *testing.T) {
 	called := false
-	fn := func(ctx *HookContext) error {
+	fn := func(ctx *Context) error {
 		called = true
 		return nil
 	}
 
-	middleware := CreateAuthMiddleware(fn)
-	middleware(&HookContext{})
+	middleware := CreateMiddleware(fn)
+	middleware(&Context{})
 
 	if !called {
 		t.Error("Middleware function was not called")
@@ -133,21 +133,21 @@ func TestCreateAuthMiddleware(t *testing.T) {
 func TestChainMiddleware(t *testing.T) {
 	var order []int
 
-	m1 := func(ctx *HookContext) error {
+	m1 := func(ctx *Context) error {
 		order = append(order, 1)
 		return nil
 	}
-	m2 := func(ctx *HookContext) error {
+	m2 := func(ctx *Context) error {
 		order = append(order, 2)
 		return nil
 	}
-	m3 := func(ctx *HookContext) error {
+	m3 := func(ctx *Context) error {
 		order = append(order, 3)
 		return nil
 	}
 
 	chained := ChainMiddleware(m1, m2, m3)
-	chained(&HookContext{})
+	chained(&Context{})
 
 	if len(order) != 3 || order[0] != 1 || order[1] != 2 || order[2] != 3 {
 		t.Errorf("Chain ran in wrong order: %v", order)
@@ -156,7 +156,7 @@ func TestChainMiddleware(t *testing.T) {
 
 func TestSkipPaths(t *testing.T) {
 	called := false
-	middleware := func(ctx *HookContext) error {
+	middleware := func(ctx *Context) error {
 		called = true
 		return nil
 	}
@@ -164,13 +164,13 @@ func TestSkipPaths(t *testing.T) {
 	skipped := SkipPaths(middleware, "/skip-me", "/also-skip")
 
 	// Should skip
-	skipped(&HookContext{Path: "/skip-me"})
+	skipped(&Context{Path: "/skip-me"})
 	if called {
 		t.Error("Middleware should have been skipped")
 	}
 
 	// Should run
-	skipped(&HookContext{Path: "/run-me"})
+	skipped(&Context{Path: "/run-me"})
 	if !called {
 		t.Error("Middleware should have been called")
 	}
@@ -178,7 +178,7 @@ func TestSkipPaths(t *testing.T) {
 
 func TestOnlyPaths(t *testing.T) {
 	callCount := 0
-	middleware := func(ctx *HookContext) error {
+	middleware := func(ctx *Context) error {
 		callCount++
 		return nil
 	}
@@ -186,13 +186,13 @@ func TestOnlyPaths(t *testing.T) {
 	only := OnlyPaths(middleware, "/only-me", "/also-only")
 
 	// Should skip
-	only(&HookContext{Path: "/skip-me"})
+	only(&Context{Path: "/skip-me"})
 	if callCount != 0 {
 		t.Error("Middleware should not have been called")
 	}
 
 	// Should run
-	only(&HookContext{Path: "/only-me"})
+	only(&Context{Path: "/only-me"})
 	if callCount != 1 {
 		t.Error("Middleware should have been called")
 	}
@@ -215,7 +215,7 @@ func TestRequireEmailDomain(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := &HookContext{
+			ctx := &Context{
 				Path: tt.path,
 				Body: map[string]any{"email": tt.email},
 			}
@@ -232,9 +232,9 @@ func TestRequireEmailDomain(t *testing.T) {
 	}
 }
 
-func TestHookContext_Methods(t *testing.T) {
+func TestContext_Methods(t *testing.T) {
 	t.Run("GetBodyString", func(t *testing.T) {
-		ctx := &HookContext{
+		ctx := &Context{
 			Body: map[string]any{
 				"email": "test@example.com",
 				"count": 42, // not a string
@@ -253,7 +253,7 @@ func TestHookContext_Methods(t *testing.T) {
 	})
 
 	t.Run("GetBodyBool", func(t *testing.T) {
-		ctx := &HookContext{
+		ctx := &Context{
 			Body: map[string]any{
 				"enabled": true,
 				"text":    "not a bool",
@@ -269,7 +269,7 @@ func TestHookContext_Methods(t *testing.T) {
 	})
 
 	t.Run("GetHeader", func(t *testing.T) {
-		ctx := &HookContext{
+		ctx := &Context{
 			Headers: http.Header{
 				"Content-Type": []string{"application/json"},
 			},
@@ -282,7 +282,7 @@ func TestHookContext_Methods(t *testing.T) {
 
 	t.Run("GetQueryString", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/test?foo=bar&baz=qux", nil)
-		ctx := newHookContext(nil, req, "/test")
+		ctx := NewContext(nil, req, "/test")
 
 		if got := ctx.GetQueryString("foo"); got != "bar" {
 			t.Errorf("GetQueryString(foo) = %s, want bar", got)
@@ -371,38 +371,38 @@ func TestAsAPIError(t *testing.T) {
 
 func TestMiddlewareHooks_AddMethods(t *testing.T) {
 	t.Run("AddBefore", func(t *testing.T) {
-		hooks := &MiddlewareHooks{}
-		m1 := func(ctx *HookContext) error { return nil }
-		m2 := func(ctx *HookContext) error { return nil }
+		mh := &MiddlewareHooks{}
+		m1 := func(ctx *Context) error { return nil }
+		m2 := func(ctx *Context) error { return nil }
 
-		hooks.AddBefore(m1, m2)
+		mh.AddBefore(m1, m2)
 
-		if len(hooks.Before) != 2 {
-			t.Errorf("Before length = %d, want 2", len(hooks.Before))
+		if len(mh.Before) != 2 {
+			t.Errorf("Before length = %d, want 2", len(mh.Before))
 		}
 	})
 
 	t.Run("AddAfter", func(t *testing.T) {
-		hooks := &MiddlewareHooks{}
-		m1 := func(ctx *HookContext) error { return nil }
+		mh := &MiddlewareHooks{}
+		m1 := func(ctx *Context) error { return nil }
 
-		hooks.AddAfter(m1)
+		mh.AddAfter(m1)
 
-		if len(hooks.After) != 1 {
-			t.Errorf("After length = %d, want 1", len(hooks.After))
+		if len(mh.After) != 1 {
+			t.Errorf("After length = %d, want 1", len(mh.After))
 		}
 	})
 
 	t.Run("PrependBefore", func(t *testing.T) {
 		var order []int
-		hooks := &MiddlewareHooks{
-			Before: []AuthMiddleware{
-				func(ctx *HookContext) error { order = append(order, 2); return nil },
+		mh := &MiddlewareHooks{
+			Before: []Middleware{
+				func(ctx *Context) error { order = append(order, 2); return nil },
 			},
 		}
 
-		hooks.PrependBefore(func(ctx *HookContext) error { order = append(order, 1); return nil })
-		hooks.RunBefore(&HookContext{}, nil)
+		mh.PrependBefore(func(ctx *Context) error { order = append(order, 1); return nil })
+		mh.RunBefore(&Context{}, nil)
 
 		if len(order) != 2 || order[0] != 1 || order[1] != 2 {
 			t.Errorf("Prepend order = %v, want [1, 2]", order)

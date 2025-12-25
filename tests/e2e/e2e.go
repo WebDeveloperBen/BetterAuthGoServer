@@ -20,6 +20,7 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
 	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
@@ -77,14 +78,19 @@ func Setup(t *testing.T) *TestEnv {
 	}
 
 	// Create auth instance
+	// Note: Rate limiting is disabled for e2e tests since:
+	// 1. Rate limit tests each create their own env with fresh rate limiters
+	// 2. Other tests (like max sessions) need to make many auth requests
+	// Rate limiting is tested separately with RateLimitEnabled=true
 	authInstance, err := auth.New(store,
 		auth.WithSecret("test-secret-key-32-characters!!!"), // Exactly 32 bytes
 		auth.WithBaseURL("http://localhost:3000"),
 		auth.WithSessionDuration(24*time.Hour),
 		auth.WithAutoSignIn(true),
-		auth.WithCSRF(false),               // Disable CSRF for testing
-		auth.WithPasswordComplexity(false), // Disable complexity for simpler test passwords
-		auth.WithSessionCleanupInterval(0), // Disable background cleanup in tests
+		auth.WithCSRF(false),                         // Disable CSRF for testing
+		auth.WithPasswordComplexity(false),           // Disable complexity for simpler test passwords
+		auth.WithSessionCleanupInterval(0),           // Disable background cleanup in tests
+		auth.WithRateLimit(false, time.Minute, 1000), // Disable rate limiting for general e2e tests
 	)
 	if err != nil {
 		bunDB.Close()
@@ -94,7 +100,83 @@ func Setup(t *testing.T) *TestEnv {
 
 	// Create test server - mount auth handler at /auth
 	mux := http.NewServeMux()
-	mux.Handle("/auth/", http.StripPrefix("/auth", authInstance.Handler()))
+	mux.Handle("/auth/", http.StripPrefix("/auth", handlers.NewRouter(authInstance)))
+	server := httptest.NewServer(mux)
+
+	return &TestEnv{
+		Auth:      authInstance,
+		Store:     store,
+		DB:        bunDB,
+		Container: pgContainer,
+		Server:    server,
+	}
+}
+
+// SetupWithRateLimiting creates a test environment with rate limiting enabled.
+// Use this for tests that specifically test rate limiting behavior.
+func SetupWithRateLimiting(t *testing.T, authRateLimit int) *TestEnv {
+	t.Helper()
+	ctx := context.Background()
+
+	// Start PostgreSQL container
+	pgContainer, err := postgres.Run(ctx,
+		"postgres:16-alpine",
+		postgres.WithDatabase("testdb"),
+		postgres.WithUsername("testuser"),
+		postgres.WithPassword("testpass"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(30*time.Second),
+		),
+	)
+	if err != nil {
+		t.Fatalf("Failed to start PostgreSQL container: %v", err)
+	}
+
+	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		pgContainer.Terminate(ctx)
+		t.Fatalf("Failed to get connection string: %v", err)
+	}
+
+	// Connect with Bun
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
+	bunDB := bun.NewDB(sqldb, pgdialect.New())
+
+	if err := bunDB.PingContext(ctx); err != nil {
+		pgContainer.Terminate(ctx)
+		t.Fatalf("Failed to ping database: %v", err)
+	}
+
+	// Create store and run migrations
+	store := db.New(bunDB)
+	if err := store.Migrate(ctx); err != nil {
+		bunDB.Close()
+		pgContainer.Terminate(ctx)
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	// Create auth instance with rate limiting
+	authInstance, err := auth.New(store,
+		auth.WithSecret("test-secret-key-32-characters!!!"),
+		auth.WithBaseURL("http://localhost:3000"),
+		auth.WithSessionDuration(24*time.Hour),
+		auth.WithAutoSignIn(true),
+		auth.WithCSRF(false),
+		auth.WithPasswordComplexity(false),
+		auth.WithSessionCleanupInterval(0),
+		auth.WithAuthRateLimit(authRateLimit), // Enable rate limiting with specified limit
+	)
+	if err != nil {
+		bunDB.Close()
+		pgContainer.Terminate(ctx)
+		t.Fatalf("Failed to create auth instance: %v", err)
+	}
+
+	// Create test server
+	mux := http.NewServeMux()
+	mux.Handle("/auth/", http.StripPrefix("/auth", handlers.NewRouter(authInstance)))
 	server := httptest.NewServer(mux)
 
 	return &TestEnv{

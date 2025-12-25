@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/uptrace/bun"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
 
 // OAuthState model for Bun
@@ -21,11 +21,11 @@ type OAuthState struct {
 	ExpiresAt  time.Time `bun:"expires_at,notnull"`
 }
 
-func toAuthOAuthState(o *OAuthState) *auth.OAuthState {
+func toModelsOAuthState(o *OAuthState) *models.OAuthState {
 	if o == nil {
 		return nil
 	}
-	return &auth.OAuthState{
+	return &models.OAuthState{
 		State:      o.State,
 		Provider:   o.Provider,
 		Verifier:   o.Verifier,
@@ -35,7 +35,7 @@ func toAuthOAuthState(o *OAuthState) *auth.OAuthState {
 	}
 }
 
-func toBunOAuthState(o *auth.OAuthState) *OAuthState {
+func toBunOAuthState(o *models.OAuthState) *OAuthState {
 	if o == nil {
 		return nil
 	}
@@ -49,13 +49,13 @@ func toBunOAuthState(o *auth.OAuthState) *OAuthState {
 	}
 }
 
-func (s *Store) CreateOAuthState(ctx context.Context, state *auth.OAuthState) error {
+func (s *Store) CreateOAuthState(ctx context.Context, state *models.OAuthState) error {
 	bunState := toBunOAuthState(state)
 	_, err := s.db.NewInsert().Model(bunState).Exec(ctx)
 	return err
 }
 
-func (s *Store) GetOAuthState(ctx context.Context, state string) (*auth.OAuthState, error) {
+func (s *Store) GetOAuthState(ctx context.Context, state string) (*models.OAuthState, error) {
 	oauthState := new(OAuthState)
 	err := s.db.NewSelect().Model(oauthState).Where("state = ?", state).Scan(ctx)
 	if err == sql.ErrNoRows {
@@ -64,7 +64,7 @@ func (s *Store) GetOAuthState(ctx context.Context, state string) (*auth.OAuthSta
 	if err != nil {
 		return nil, err
 	}
-	return toAuthOAuthState(oauthState), nil
+	return toModelsOAuthState(oauthState), nil
 }
 
 func (s *Store) DeleteOAuthState(ctx context.Context, state string) error {
