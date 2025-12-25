@@ -1,0 +1,896 @@
+openapi: 3.0.3
+info:
+  title: BetterAuth Go Server API
+  description: |
+    A complete authentication API for Go web applications supporting email/password
+    authentication, OAuth2 providers (Google, GitHub, Discord), session management,
+    CSRF protection, and rate limiting.
+
+    ## Authentication
+
+    This API uses cookie-based session authentication. After signing in, a session
+    cookie is set automatically. For API clients, you can also use Bearer token
+    authentication by passing the session token in the `Authorization` header.
+
+    ## CSRF Protection
+
+    State-changing endpoints (POST, DELETE) require a CSRF token when CSRF protection
+    is enabled. The token is provided in a cookie and must be sent back in the
+    `X-CSRF-Token` header.
+
+    ## Rate Limiting
+
+    Auth endpoints have stricter rate limits (default: 10 requests per minute)
+    to prevent brute force attacks. When rate limited, responses return 429 status.
+  version: 1.0.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  contact:
+    name: BetterAuth Go Server
+    url: https://github.com/webdeveloperben/BetterAuthGoServer
+
+servers:
+  - url: http://localhost:8080/auth
+    description: Local development server
+
+tags:
+  - name: Authentication
+    description: Sign up, sign in, and sign out operations
+  - name: Password
+    description: Password reset and change operations
+  - name: Email Verification
+    description: Email verification operations
+  - name: Sessions
+    description: Session management operations
+  - name: OAuth
+    description: OAuth2 authentication flows
+
+paths:
+  /sign-up:
+    post:
+      tags:
+        - Authentication
+      summary: Create a new user account
+      description: |
+        Creates a new user with email/password authentication. If auto sign-in is
+        enabled (default), a session is created and the session cookie is set.
+      operationId: signUp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignUpRequest'
+      responses:
+        '201':
+          description: User created successfully
+          headers:
+            Set-Cookie:
+              description: Session cookie (if auto sign-in enabled)
+              schema:
+                type: string
+                example: session=abc123; Path=/; HttpOnly; Secure; SameSite=Strict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Invalid request (missing fields, invalid email, weak password)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing_fields:
+                  summary: Missing required fields
+                  value:
+                    error: Bad Request
+                    message: email, password, and name are required
+                invalid_email:
+                  summary: Invalid email format
+                  value:
+                    error: Bad Request
+                    message: invalid email address
+                password_too_short:
+                  summary: Password too short
+                  value:
+                    error: Bad Request
+                    message: password too short
+                password_too_weak:
+                  summary: Password doesn't meet complexity requirements
+                  value:
+                    error: Bad Request
+                    message: password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character
+        '409':
+          description: User already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Conflict
+                message: user already exists
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /sign-in:
+    post:
+      tags:
+        - Authentication
+      summary: Sign in with email and password
+      description: |
+        Authenticates a user with email and password. On success, creates a session
+        and sets the session cookie.
+      operationId: signIn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignInRequest'
+      responses:
+        '200':
+          description: Successfully signed in
+          headers:
+            Set-Cookie:
+              description: Session cookie
+              schema:
+                type: string
+                example: session=abc123; Path=/; HttpOnly; Secure; SameSite=Strict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Bad Request
+                message: email and password are required
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Unauthorized
+                message: invalid credentials
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /sign-out:
+    post:
+      tags:
+        - Authentication
+      summary: Sign out the current session
+      description: Invalidates the current session and clears the session cookie.
+      operationId: signOut
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Successfully signed out
+          headers:
+            Set-Cookie:
+              description: Cleared session cookie
+              schema:
+                type: string
+                example: session=; Path=/; HttpOnly; Max-Age=0
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /me:
+    get:
+      tags:
+        - Authentication
+      summary: Get current user information
+      description: Returns the currently authenticated user and their session information.
+      operationId: getMe
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Not Found
+                message: user not found
+
+  /password/reset:
+    post:
+      tags:
+        - Password
+      summary: Request a password reset
+      description: |
+        Initiates a password reset flow by creating a reset token. The token is
+        delivered via the `OnPasswordResetRequested` hook (typically sent via email).
+
+        **Security Note:** This endpoint always returns 204 regardless of whether
+        the email exists to prevent user enumeration.
+      operationId: requestPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequest'
+      responses:
+        '204':
+          description: Password reset requested (always returns success)
+        '400':
+          description: Missing email field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Bad Request
+                message: email is required
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /password/confirm:
+    post:
+      tags:
+        - Password
+      summary: Confirm password reset with token
+      description: |
+        Completes the password reset flow using the token received via email.
+        After a successful reset, all user sessions are invalidated for security.
+      operationId: confirmPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmRequest'
+      responses:
+        '204':
+          description: Password successfully reset
+        '400':
+          description: Invalid or expired token, or password doesn't meet requirements
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing_fields:
+                  summary: Missing required fields
+                  value:
+                    error: Bad Request
+                    message: token and new_password are required
+                invalid_token:
+                  summary: Invalid or expired token
+                  value:
+                    error: Bad Request
+                    message: verification not found
+                expired_token:
+                  summary: Token has expired
+                  value:
+                    error: Bad Request
+                    message: verification expired
+                weak_password:
+                  summary: Password too weak
+                  value:
+                    error: Bad Request
+                    message: password too short
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /password/change:
+    post:
+      tags:
+        - Password
+      summary: Change password (authenticated)
+      description: |
+        Changes the password for the authenticated user. Requires the current
+        password for verification. After a successful change, all sessions
+        (including current) are invalidated.
+      operationId: changePassword
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+      responses:
+        '204':
+          description: Password successfully changed
+          headers:
+            Set-Cookie:
+              description: Cleared session cookie
+              schema:
+                type: string
+                example: session=; Path=/; HttpOnly; Max-Age=0
+        '400':
+          description: Missing fields or password doesn't meet requirements
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing_fields:
+                  summary: Missing required fields
+                  value:
+                    error: Bad Request
+                    message: old_password and new_password are required
+                weak_password:
+                  summary: New password too weak
+                  value:
+                    error: Bad Request
+                    message: password too short
+        '401':
+          description: Unauthorized or incorrect current password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                not_authenticated:
+                  summary: Not authenticated
+                  value:
+                    error: Unauthorized
+                    message: session not found
+                wrong_password:
+                  summary: Incorrect current password
+                  value:
+                    error: Unauthorized
+                    message: invalid credentials
+
+  /email/verify:
+    get:
+      tags:
+        - Email Verification
+      summary: Verify email address
+      description: |
+        Verifies the user's email address using the token received via email.
+        This endpoint is typically accessed by clicking a link in the verification email.
+      operationId: verifyEmail
+      parameters:
+        - name: token
+          in: query
+          required: true
+          description: Email verification token
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Email successfully verified
+        '400':
+          description: Missing, invalid, or expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing_token:
+                  summary: Missing token
+                  value:
+                    error: Bad Request
+                    message: token is required
+                invalid_token:
+                  summary: Invalid token
+                  value:
+                    error: Bad Request
+                    message: verification not found
+                expired_token:
+                  summary: Expired token
+                  value:
+                    error: Bad Request
+                    message: verification expired
+
+  /email/verify/send:
+    post:
+      tags:
+        - Email Verification
+      summary: Send verification email
+      description: |
+        Sends a new email verification token to the authenticated user. The token
+        is delivered via the `OnEmailVerificationRequested` hook.
+      operationId: sendVerificationEmail
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Verification email sent
+        '400':
+          description: Email already verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Bad Request
+                message: email already verified
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /sessions:
+    get:
+      tags:
+        - Sessions
+      summary: List all sessions
+      description: Returns all active sessions for the authenticated user.
+      operationId: listSessions
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of sessions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags:
+        - Sessions
+      summary: Revoke all sessions
+      description: |
+        Signs out from all sessions, including the current one.
+        Useful for "sign out everywhere" functionality.
+      operationId: revokeAllSessions
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      responses:
+        '204':
+          description: All sessions revoked
+          headers:
+            Set-Cookie:
+              description: Cleared session cookie
+              schema:
+                type: string
+                example: session=; Path=/; HttpOnly; Max-Age=0
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /sessions/{sessionId}:
+    delete:
+      tags:
+        - Sessions
+      summary: Revoke a specific session
+      description: |
+        Revokes a specific session by ID. Users can only revoke their own sessions.
+        If revoking the current session, the session cookie is cleared.
+      operationId: revokeSession
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: Session ID to revoke
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Session revoked
+          headers:
+            Set-Cookie:
+              description: Cleared session cookie (if revoking current session)
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Session not found or belongs to another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Not Found
+                message: session not found
+
+  /oauth/providers:
+    get:
+      tags:
+        - OAuth
+      summary: List available OAuth providers
+      description: Returns a list of configured OAuth provider names.
+      operationId: listOAuthProviders
+      responses:
+        '200':
+          description: List of provider names
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthProvidersResponse'
+              example:
+                providers:
+                  - google
+                  - github
+                  - discord
+
+  /oauth/{provider}:
+    get:
+      tags:
+        - OAuth
+      summary: Begin OAuth flow
+      description: |
+        Initiates the OAuth authentication flow for the specified provider.
+        Redirects the user to the provider's authorization page.
+      operationId: beginOAuth
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          description: OAuth provider name (e.g., google, github, discord)
+          schema:
+            type: string
+            enum:
+              - google
+              - github
+              - discord
+        - name: redirect_to
+          in: query
+          required: false
+          description: |
+            URL to redirect to after successful authentication.
+            Must be in the trusted origins list.
+          schema:
+            type: string
+            format: uri
+      responses:
+        '307':
+          description: Redirect to OAuth provider
+          headers:
+            Location:
+              description: OAuth provider authorization URL
+              schema:
+                type: string
+                format: uri
+        '400':
+          description: Invalid redirect URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Bad Request
+                message: invalid redirect URL
+        '404':
+          description: OAuth provider not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Not Found
+                message: oauth provider not found
+
+  /oauth/{provider}/callback:
+    get:
+      tags:
+        - OAuth
+      summary: OAuth callback
+      description: |
+        Handles the OAuth callback from the provider. Creates or links the user
+        account and establishes a session.
+
+        For browser clients, redirects to the configured redirect URL or base URL.
+        For API clients (Accept: application/json), returns JSON response.
+      operationId: oauthCallback
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          description: OAuth provider name
+          schema:
+            type: string
+        - name: code
+          in: query
+          required: true
+          description: Authorization code from OAuth provider
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          description: State parameter for CSRF protection
+          schema:
+            type: string
+        - name: error
+          in: query
+          required: false
+          description: Error code from OAuth provider (if authorization failed)
+          schema:
+            type: string
+        - name: error_description
+          in: query
+          required: false
+          description: Error description from OAuth provider
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully authenticated (API clients with Accept application/json)
+          headers:
+            Set-Cookie:
+              description: Session cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '307':
+          description: Redirect to application (browser clients)
+          headers:
+            Location:
+              description: Redirect URL
+              schema:
+                type: string
+                format: uri
+            Set-Cookie:
+              description: Session cookie
+              schema:
+                type: string
+        '400':
+          description: OAuth error or invalid state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing_params:
+                  summary: Missing code or state
+                  value:
+                    error: Bad Request
+                    message: code and state are required
+                state_mismatch:
+                  summary: State mismatch (CSRF protection)
+                  value:
+                    error: Bad Request
+                    message: oauth state mismatch
+                state_expired:
+                  summary: State expired
+                  value:
+                    error: Bad Request
+                    message: oauth state expired
+                provider_error:
+                  summary: Error from OAuth provider
+                  value:
+                    error: Bad Request
+                    message: "access_denied: The user denied the request"
+        '404':
+          description: OAuth provider not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: session
+      description: Session cookie set after sign-in
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Session token passed as Bearer token
+
+  schemas:
+    SignUpRequest:
+      type: object
+      required:
+        - email
+        - password
+        - name
+      properties:
+        email:
+          type: string
+          format: email
+          description: User's email address
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          description: |
+            Password (8-128 characters). When complexity is required, must contain
+            at least one uppercase letter, lowercase letter, digit, and special character.
+          example: SecureP@ss123
+        name:
+          type: string
+          description: User's display name
+          example: John Doe
+
+    SignInRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          format: password
+          example: SecureP@ss123
+
+    PasswordResetRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          description: Email address of the account to reset
+          example: user@example.com
+
+    PasswordResetConfirmRequest:
+      type: object
+      required:
+        - token
+        - new_password
+      properties:
+        token:
+          type: string
+          description: Password reset token received via email
+        new_password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          description: New password
+          example: NewSecureP@ss456
+
+    PasswordChangeRequest:
+      type: object
+      required:
+        - old_password
+        - new_password
+      properties:
+        old_password:
+          type: string
+          format: password
+          description: Current password for verification
+        new_password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          description: New password
+          example: NewSecureP@ss456
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique user identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        email:
+          type: string
+          format: email
+          description: User's email address
+          example: user@example.com
+        email_verified:
+          type: boolean
+          description: Whether the email has been verified
+          example: true
+        name:
+          type: string
+          description: User's display name
+          example: John Doe
+        image:
+          type: string
+          format: uri
+          nullable: true
+          description: URL to user's profile image (from OAuth providers)
+          example: https://example.com/avatar.jpg
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique session identifier
+          example: 660e8400-e29b-41d4-a716-446655440001
+        expires_at:
+          type: string
+          format: date-time
+          description: When the session expires
+          example: "2024-01-15T12:00:00Z"
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        session:
+          $ref: '#/components/schemas/Session'
+
+    SessionsResponse:
+      type: object
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+
+    OAuthProvidersResponse:
+      type: object
+      properties:
+        providers:
+          type: array
+          items:
+            type: string
+          description: List of configured OAuth provider names
+          example:
+            - google
+            - github
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: HTTP status text
+          example: Bad Request
+        message:
+          type: string
+          description: Detailed error message
+          example: email and password are required
+
+  responses:
+    Unauthorized:
+      description: Not authenticated or session expired
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: Unauthorized
+            message: session not found
+
+    RateLimited:
+      description: Too many requests
+      headers:
+        Retry-After:
+          description: Seconds until rate limit resets
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: Too Many Requests
+            message: rate limit exceeded

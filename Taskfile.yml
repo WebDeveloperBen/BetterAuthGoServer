@@ -1,0 +1,184 @@
+version: '3'
+
+vars:
+  BINARY_NAME: auth-server
+
+tasks:
+  # =============================================================================
+  # Default
+  # =============================================================================
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # =============================================================================
+  # Build & Run
+  # =============================================================================
+  build:
+    desc: Build the application
+    cmds:
+      - go build -o {{.BINARY_NAME}} .
+
+  run:
+    desc: Run the application
+    cmds:
+      - go run .
+
+  dev:
+    desc: Run with auto-reload (requires air)
+    cmds:
+      - air
+
+  # =============================================================================
+  # Testing
+  # =============================================================================
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./...
+
+  test:unit:
+    desc: Run unit tests only (fast, no containers)
+    cmds:
+      - go test -short ./...
+
+  test:e2e:
+    desc: Run E2E tests (requires Docker for PostgreSQL)
+    cmds:
+      - go test ./tests/e2e/...
+
+  test:auth:
+    desc: Run auth package tests
+    cmds:
+      - go test -short ./auth/...
+
+  test:coverage:
+    desc: Run tests with coverage report
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - echo "Coverage report: coverage.html"
+
+  test:race:
+    desc: Run tests with race detector
+    cmds:
+      - go test -race ./...
+
+  test:verbose:
+    desc: Run all tests with verbose output
+    cmds:
+      - go test -v ./...
+
+  # =============================================================================
+  # Database (Bun ORM)
+  # =============================================================================
+  db:migrate:
+    desc: Run pending migrations
+    cmds:
+      - go run ./cmd/migrate up
+
+  db:rollback:
+    desc: Rollback last migration
+    cmds:
+      - go run ./cmd/migrate down
+
+  db:status:
+    desc: Show migration status
+    cmds:
+      - go run ./cmd/migrate status
+
+  db:create:
+    desc: Create new migration (usage: task db:create -- <name>)
+    cmds:
+      - go run ./cmd/migrate create {{.CLI_ARGS}}
+
+  # =============================================================================
+  # Code Quality
+  # =============================================================================
+  lint:
+    desc: Run linter
+    cmds:
+      - golangci-lint run
+
+  fmt:
+    desc: Format code
+    cmds:
+      - go fmt ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  tidy:
+    desc: Tidy dependencies
+    cmds:
+      - go mod tidy
+
+  check:
+    desc: Run all checks (fmt, vet, lint, test)
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: lint
+      - task: test:unit
+
+  # =============================================================================
+  # Development Helpers
+  # =============================================================================
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f {{.BINARY_NAME}}
+      - rm -f coverage.out coverage.html
+      - rm -f auth.db
+
+  deps:
+    desc: Download dependencies
+    cmds:
+      - go mod download
+
+  tools:
+    desc: Install development tools
+    cmds:
+      - go install github.com/air-verse/air@latest
+      - go install github.com/golangci-lint/golangci-lint/cmd/golangci-lint@latest
+
+  # =============================================================================
+  # Docker & Compose
+  # =============================================================================
+  docker:build:
+    desc: Build Docker image
+    cmds:
+      - docker build -t {{.BINARY_NAME}} .
+
+  docker:run:
+    desc: Run in Docker
+    cmds:
+      - docker run -p 8080:8080 {{.BINARY_NAME}}
+
+  up:
+    desc: Start all services (postgres + auth)
+    cmds:
+      - docker compose up -d
+
+  up:dev:
+    desc: Start dev mode with hot reload
+    cmds:
+      - docker compose --profile dev up auth-dev postgres
+
+  down:
+    desc: Stop all services
+    cmds:
+      - docker compose --profile dev down
+
+  logs:
+    desc: View service logs
+    cmds:
+      - docker compose logs -f
+
+  db:shell:
+    desc: Open PostgreSQL shell
+    cmds:
+      - docker compose exec postgres psql -U auth -d authdb
