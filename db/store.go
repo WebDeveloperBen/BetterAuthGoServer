@@ -50,3 +50,9 @@ func (s *Store) Rollback(ctx context.Context) error {
 func (s *Store) MigrationStatus(ctx context.Context) (migrate.MigrationSlice, error) {
 	return s.migrator.MigrationsWithStatus(ctx)
 }
+
+// DB returns the underlying bun.DB connection.
+// This is used by the plugin system for plugin migrations.
+func (s *Store) DB() *bun.DB {
+	return s.db
+}

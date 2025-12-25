@@ -3,6 +3,10 @@ package auth
 import (
 	"log/slog"
 	"time"
+
+	authjwt "github.com/webdeveloperben/BetterAuthGoServer/auth/jwt"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/kv"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
 // Config holds all configuration for the Auth system
@@ -43,6 +47,10 @@ type Config struct {
 	// Auth endpoint rate limiting (stricter)
 	AuthRateLimitMax int
 
+	// Custom rate limiter backend (e.g., Redis)
+	// If nil, uses in-memory rate limiting
+	RateLimiterBackend kv.RateLimiter
+
 	// Session cleanup interval (0 to disable background cleanup)
 	SessionCleanupInterval time.Duration
 
@@ -52,8 +60,23 @@ type Config struct {
 	// Trusted proxies for X-Forwarded-For
 	TrustedProxies []string
 
-	// Hooks
+	// Hooks (per-event callbacks, backwards compatible)
 	Hooks Hooks
+
+	// MiddlewareHooks (global before/after middleware chains)
+	MiddlewareHooks *MiddlewareHooks
+
+	// Plugins registry for extensibility
+	Plugins *plugin.Registry
+
+	// JWT configuration (enables token-based auth alongside cookies)
+	JWTEnabled        bool
+	JWTAlgorithm      authjwt.Algorithm
+	JWTAccessTokenTTL time.Duration
+	JWTRefreshTokenTTL time.Duration
+	JWTIssuer         string
+	JWTAudience       string
+	JWTTokenBlocklist authjwt.TokenBlocklist
 
 	// Logger
 	Logger *slog.Logger
@@ -62,24 +85,28 @@ type Config struct {
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() Config {
 	return Config{
-		SessionDuration:          7 * 24 * time.Hour, // 7 days
-		SessionCookie:            "session",
+		SessionDuration:           7 * 24 * time.Hour, // 7 days
+		SessionCookie:             "session",
 		PasswordMinLength:         8,
 		PasswordMaxLength:         128,
 		RequirePasswordComplexity: true,
 		RequireEmailVerification:  false,
-		EmailVerificationExpiry:  24 * time.Hour,
-		PasswordResetExpiry:      1 * time.Hour,
-		AutoSignIn:               true,
-		CSRFEnabled:              true,
-		CSRFCookieName:           "csrf_token",
-		CSRFHeaderName:           "X-CSRF-Token",
-		RateLimitEnabled:         true,
-		RateLimitWindow:          time.Minute,
-		RateLimitMax:             100,
-		AuthRateLimitMax:         10,
-		SessionCleanupInterval:   1 * time.Hour, // Clean up expired sessions every hour
-		Logger:                   slog.Default(),
+		EmailVerificationExpiry:   24 * time.Hour,
+		PasswordResetExpiry:       1 * time.Hour,
+		AutoSignIn:                true,
+		CSRFEnabled:               true,
+		CSRFCookieName:            "csrf_token",
+		CSRFHeaderName:            "X-CSRF-Token",
+		RateLimitEnabled:          true,
+		RateLimitWindow:           time.Minute,
+		RateLimitMax:              100,
+		AuthRateLimitMax:          10,
+		SessionCleanupInterval:    1 * time.Hour, // Clean up expired sessions every hour
+		JWTEnabled:                false,         // Disabled by default
+		JWTAlgorithm:              authjwt.AlgorithmHS256,
+		JWTAccessTokenTTL:         15 * time.Minute,
+		JWTRefreshTokenTTL:        7 * 24 * time.Hour,
+		Logger:                    slog.Default(),
 	}
 }
 
@@ -189,6 +216,15 @@ func WithAuthRateLimit(max int) Option {
 	}
 }
 
+// WithRateLimiterBackend sets a custom rate limiter backend (e.g., Redis).
+// This allows rate limiting to be shared across multiple instances.
+// If not set, an in-memory rate limiter is used.
+func WithRateLimiterBackend(limiter kv.RateLimiter) Option {
+	return func(c *Config) {
+		c.RateLimiterBackend = limiter
+	}
+}
+
 // WithSessionCleanupInterval sets the interval for automatic session cleanup
 // Set to 0 to disable automatic cleanup
 func WithSessionCleanupInterval(d time.Duration) Option {
@@ -211,10 +247,98 @@ func WithTrustedProxies(proxies ...string) Option {
 	}
 }
 
-// WithHooks sets the hooks for auth events
+// WithHooks sets the per-event hooks for auth events.
+// These hooks are called after specific events like user creation, sign-in, etc.
+// For global middleware-style hooks, use WithMiddlewareHooks instead.
 func WithHooks(hooks Hooks) Option {
 	return func(c *Config) {
 		c.Hooks = hooks
+	}
+}
+
+// WithMiddlewareHooks sets global before/after middleware hooks.
+// These hooks run on every auth operation, similar to HTTP middleware.
+// Before hooks can abort requests by returning an error (preferably *APIError).
+// After hooks run after successful operations; errors are logged but don't affect responses.
+func WithMiddlewareHooks(hooks *MiddlewareHooks) Option {
+	return func(c *Config) {
+		c.MiddlewareHooks = hooks
+	}
+}
+
+// WithBeforeHook adds a single before middleware hook.
+// This is a convenience method for adding a single hook without creating a MiddlewareHooks struct.
+func WithBeforeHook(fn func(ctx *HookContext) error) Option {
+	return func(c *Config) {
+		if c.MiddlewareHooks == nil {
+			c.MiddlewareHooks = &MiddlewareHooks{}
+		}
+		c.MiddlewareHooks.Before = append(c.MiddlewareHooks.Before, fn)
+	}
+}
+
+// WithAfterHook adds a single after middleware hook.
+// This is a convenience method for adding a single hook without creating a MiddlewareHooks struct.
+func WithAfterHook(fn func(ctx *HookContext) error) Option {
+	return func(c *Config) {
+		if c.MiddlewareHooks == nil {
+			c.MiddlewareHooks = &MiddlewareHooks{}
+		}
+		c.MiddlewareHooks.After = append(c.MiddlewareHooks.After, fn)
+	}
+}
+
+// WithPlugins sets the plugin registry.
+// Plugins can provide additional routes, middleware, hooks, and validation.
+// The registry should be created and plugins registered before calling New.
+func WithPlugins(registry *plugin.Registry) Option {
+	return func(c *Config) {
+		c.Plugins = registry
+	}
+}
+
+// WithJWT enables JWT authentication alongside cookie-based sessions.
+// This adds /token endpoints for generating and refreshing JWT tokens.
+func WithJWT(enabled bool) Option {
+	return func(c *Config) {
+		c.JWTEnabled = enabled
+	}
+}
+
+// WithJWTAlgorithm sets the JWT signing algorithm.
+// Default is HS256. Supported: HS256, HS384, HS512.
+func WithJWTAlgorithm(alg authjwt.Algorithm) Option {
+	return func(c *Config) {
+		c.JWTAlgorithm = alg
+	}
+}
+
+// WithJWTTTL sets the TTL for access and refresh tokens.
+func WithJWTTTL(accessTTL, refreshTTL time.Duration) Option {
+	return func(c *Config) {
+		c.JWTAccessTokenTTL = accessTTL
+		c.JWTRefreshTokenTTL = refreshTTL
+	}
+}
+
+// WithJWTIssuer sets the JWT issuer claim.
+func WithJWTIssuer(issuer string) Option {
+	return func(c *Config) {
+		c.JWTIssuer = issuer
+	}
+}
+
+// WithJWTAudience sets the JWT audience claim.
+func WithJWTAudience(audience string) Option {
+	return func(c *Config) {
+		c.JWTAudience = audience
+	}
+}
+
+// WithJWTTokenBlocklist sets the token blocklist for revocation.
+func WithJWTTokenBlocklist(blocklist authjwt.TokenBlocklist) Option {
+	return func(c *Config) {
+		c.JWTTokenBlocklist = blocklist
 	}
 }
 

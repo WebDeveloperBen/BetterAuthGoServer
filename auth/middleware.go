@@ -23,8 +23,22 @@ func (a *Auth) RequireAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		// Add session to context
+		// Get user from session
+		user, err := a.store.GetUserByID(r.Context(), session.UserID)
+		if err != nil || user == nil {
+			writeError(w, http.StatusUnauthorized, ErrUserNotFound)
+			return
+		}
+
+		// Check if user is banned
+		if user.Banned {
+			writeError(w, http.StatusForbidden, ErrUserBanned)
+			return
+		}
+
+		// Add session and user to context
 		ctx := contextWithSession(r.Context(), session)
+		ctx = contextWithUser(ctx, user)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -37,6 +51,11 @@ func (a *Auth) OptionalAuth(next http.Handler) http.Handler {
 			session, err := a.ValidateSession(r.Context(), rawToken)
 			if err == nil && session != nil {
 				ctx := contextWithSession(r.Context(), session)
+				// Also load user
+				user, err := a.store.GetUserByID(r.Context(), session.UserID)
+				if err == nil && user != nil && !user.Banned {
+					ctx = contextWithUser(ctx, user)
+				}
 				r = r.WithContext(ctx)
 			}
 		}

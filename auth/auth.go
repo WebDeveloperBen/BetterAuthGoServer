@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	authjwt "github.com/webdeveloperben/BetterAuthGoServer/auth/jwt"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
@@ -29,6 +31,12 @@ type Auth struct {
 
 	// OAuth service (optional)
 	oauth *OAuthService
+
+	// JWT service (optional)
+	jwt *authjwt.Service
+
+	// Plugin registry (optional)
+	plugins *plugin.Registry
 
 	// Cleanup control
 	stopCleanup chan struct{}
@@ -52,11 +60,17 @@ func New(store Store, opts ...Option) (*Auth, error) {
 	// Create rate limiter if enabled
 	var rateLimiter *RateLimiter
 	if cfg.RateLimitEnabled {
-		rateLimiter = NewRateLimiter(RateLimitConfig{
-			Window:          cfg.RateLimitWindow,
-			MaxRequests:     cfg.AuthRateLimitMax,
-			CleanupInterval: 5 * time.Minute,
-		})
+		config := RateLimitConfig{
+			Window:      cfg.RateLimitWindow,
+			MaxRequests: cfg.AuthRateLimitMax,
+		}
+		if cfg.RateLimiterBackend != nil {
+			// Use custom backend (e.g., Redis)
+			rateLimiter = NewRateLimiterWithBackend(config, cfg.RateLimiterBackend)
+		} else {
+			// Use default in-memory backend
+			rateLimiter = NewRateLimiter(config)
+		}
 	}
 
 	a := &Auth{
@@ -66,6 +80,47 @@ func New(store Store, opts ...Option) (*Auth, error) {
 		tokenHasher:    token.NewHasher(cfg.Secret),
 		tokenEncryptor: token.NewEncryptor(cfg.Secret),
 		rateLimiter:    rateLimiter,
+		plugins:        cfg.Plugins,
+	}
+
+	// Initialize plugins if provided
+	if a.plugins != nil {
+		pluginCtx := plugin.Context{
+			BaseURL: cfg.BaseURL,
+			Secret:  cfg.Secret,
+		}
+		// Check if store provides DB access
+		if dbProvider, ok := store.(plugin.DBProvider); ok {
+			pluginCtx.DB = dbProvider.DB()
+		}
+		if err := a.plugins.Init(pluginCtx); err != nil {
+			return nil, err
+		}
+
+		// Merge plugin hooks with config hooks
+		a.mergePluginHooks()
+	}
+
+	// Initialize JWT service if enabled
+	if cfg.JWTEnabled {
+		jwtCfg := authjwt.Config{
+			Algorithm:       cfg.JWTAlgorithm,
+			Secret:          cfg.Secret,
+			AccessTokenTTL:  cfg.JWTAccessTokenTTL,
+			RefreshTokenTTL: cfg.JWTRefreshTokenTTL,
+			Issuer:          cfg.JWTIssuer,
+			Audience:        cfg.JWTAudience,
+			TokenBlocklist:  cfg.JWTTokenBlocklist,
+		}
+		// Use BaseURL as issuer if not set
+		if jwtCfg.Issuer == "" {
+			jwtCfg.Issuer = cfg.BaseURL
+		}
+		jwtSvc, err := authjwt.NewService(jwtCfg)
+		if err != nil {
+			return nil, err
+		}
+		a.jwt = jwtSvc
 	}
 
 	// Start background cleanup if interval is configured
@@ -85,6 +140,56 @@ func (a *Auth) Close() {
 	}
 	if a.rateLimiter != nil {
 		a.rateLimiter.Close()
+	}
+	if a.plugins != nil {
+		a.plugins.Close()
+	}
+}
+
+// mergePluginHooks merges hooks from plugins with config hooks.
+// Plugin hooks are chained to run after config hooks.
+func (a *Auth) mergePluginHooks() {
+	if a.plugins == nil {
+		return
+	}
+
+	pluginHooks := a.plugins.Hooks()
+
+	// Merge per-event hooks (plugin hooks run after config hooks)
+	if pluginHooks.OnUserCreated != nil {
+		prev := a.config.Hooks.OnUserCreated
+		a.config.Hooks.OnUserCreated = func(ctx context.Context, user *User) error {
+			if prev != nil {
+				if err := prev(ctx, user); err != nil {
+					return err
+				}
+			}
+			return pluginHooks.OnUserCreated(ctx, user.ID)
+		}
+	}
+
+	if pluginHooks.OnSignIn != nil {
+		prev := a.config.Hooks.OnSignIn
+		a.config.Hooks.OnSignIn = func(ctx context.Context, user *User, session *Session) error {
+			if prev != nil {
+				if err := prev(ctx, user, session); err != nil {
+					return err
+				}
+			}
+			return pluginHooks.OnSignIn(ctx, user.ID, session.ID)
+		}
+	}
+
+	if pluginHooks.OnSignOut != nil {
+		prev := a.config.Hooks.OnSignOut
+		a.config.Hooks.OnSignOut = func(ctx context.Context, user *User, session *Session) error {
+			if prev != nil {
+				if err := prev(ctx, user, session); err != nil {
+					return err
+				}
+			}
+			return pluginHooks.OnSignOut(ctx, user.ID, session.ID)
+		}
 	}
 }
 
@@ -132,6 +237,13 @@ func (a *Auth) SignUp(ctx context.Context, req SignUpRequest, r *http.Request) (
 	// Validate password
 	if err := a.validatePassword(req.Password); err != nil {
 		return nil, nil, err
+	}
+
+	// Run plugin validators
+	if a.plugins != nil {
+		if err := a.plugins.ValidateSignUp(ctx, req.Email, req.Password, req.Name); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	// Check if user already exists
@@ -197,6 +309,13 @@ func (a *Auth) SignUp(ctx context.Context, req SignUpRequest, r *http.Request) (
 
 // SignIn authenticates a user with email/password
 func (a *Auth) SignIn(ctx context.Context, email, password string, r *http.Request) (*User, *Session, error) {
+	// Run plugin validators before sign in
+	if a.plugins != nil {
+		if err := a.plugins.ValidateSignIn(ctx, email); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	// Get user
 	user, err := a.store.GetUserByEmail(ctx, email)
 	if err != nil {

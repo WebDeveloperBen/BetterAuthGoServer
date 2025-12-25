@@ -10,9 +10,8 @@ import (
 
 func TestNewRateLimiter(t *testing.T) {
 	config := RateLimitConfig{
-		Window:          time.Minute,
-		MaxRequests:     10,
-		CleanupInterval: time.Hour, // Long interval to avoid cleanup during test
+		Window:      time.Minute,
+		MaxRequests: 10,
 	}
 
 	limiter := NewRateLimiter(config)
@@ -38,16 +37,12 @@ func TestDefaultRateLimitConfig(t *testing.T) {
 	if config.MaxRequests != 100 {
 		t.Errorf("MaxRequests = %d, want 100", config.MaxRequests)
 	}
-	if config.CleanupInterval != 5*time.Minute {
-		t.Errorf("CleanupInterval = %v, want %v", config.CleanupInterval, 5*time.Minute)
-	}
 }
 
 func TestRateLimiter_Allow(t *testing.T) {
 	config := RateLimitConfig{
-		Window:          time.Minute,
-		MaxRequests:     5,
-		CleanupInterval: time.Hour,
+		Window:      time.Minute,
+		MaxRequests: 5,
 	}
 
 	limiter := NewRateLimiter(config)
@@ -75,9 +70,8 @@ func TestRateLimiter_Allow(t *testing.T) {
 
 func TestRateLimiter_AllowN(t *testing.T) {
 	config := RateLimitConfig{
-		Window:          time.Minute,
-		MaxRequests:     10,
-		CleanupInterval: time.Hour,
+		Window:      time.Minute,
+		MaxRequests: 10,
 	}
 
 	limiter := NewRateLimiter(config)
@@ -103,9 +97,8 @@ func TestRateLimiter_AllowN(t *testing.T) {
 
 func TestRateLimiter_Remaining(t *testing.T) {
 	config := RateLimitConfig{
-		Window:          time.Minute,
-		MaxRequests:     10,
-		CleanupInterval: time.Hour,
+		Window:      time.Minute,
+		MaxRequests: 10,
 	}
 
 	limiter := NewRateLimiter(config)
@@ -141,9 +134,8 @@ func TestRateLimiter_Remaining(t *testing.T) {
 
 func TestRateLimiter_Reset(t *testing.T) {
 	config := RateLimitConfig{
-		Window:          time.Minute,
-		MaxRequests:     10,
-		CleanupInterval: time.Hour,
+		Window:      time.Minute,
+		MaxRequests: 10,
 	}
 
 	limiter := NewRateLimiter(config)
@@ -172,9 +164,8 @@ func TestRateLimiter_Reset(t *testing.T) {
 
 func TestRateLimiter_WindowExpiry(t *testing.T) {
 	config := RateLimitConfig{
-		Window:          50 * time.Millisecond, // Short window for testing
-		MaxRequests:     2,
-		CleanupInterval: time.Hour,
+		Window:      50 * time.Millisecond, // Short window for testing
+		MaxRequests: 2,
 	}
 
 	limiter := NewRateLimiter(config)
@@ -198,51 +189,10 @@ func TestRateLimiter_WindowExpiry(t *testing.T) {
 	}
 }
 
-func TestRateLimiter_CleanupExpired(t *testing.T) {
-	config := RateLimitConfig{
-		Window:          50 * time.Millisecond,
-		MaxRequests:     10,
-		CleanupInterval: time.Hour, // Manual cleanup
-	}
-
-	limiter := NewRateLimiter(config)
-	defer limiter.Close()
-
-	// Create some entries
-	limiter.Allow("key1")
-	limiter.Allow("key2")
-	limiter.Allow("key3")
-
-	// Check entries exist
-	limiter.mu.RLock()
-	initialCount := len(limiter.entries)
-	limiter.mu.RUnlock()
-
-	if initialCount != 3 {
-		t.Errorf("Initial entries = %d, want 3", initialCount)
-	}
-
-	// Wait for entries to expire
-	time.Sleep(60 * time.Millisecond)
-
-	// Manually trigger cleanup
-	limiter.cleanupExpired()
-
-	// Check entries are cleaned up
-	limiter.mu.RLock()
-	finalCount := len(limiter.entries)
-	limiter.mu.RUnlock()
-
-	if finalCount != 0 {
-		t.Errorf("Entries after cleanup = %d, want 0", finalCount)
-	}
-}
-
 func TestRateLimiter_Concurrent(t *testing.T) {
 	config := RateLimitConfig{
-		Window:          time.Minute,
-		MaxRequests:     100,
-		CleanupInterval: time.Hour,
+		Window:      time.Minute,
+		MaxRequests: 100,
 	}
 
 	limiter := NewRateLimiter(config)
@@ -287,9 +237,8 @@ func TestRateLimiter_Concurrent(t *testing.T) {
 
 func TestRateLimitMiddleware(t *testing.T) {
 	config := RateLimitConfig{
-		Window:          time.Minute,
-		MaxRequests:     3,
-		CleanupInterval: time.Hour,
+		Window:      time.Minute,
+		MaxRequests: 3,
 	}
 
 	limiter := NewRateLimiter(config)
@@ -409,16 +358,12 @@ func TestPathIPKeyFunc(t *testing.T) {
 
 func TestRateLimiter_Close(t *testing.T) {
 	config := RateLimitConfig{
-		Window:          time.Minute,
-		MaxRequests:     10,
-		CleanupInterval: 10 * time.Millisecond, // Short interval
+		Window:      time.Minute,
+		MaxRequests: 10,
 	}
 
 	limiter := NewRateLimiter(config)
 
 	// Close should not panic
 	limiter.Close()
-
-	// Double close should not panic (channel already closed)
-	// Note: This would panic, so we don't test it
 }

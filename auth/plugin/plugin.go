@@ -22,9 +22,15 @@ type Plugin interface {
 	Close() error
 }
 
+// DBProvider is an interface for stores that can provide database access.
+// Implement this interface in your store to allow plugins to access the database.
+type DBProvider interface {
+	DB() *bun.DB
+}
+
 // Context provides plugins access to auth internals during initialization
 type Context struct {
-	// DB is the database connection
+	// DB is the database connection (may be nil if store doesn't implement DBProvider)
 	DB *bun.DB
 
 	// BaseURL is the base URL of the auth service

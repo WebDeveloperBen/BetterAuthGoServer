@@ -33,8 +33,9 @@ var (
 	ErrInvalidRedirect       = errors.New("invalid redirect URL")
 
 	// Account errors
-	ErrAccountNotFound      = errors.New("account not found")
-	ErrAccountAlreadyLinked = errors.New("account already linked")
+	ErrAccountNotFound          = errors.New("account not found")
+	ErrAccountAlreadyLinked     = errors.New("account already linked")
+	ErrCannotUnlinkLastAccount  = errors.New("cannot unlink last authentication method")
 
 	// CSRF errors
 	ErrCSRFTokenMissing  = errors.New("csrf token missing")
@@ -43,9 +44,20 @@ var (
 	// Rate limiting errors
 	ErrRateLimitExceeded = errors.New("rate limit exceeded")
 
+	// JWT errors
+	ErrJWTNotEnabled    = errors.New("jwt authentication is not enabled")
+	ErrInvalidGrantType = errors.New("invalid grant type")
+	ErrNoToken          = errors.New("no token provided")
+	ErrInvalidRequest   = errors.New("invalid request")
+
 	// Configuration errors
 	ErrMissingSecret  = errors.New("secret is required")
 	ErrSecretTooShort = errors.New("secret must be at least 32 bytes")
 	ErrMissingBaseURL = errors.New("base url is required")
 	ErrMissingStore   = errors.New("store is required")
+
+	// Admin errors
+	ErrAdminNotSupported = errors.New("admin operations not supported by store")
+	ErrForbidden         = errors.New("forbidden")
+	ErrUserBanned        = errors.New("user is banned")
 )

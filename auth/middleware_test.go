@@ -13,16 +13,24 @@ import (
 // mockStoreForMiddleware is a minimal mock store for middleware tests
 type mockStoreForMiddleware struct {
 	sessions map[string]*Session
+	users    map[string]*User
 }
 
 func newMockStoreForMiddleware() *mockStoreForMiddleware {
 	return &mockStoreForMiddleware{
 		sessions: make(map[string]*Session),
+		users:    make(map[string]*User),
 	}
 }
 
-func (m *mockStoreForMiddleware) CreateUser(ctx context.Context, user *User) error { return nil }
+func (m *mockStoreForMiddleware) CreateUser(ctx context.Context, user *User) error {
+	m.users[user.ID] = user
+	return nil
+}
 func (m *mockStoreForMiddleware) GetUserByID(ctx context.Context, id string) (*User, error) {
+	if user, ok := m.users[id]; ok {
+		return user, nil
+	}
 	return nil, nil
 }
 func (m *mockStoreForMiddleware) GetUserByEmail(ctx context.Context, email string) (*User, error) {
@@ -137,6 +145,19 @@ func createValidSession(t *testing.T, auth *Auth, store *mockStoreForMiddleware)
 
 	rawToken, _ := token.Generate()
 	tokenHash := auth.tokenHasher.Hash(rawToken)
+
+	// Create a user first
+	user := &User{
+		ID:            "test-user-id",
+		Email:         "test@example.com",
+		EmailVerified: true,
+		Name:          "Test User",
+		Role:          "user",
+		Banned:        false,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+	store.users[user.ID] = user
 
 	session := &Session{
 		ID:        "test-session-id",

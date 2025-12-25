@@ -22,6 +22,11 @@ type UserResponse struct {
 	EmailVerified bool    `json:"email_verified"`
 	Name          string  `json:"name"`
 	Image         *string `json:"image,omitempty"`
+	Banned        bool    `json:"banned"`
+	BanReason     *string `json:"ban_reason,omitempty"`
+	Role          string  `json:"role"`
+	CreatedAt     string  `json:"created_at"`
+	UpdatedAt     string  `json:"updated_at"`
 }
 
 // SessionResponse represents a session in API responses
@@ -32,12 +37,20 @@ type SessionResponse struct {
 
 // toUserResponse converts a User to UserResponse
 func toUserResponse(u *User) *UserResponse {
+	if u == nil {
+		return nil
+	}
 	return &UserResponse{
 		ID:            u.ID,
 		Email:         u.Email,
 		EmailVerified: u.EmailVerified,
 		Name:          u.Name,
 		Image:         u.Image,
+		Banned:        u.Banned,
+		BanReason:     u.BanReason,
+		Role:          u.Role,
+		CreatedAt:     u.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:     u.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 	}
 }
 

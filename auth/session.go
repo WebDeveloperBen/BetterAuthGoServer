@@ -12,7 +12,10 @@ import (
 // Context keys for session management
 type contextKey string
 
-const sessionContextKey contextKey = "auth_session"
+const (
+	sessionContextKey contextKey = "auth_session"
+	userContextKey    contextKey = "auth_user"
+)
 
 // SessionFromContext extracts the session from the request context
 func SessionFromContext(ctx context.Context) *Session {
@@ -22,9 +25,22 @@ func SessionFromContext(ctx context.Context) *Session {
 	return nil
 }
 
+// GetUserFromContext extracts the user from the request context
+func GetUserFromContext(ctx context.Context) *User {
+	if user, ok := ctx.Value(userContextKey).(*User); ok {
+		return user
+	}
+	return nil
+}
+
 // contextWithSession adds a session to the context
 func contextWithSession(ctx context.Context, session *Session) context.Context {
 	return context.WithValue(ctx, sessionContextKey, session)
+}
+
+// contextWithUser adds a user to the context
+func contextWithUser(ctx context.Context, user *User) context.Context {
+	return context.WithValue(ctx, userContextKey, user)
 }
 
 // ValidateSession validates a session token and returns the session if valid

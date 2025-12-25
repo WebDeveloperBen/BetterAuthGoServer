@@ -1,54 +1,48 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
+
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/kv"
 )
 
 // RateLimitConfig holds rate limiter configuration
 type RateLimitConfig struct {
-	Window          time.Duration // Time window for rate limiting
-	MaxRequests     int           // Maximum requests per window
-	CleanupInterval time.Duration // How often to clean up expired entries
+	Window      time.Duration // Time window for rate limiting
+	MaxRequests int           // Maximum requests per window
 }
 
 // DefaultRateLimitConfig returns default rate limit configuration
 func DefaultRateLimitConfig() RateLimitConfig {
 	return RateLimitConfig{
-		Window:          time.Minute,
-		MaxRequests:     100,
-		CleanupInterval: 5 * time.Minute,
+		Window:      time.Minute,
+		MaxRequests: 100,
 	}
 }
 
-// rateLimitEntry represents a rate limit entry for a single key
-type rateLimitEntry struct {
-	count     int
-	expiresAt time.Time
-}
-
-// RateLimiter is an in-memory rate limiter
+// RateLimiter wraps a kv.RateLimiter with HTTP middleware support
 type RateLimiter struct {
 	config  RateLimitConfig
-	entries map[string]*rateLimitEntry
-	mu      sync.RWMutex
-	stopCh  chan struct{}
+	limiter kv.RateLimiter
 }
 
-// NewRateLimiter creates a new rate limiter
+// NewRateLimiter creates a new rate limiter using in-memory storage
 func NewRateLimiter(config RateLimitConfig) *RateLimiter {
-	l := &RateLimiter{
+	return &RateLimiter{
 		config:  config,
-		entries: make(map[string]*rateLimitEntry),
-		stopCh:  make(chan struct{}),
+		limiter: kv.NewMemoryRateLimiter(),
 	}
+}
 
-	// Start cleanup goroutine
-	go l.cleanup()
-
-	return l
+// NewRateLimiterWithBackend creates a rate limiter with a custom backend
+func NewRateLimiterWithBackend(config RateLimitConfig, limiter kv.RateLimiter) *RateLimiter {
+	return &RateLimiter{
+		config:  config,
+		limiter: limiter,
+	}
 }
 
 // Allow checks if a request is allowed for the given key
@@ -59,92 +53,40 @@ func (l *RateLimiter) Allow(key string) bool {
 
 // AllowN checks if n requests are allowed for the given key
 func (l *RateLimiter) AllowN(key string, n int) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	now := time.Now()
-
-	e, exists := l.entries[key]
-	if !exists || now.After(e.expiresAt) {
-		// Create new entry
-		l.entries[key] = &rateLimitEntry{
-			count:     n,
-			expiresAt: now.Add(l.config.Window),
-		}
+	ctx := context.Background()
+	result, err := l.limiter.Allow(ctx, key, l.config.MaxRequests, l.config.Window, n)
+	if err != nil {
+		// On error, allow the request (fail open)
 		return true
 	}
-
-	// Check if adding n would exceed limit
-	if e.count+n > l.config.MaxRequests {
-		return false
-	}
-
-	e.count += n
-	return true
+	return result.Allowed
 }
 
 // Remaining returns the number of requests remaining for the given key
 func (l *RateLimiter) Remaining(key string) int {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-
-	now := time.Now()
-
-	e, exists := l.entries[key]
-	if !exists || now.After(e.expiresAt) {
+	ctx := context.Background()
+	result, err := l.limiter.Allow(ctx, key, l.config.MaxRequests, l.config.Window, 0)
+	if err != nil {
 		return l.config.MaxRequests
 	}
-
-	remaining := l.config.MaxRequests - e.count
-	if remaining < 0 {
-		return 0
-	}
-	return remaining
+	return result.Remaining
 }
 
 // Reset returns when the rate limit resets for the given key
 func (l *RateLimiter) Reset(key string) time.Time {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-
-	e, exists := l.entries[key]
-	if !exists {
+	ctx := context.Background()
+	result, err := l.limiter.Allow(ctx, key, l.config.MaxRequests, l.config.Window, 0)
+	if err != nil {
 		return time.Now().Add(l.config.Window)
 	}
-	return e.expiresAt
+	return result.ResetAt
 }
 
-// cleanup periodically removes expired entries
-func (l *RateLimiter) cleanup() {
-	ticker := time.NewTicker(l.config.CleanupInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			l.cleanupExpired()
-		case <-l.stopCh:
-			return
-		}
-	}
-}
-
-// cleanupExpired removes all expired entries
-func (l *RateLimiter) cleanupExpired() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	now := time.Now()
-	for key, e := range l.entries {
-		if now.After(e.expiresAt) {
-			delete(l.entries, key)
-		}
-	}
-}
-
-// Close stops the cleanup goroutine
+// Close stops the rate limiter
 func (l *RateLimiter) Close() {
-	close(l.stopCh)
+	if l.limiter != nil {
+		l.limiter.Close()
+	}
 }
 
 // RateLimitMiddleware returns HTTP middleware that applies rate limiting
