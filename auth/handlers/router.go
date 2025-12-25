@@ -41,25 +41,6 @@ func NewRouter(a *auth.Auth) http.Handler {
 		revokeSession(w, r, sessionID)
 	}))))
 
-	// OAuth routes
-	mux.HandleFunc("GET /oauth/providers", wrapHandler(a, "/oauth/providers", ListOAuthProviders(a)))
-
-	oauthBegin := OAuthBegin(a)
-	oauthCallback := OAuthCallback(a)
-	mux.HandleFunc("GET /oauth/", wrapHandler(a, "/oauth/:provider", func(w http.ResponseWriter, r *http.Request) {
-		provider, isCallback := parseOAuthPath(r.URL.Path)
-		if provider == "" {
-			WriteError(w, http.StatusNotFound, auth.ErrOAuthProviderNotFound)
-			return
-		}
-
-		if isCallback {
-			oauthCallback(w, r, provider)
-		} else {
-			oauthBegin(w, r, provider)
-		}
-	}))
-
 	// Admin endpoints (require admin role)
 	adminGetUser := AdminGetUser(a)
 	adminUpdateUser := AdminUpdateUser(a)

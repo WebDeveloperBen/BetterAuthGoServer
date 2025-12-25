@@ -1,4 +1,5 @@
-package oauth
+// Package providers implements OAuth2 provider integrations for Discord.
+package providers
 
 import (
 	"context"
@@ -7,6 +8,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
 	"golang.org/x/oauth2"
 )
 
@@ -65,7 +67,7 @@ type discordUser struct {
 }
 
 // GetUserInfo fetches user information from Discord
-func (p *DiscordProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (*UserInfo, error) {
+func (p *DiscordProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (*oauth.UserInfo, error) {
 	client := p.config.Client(ctx, token)
 
 	resp, err := client.Get(discordUserURL)
@@ -96,7 +98,7 @@ func (p *DiscordProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) 
 		picture = fmt.Sprintf("https://cdn.discordapp.com/avatars/%s/%s.png", user.ID, user.Avatar)
 	}
 
-	return &UserInfo{
+	return &oauth.UserInfo{
 		ID:            user.ID,
 		Email:         user.Email,
 		EmailVerified: user.Verified,

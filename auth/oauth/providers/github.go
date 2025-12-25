@@ -1,4 +1,5 @@
-package oauth
+// Package providers implements OAuth2 provider integrations for GitHub.
+package providers
 
 import (
 	"context"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
 )
@@ -70,7 +72,7 @@ type githubEmail struct {
 }
 
 // GetUserInfo fetches user information from GitHub
-func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (*UserInfo, error) {
+func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (*oauth.UserInfo, error) {
 	client := p.config.Client(ctx, token)
 
 	// Get user info
@@ -103,7 +105,7 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 		name = user.Login
 	}
 
-	return &UserInfo{
+	return &oauth.UserInfo{
 		ID:            strconv.FormatInt(user.ID, 10),
 		Email:         email,
 		EmailVerified: emailVerified,
@@ -114,7 +116,11 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 
 // getPrimaryEmail fetches the primary verified email from GitHub
 func (p *GitHubProvider) getPrimaryEmail(ctx context.Context, client *http.Client) (string, bool, error) {
-	resp, err := client.Get(githubEmailsURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", githubEmailsURL, nil)
+	if err != nil {
+		return "", false, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", false, err
 	}

@@ -1,0 +1,317 @@
+package oauth
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
+)
+
+// Response types
+
+type oauthProvidersResponse struct {
+	Providers []string `json:"providers"`
+}
+
+// ListOAuthProvidersHandler returns a handler for GET /oauth/providers
+func (p *Plugin) ListOAuthProvidersHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		providers := p.service.ListProviders()
+		writeJSON(w, http.StatusOK, oauthProvidersResponse{
+			Providers: providers,
+		})
+	}
+}
+
+// OAuthBeginHandler returns a handler for GET /oauth/:provider
+func (p *Plugin) OAuthBeginHandler() func(http.ResponseWriter, *http.Request, string) {
+	return func(w http.ResponseWriter, r *http.Request, provider string) {
+		redirectTo := r.URL.Query().Get("redirect_to")
+
+		result, err := p.service.Begin(r.Context(), provider, redirectTo)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+
+		http.Redirect(w, r, result.URL, http.StatusFound)
+	}
+}
+
+// OAuthCallbackHandler returns a handler for GET /oauth/:provider/callback
+func (p *Plugin) OAuthCallbackHandler() func(http.ResponseWriter, *http.Request, string) {
+	return func(w http.ResponseWriter, r *http.Request, provider string) {
+		code := r.URL.Query().Get("code")
+		state := r.URL.Query().Get("state")
+
+		if code == "" || state == "" {
+			writeError(w, http.StatusBadRequest, errors.New("missing code or state parameter"))
+			return
+		}
+
+		// Complete OAuth flow
+		oauthResult, oauthState, err := p.service.Complete(r.Context(), provider, code, state)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+
+		// Create or update user account
+		user, err := p.completeOAuthUserCreation(r.Context(), provider, oauthResult, oauthState)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		// Create session
+		session, err := p.ctx.Auth.CreateSessionForUser(r.Context(), user.ID, r)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		// Set session cookie
+		p.setSessionCookie(w, session)
+
+		// Redirect to the URL from state if provided, otherwise return JSON
+		redirectTo := ""
+		if oauthState != nil && oauthState.RedirectTo != nil {
+			redirectTo = *oauthState.RedirectTo
+		}
+
+		if redirectTo != "" {
+			http.Redirect(w, r, redirectTo, http.StatusFound)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"user":    toUserResponse(user),
+			"session": toSessionResponse(session),
+		})
+	}
+}
+
+// completeOAuthUserCreation handles the OAuth user creation/update logic
+func (p *Plugin) completeOAuthUserCreation(ctx context.Context, provider string, result *AuthResult, state *State) (*plugin.User, error) {
+	userInfo := result.UserInfo
+	if userInfo == nil {
+		return nil, errors.New("no user info in OAuth result")
+	}
+
+	// Initialize account store for OAuth-specific operations
+	accountStore := NewAccountStore(p.ctx.DB)
+
+	// Try to find existing OAuth account by provider and provider account ID
+	existingAccount, err := accountStore.GetAccountByProvider(ctx, provider, userInfo.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	if existingAccount != nil {
+		// Update existing account and return user
+		user, err := p.ctx.Auth.GetPluginUser(ctx, existingAccount.UserID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Update OAuth tokens
+		if result.OAuthToken.AccessToken != "" {
+			encrypted, err := p.service.EncryptToken(result.OAuthToken.AccessToken)
+			if err != nil {
+				return nil, err
+			}
+			existingAccount.AccessToken = encrypted
+		}
+
+		if result.OAuthToken.RefreshToken != "" {
+			encrypted, err := p.service.EncryptToken(result.OAuthToken.RefreshToken)
+			if err != nil {
+				return nil, err
+			}
+			existingAccount.RefreshToken = encrypted
+		}
+
+		if !result.OAuthToken.Expiry.IsZero() {
+			existingAccount.AccessTokenExpiresAt = &result.OAuthToken.Expiry
+		}
+
+		// Update account in database
+		if err := accountStore.UpdateAccount(ctx, existingAccount); err != nil {
+			return nil, err
+		}
+
+		return user, nil
+	}
+
+	// Check if user exists by email (using AuthCore interface)
+	existingUser, err := p.ctx.Auth.GetPluginUserByEmail(ctx, userInfo.Email)
+	if err != nil {
+		// ErrUserNotFound is expected if user doesn't exist
+		existingUser = nil
+	}
+
+	var user *plugin.User
+	if existingUser != nil {
+		// Use existing user
+		user = existingUser
+	} else {
+		// Create new user through AuthCore
+		imagePtr := &userInfo.Picture
+		user, err = p.ctx.Auth.CreatePluginUser(ctx, plugin.CreateUserRequest{
+			Email:         userInfo.Email,
+			Name:          userInfo.Name,
+			EmailVerified: userInfo.EmailVerified,
+			Image:         imagePtr,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Create OAuth account to link the provider
+	account := &OAuthAccount{
+		ID:                generateID(),
+		UserID:            user.ID,
+		Provider:          provider,
+		ProviderAccountID: userInfo.ID,
+	}
+
+	if result.OAuthToken.AccessToken != "" {
+		encrypted, err := p.service.EncryptToken(result.OAuthToken.AccessToken)
+		if err != nil {
+			return nil, err
+		}
+		account.AccessToken = encrypted
+	}
+
+	if result.OAuthToken.RefreshToken != "" {
+		encrypted, err := p.service.EncryptToken(result.OAuthToken.RefreshToken)
+		if err != nil {
+			return nil, err
+		}
+		account.RefreshToken = encrypted
+	}
+
+	if !result.OAuthToken.Expiry.IsZero() {
+		account.AccessTokenExpiresAt = &result.OAuthToken.Expiry
+	}
+
+	// Create OAuth account in database
+	if err := accountStore.CreateAccount(ctx, account); err != nil {
+		return nil, err
+	}
+
+	// Fire OAuth account linked hook
+	if err := p.ctx.Auth.FireOAuthAccountLinked(ctx, user.ID, provider, userInfo.ID); err != nil {
+		// Log but don't fail - account creation succeeded
+		// The hook is for notifications/side effects, not critical operations
+	}
+
+	return user, nil
+}
+
+// setSessionCookie sets the session cookie
+func (p *Plugin) setSessionCookie(w http.ResponseWriter, session *plugin.Session) {
+	cookie := &http.Cookie{
+		Name:     "session",
+		Value:    session.ID,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   p.isSecure(),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(session.ExpiresAt.Sub(session.CreatedAt).Seconds()),
+	}
+	http.SetCookie(w, cookie)
+}
+
+// isSecure returns true if the base URL uses HTTPS
+func (p *Plugin) isSecure() bool {
+	return strings.HasPrefix(p.ctx.Auth.BaseURL(), "https://")
+}
+
+// Helper functions (adapted from handlers package)
+func writeJSON(w http.ResponseWriter, status int, v any) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	return json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, err error) {
+	writeJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+// OAuthDynamicHandler handles dynamic OAuth routes (/oauth/:provider and /oauth/:provider/callback)
+func (p *Plugin) OAuthDynamicHandler() http.HandlerFunc {
+	oauthBegin := p.OAuthBeginHandler()
+	oauthCallback := p.OAuthCallbackHandler()
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		provider, isCallback := parseOAuthPath(r.URL.Path)
+		if provider == "" {
+			writeError(w, http.StatusNotFound, errors.New("oauth provider not found"))
+			return
+		}
+
+		if isCallback {
+			oauthCallback(w, r, provider)
+		} else {
+			oauthBegin(w, r, provider)
+		}
+	}
+}
+
+// parseOAuthPath extracts provider and action from /oauth/:provider or /oauth/:provider/callback
+func parseOAuthPath(path string) (provider string, isCallback bool) {
+	path = strings.TrimPrefix(path, "/oauth/")
+	parts := strings.Split(path, "/")
+
+	if len(parts) == 0 || parts[0] == "" {
+		return "", false
+	}
+
+	provider = parts[0]
+	isCallback = len(parts) >= 2 && parts[1] == "callback"
+	return provider, isCallback
+}
+
+// Response helper functions
+func toUserResponse(user *plugin.User) map[string]any {
+	return map[string]any{
+		"id":             user.ID,
+		"email":          user.Email,
+		"email_verified": user.EmailVerified,
+		"name":           user.Name,
+		"image":          user.Image,
+		"role":           user.Role,
+		"banned":         user.Banned,
+		"created_at":     user.CreatedAt,
+		"updated_at":     user.UpdatedAt,
+	}
+}
+
+func toSessionResponse(session *plugin.Session) map[string]any {
+	return map[string]any{
+		"id":         session.ID,
+		"user_id":    session.UserID,
+		"ip_address": session.IPAddress,
+		"user_agent": session.UserAgent,
+		"created_at": session.CreatedAt,
+		"expires_at": session.ExpiresAt,
+	}
+}
+
+func generateID() string {
+	return uuid.New().String()
+}
+
+// OAuthToken represents OAuth token information
+type OAuthToken struct {
+	AccessToken  string
+	RefreshToken string
+	Expiry       time.Time
+}

@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/uptrace/bun"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
 // Plugin is the core interface that all plugins must implement
@@ -43,6 +44,10 @@ type Context struct {
 	// This allows plugins to perform user lookups, session validation, etc.
 	// May be nil during early initialization phases.
 	Auth AuthCore
+
+	// Token utilities for plugins that need to hash or encrypt tokens
+	Hasher    *token.Hasher
+	Encryptor *token.Encryptor
 }
 
 // RoutesProvider is implemented by plugins that add HTTP routes
@@ -95,6 +100,9 @@ type Hooks struct {
 	// BeforeSignIn is called before sign in validation
 	// Return an error to prevent sign in
 	BeforeSignIn func(ctx context.Context, email string) error
+
+	// OnOAuthAccountLinked is called when an OAuth account is linked to a user
+	OnOAuthAccountLinked func(ctx context.Context, userID, provider, providerAccountID string) error
 }
 
 // MiddlewareProvider is implemented by plugins that add middleware

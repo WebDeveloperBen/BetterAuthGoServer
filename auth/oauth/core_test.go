@@ -13,10 +13,10 @@ import (
 // Mock implementations
 
 type mockStateStore struct {
-	states         map[string]*State
-	createErr      error
-	getErr         error
-	deleteErr      error
+	states    map[string]*State
+	createErr error
+	getErr    error
+	deleteErr error
 }
 
 func newMockStateStore() *mockStateStore {

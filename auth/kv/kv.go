@@ -78,11 +78,11 @@ type RateLimiter interface {
 
 // Prefix helper for namespacing keys
 const (
-	PrefixRateLimit   = "rl:"
-	PrefixSession     = "sess:"
-	PrefixBlocklist   = "bl:"
-	PrefixOAuthState  = "oauth:"
-	PrefixPlugin      = "plugin:"
+	PrefixRateLimit  = "rl:"
+	PrefixSession    = "sess:"
+	PrefixBlocklist  = "bl:"
+	PrefixOAuthState = "oauth:"
+	PrefixPlugin     = "plugin:"
 )
 
 // Key builds a namespaced key

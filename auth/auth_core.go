@@ -3,7 +3,9 @@ package auth
 import (
 	"context"
 	"net/http"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
@@ -37,9 +39,11 @@ func (a *Auth) Use(p plugin.Plugin) error {
 // buildPluginContext creates a plugin.Context with access to auth internals
 func (a *Auth) buildPluginContext() plugin.Context {
 	ctx := plugin.Context{
-		BaseURL: a.config.BaseURL,
-		Secret:  a.config.Secret,
-		Auth:    a, // Auth implements plugin.AuthCore
+		BaseURL:   a.config.BaseURL,
+		Secret:    a.config.Secret,
+		Auth:      a, // Auth implements plugin.AuthCore
+		Hasher:    a.tokenHasher,
+		Encryptor: a.tokenEncryptor,
 	}
 
 	// Check if store provides DB access
@@ -115,6 +119,44 @@ func (a *Auth) GetPluginUserByEmail(ctx context.Context, email string) (*plugin.
 	return toPluginUser(user), nil
 }
 
+// CreatePluginUser creates a new user from a plugin request.
+// This is used by OAuth and other plugins that need to create users without passwords.
+// Implements plugin.AuthCore.
+func (a *Auth) CreatePluginUser(ctx context.Context, req plugin.CreateUserRequest) (*plugin.User, error) {
+	// Check if user already exists
+	existing, err := a.store.GetUserByEmail(ctx, req.Email)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, ErrUserAlreadyExists
+	}
+
+	now := time.Now()
+
+	// Create user
+	user := &models.User{
+		ID:            uuid.New().String(),
+		Email:         req.Email,
+		Name:          req.Name,
+		EmailVerified: req.EmailVerified,
+		Image:         req.Image,
+		Role:          "user",
+		Banned:        false,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	if err := a.store.CreateUser(ctx, user); err != nil {
+		return nil, err
+	}
+
+	// Fire hook
+	a.config.Hooks.FireUserCreated(ctx, a.config.Logger, user)
+
+	return toPluginUser(user), nil
+}
+
 // toPluginUser converts a models.User to plugin.User
 func toPluginUser(u *models.User) *plugin.User {
 	if u == nil {
@@ -131,6 +173,37 @@ func toPluginUser(u *models.User) *plugin.User {
 		CreatedAt:     u.CreatedAt,
 		UpdatedAt:     u.UpdatedAt,
 	}
+}
+
+// FireOAuthAccountLinked fires the OnOAuthAccountLinked hook.
+// This calls both the core hooks (using models types) and plugin hooks (using simple IDs).
+// Implements plugin.AuthCore.
+func (a *Auth) FireOAuthAccountLinked(ctx context.Context, userID, provider, providerAccountID string) error {
+	// Fire plugin hooks first (simple ID-based)
+	if a.plugins != nil {
+		pluginHooks := a.plugins.Hooks()
+		if pluginHooks.OnOAuthAccountLinked != nil {
+			if err := pluginHooks.OnOAuthAccountLinked(ctx, userID, provider, providerAccountID); err != nil {
+				a.config.Logger.Warn("plugin hook failed", "hook", "OnOAuthAccountLinked", "error", err)
+			}
+		}
+	}
+
+	// Fire core hook (needs user and account models)
+	user, err := a.store.GetUserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	account := &models.Account{
+		UserID:            userID,
+		Provider:          models.ProviderType(provider),
+		ProviderAccountID: &providerAccountID,
+	}
+
+	a.config.Hooks.FireOAuthAccountLinked(ctx, a.config.Logger, user, account)
+
+	return nil
 }
 
 // toPluginSession converts a models.Session to plugin.Session

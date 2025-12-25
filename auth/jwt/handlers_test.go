@@ -38,6 +38,19 @@ func (m *mockAuthCore) GetPluginUserByEmail(ctx context.Context, email string) (
 	return nil, nil
 }
 
+func (m *mockAuthCore) CreatePluginUser(ctx context.Context, req plugin.CreateUserRequest) (*plugin.User, error) {
+	user := &plugin.User{
+		ID:            "user-" + req.Email,
+		Email:         req.Email,
+		Name:          req.Name,
+		EmailVerified: req.EmailVerified,
+		Image:         req.Image,
+		Role:          "user",
+	}
+	m.users[user.ID] = user
+	return user, nil
+}
+
 func (m *mockAuthCore) VerifyPassword(ctx context.Context, userID string, password string) (bool, error) {
 	return password == "password", nil
 }
@@ -62,6 +75,10 @@ func (m *mockAuthCore) BaseURL() string {
 
 func (m *mockAuthCore) Secret() string {
 	return "test-secret-key-that-is-long-enough-for-jwt!!!"
+}
+
+func (m *mockAuthCore) FireOAuthAccountLinked(ctx context.Context, userID, provider, providerAccountID string) error {
+	return nil
 }
 
 type mockJWTService struct {

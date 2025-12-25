@@ -14,12 +14,12 @@ import (
 // It allows hooks to inspect and modify requests and responses.
 type Context struct {
 	// Request info
-	Path    string            // e.g., "/sign-up", "/sign-in", "/oauth/google"
-	Method  string            // HTTP method
-	Body    map[string]any    // Parsed request body (JSON)
-	Headers http.Header       // Request headers
-	Query   url.Values        // Query parameters
-	Request *http.Request     // Raw request (for advanced use)
+	Path    string         // e.g., "/sign-up", "/sign-in", "/oauth/google"
+	Method  string         // HTTP method
+	Body    map[string]any // Parsed request body (JSON)
+	Headers http.Header    // Request headers
+	Query   url.Values     // Query parameters
+	Request *http.Request  // Raw request (for advanced use)
 
 	// Auth context (populated if authenticated)
 	Session *models.Session // Current session (if authenticated)
@@ -35,10 +35,10 @@ type Context struct {
 	Returned any // Value returned from previous hook in chain
 
 	// Internal
-	writer      http.ResponseWriter
-	bodyRead    bool
-	rawBody     []byte
-	responded   bool
+	writer    http.ResponseWriter
+	bodyRead  bool
+	rawBody   []byte
+	responded bool
 }
 
 // NewContext creates a new Context from an HTTP request

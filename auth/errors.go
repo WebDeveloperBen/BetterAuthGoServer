@@ -10,11 +10,11 @@ var (
 	ErrInvalidEmail      = errors.New("invalid email address")
 
 	// Password errors
-	ErrInvalidPassword      = errors.New("invalid password")
-	ErrPasswordTooShort     = errors.New("password too short")
-	ErrPasswordTooLong      = errors.New("password too long")
-	ErrPasswordTooWeak      = errors.New("password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character")
-	ErrInvalidCredentials   = errors.New("invalid credentials") // Generic to prevent user enumeration
+	ErrInvalidPassword    = errors.New("invalid password")
+	ErrPasswordTooShort   = errors.New("password too short")
+	ErrPasswordTooLong    = errors.New("password too long")
+	ErrPasswordTooWeak    = errors.New("password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character")
+	ErrInvalidCredentials = errors.New("invalid credentials") // Generic to prevent user enumeration
 
 	// Session errors
 	ErrSessionNotFound = errors.New("session not found")
@@ -33,9 +33,9 @@ var (
 	ErrInvalidRedirect       = errors.New("invalid redirect URL")
 
 	// Account errors
-	ErrAccountNotFound          = errors.New("account not found")
-	ErrAccountAlreadyLinked     = errors.New("account already linked")
-	ErrCannotUnlinkLastAccount  = errors.New("cannot unlink last authentication method")
+	ErrAccountNotFound         = errors.New("account not found")
+	ErrAccountAlreadyLinked    = errors.New("account already linked")
+	ErrCannotUnlinkLastAccount = errors.New("cannot unlink last authentication method")
 
 	// CSRF errors
 	ErrCSRFTokenMissing  = errors.New("csrf token missing")

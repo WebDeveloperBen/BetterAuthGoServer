@@ -233,6 +233,18 @@ func (r *Registry) mergeHooks(h Hooks) {
 			return h.BeforeSignIn(ctx, email)
 		}
 	}
+
+	if h.OnOAuthAccountLinked != nil {
+		prev := r.hooks.OnOAuthAccountLinked
+		r.hooks.OnOAuthAccountLinked = func(ctx context.Context, userID, provider, providerAccountID string) error {
+			if prev != nil {
+				if err := prev(ctx, userID, provider, providerAccountID); err != nil {
+					return err
+				}
+			}
+			return h.OnOAuthAccountLinked(ctx, userID, provider, providerAccountID)
+		}
+	}
 }
 
 // ValidateSignUp runs all plugin validators for sign up

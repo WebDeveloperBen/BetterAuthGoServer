@@ -28,9 +28,6 @@ type Auth struct {
 	tokenHasher    *token.Hasher
 	tokenEncryptor *token.Encryptor
 
-	// OAuth service (optional)
-	oauth *OAuthService
-
 	// Plugin registry
 	plugins *plugin.Registry
 
@@ -209,11 +206,6 @@ func (a *Auth) runCleanup() {
 			// Clean up expired verifications
 			if err := a.store.DeleteExpiredVerifications(ctx); err != nil {
 				a.config.Logger.Error("failed to cleanup expired verifications", "error", err)
-			}
-
-			// Clean up expired OAuth states
-			if err := a.store.DeleteExpiredOAuthStates(ctx); err != nil {
-				a.config.Logger.Error("failed to cleanup expired oauth states", "error", err)
 			}
 
 			a.config.Logger.Debug("completed cleanup of expired data")

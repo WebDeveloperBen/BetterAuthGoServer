@@ -16,6 +16,7 @@ type AuthCore interface {
 	// User operations (return plugin-specific User type)
 	GetPluginUser(ctx context.Context, userID string) (*User, error)
 	GetPluginUserByEmail(ctx context.Context, email string) (*User, error)
+	CreatePluginUser(ctx context.Context, req CreateUserRequest) (*User, error)
 
 	// Session operations
 	ValidateSessionToken(ctx context.Context, token string) (*Session, error)
@@ -27,6 +28,20 @@ type AuthCore interface {
 	// Config access
 	BaseURL() string
 	Secret() string
+
+	// Hook firing
+	// FireOAuthAccountLinked fires the OnOAuthAccountLinked hook.
+	// This allows plugins to trigger the hook without depending on models package.
+	FireOAuthAccountLinked(ctx context.Context, userID, provider, providerAccountID string) error
+}
+
+// CreateUserRequest contains the data needed to create a user from a plugin.
+// This is used by OAuth and other plugins that need to create users.
+type CreateUserRequest struct {
+	Email         string
+	Name          string
+	EmailVerified bool
+	Image         *string
 }
 
 // User is a minimal user representation for plugins.

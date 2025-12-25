@@ -21,6 +21,7 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/providers"
 	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
@@ -76,9 +77,10 @@ func main() {
 		log.Fatal("Failed to create auth service:", err)
 	}
 
-	// Register OAuth providers (optional)
+	// Register OAuth providers as plugin (optional)
+	var oauthProviders []oauth.Provider
 	if googleClientID := os.Getenv("GOOGLE_CLIENT_ID"); googleClientID != "" {
-		authService.RegisterOAuthProvider(oauth.NewGoogle(
+		oauthProviders = append(oauthProviders, providers.NewGoogle(
 			googleClientID,
 			os.Getenv("GOOGLE_CLIENT_SECRET"),
 			baseURL+"/auth/oauth/google/callback",
@@ -86,11 +88,17 @@ func main() {
 	}
 
 	if githubClientID := os.Getenv("GITHUB_CLIENT_ID"); githubClientID != "" {
-		authService.RegisterOAuthProvider(oauth.NewGitHub(
+		oauthProviders = append(oauthProviders, providers.NewGitHub(
 			githubClientID,
 			os.Getenv("GITHUB_CLIENT_SECRET"),
 			baseURL+"/auth/oauth/github/callback",
 		))
+	}
+
+	if len(oauthProviders) > 0 {
+		if err := authService.Use(oauth.NewPlugin(oauthProviders...)); err != nil {
+			log.Fatal("Failed to register OAuth plugin:", err)
+		}
 	}
 
 	// Set up routes

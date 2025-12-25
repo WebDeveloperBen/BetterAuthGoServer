@@ -12,6 +12,8 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/providers"
 )
 
 // mockStore implements models.Store for testing
@@ -392,6 +394,14 @@ func TestOAuthProviders(t *testing.T) {
 	a, _ := createTestAuth(t)
 	defer a.Close()
 
+	// OAuth is now a plugin - register it with a provider to test
+	oauthPlugin := oauth.NewPlugin(
+		providers.NewGoogle("test-client-id", "test-client-secret", "http://localhost/oauth/google/callback"),
+	)
+	if err := a.Use(oauthPlugin); err != nil {
+		t.Fatalf("Failed to register OAuth plugin: %v", err)
+	}
+
 	router := handlers.NewRouter(a)
 
 	req := httptest.NewRequest("GET", "/oauth/providers", nil)
@@ -410,6 +420,18 @@ func TestOAuthProviders(t *testing.T) {
 
 	if response["providers"] == nil {
 		t.Error("Expected providers in response")
+	}
+
+	// Verify google provider is in the list
+	found := false
+	for _, p := range response["providers"] {
+		if p == "google" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected 'google' in providers list")
 	}
 }
 

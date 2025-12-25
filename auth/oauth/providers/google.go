@@ -1,4 +1,5 @@
-package oauth
+// Package providers implements OAuth2 provider integrations for Google.
+package providers
 
 import (
 	"context"
@@ -7,6 +8,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -59,7 +61,7 @@ type googleUserInfo struct {
 }
 
 // GetUserInfo fetches user information from Google
-func (p *GoogleProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (*UserInfo, error) {
+func (p *GoogleProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (*oauth.UserInfo, error) {
 	client := p.config.Client(ctx, token)
 
 	resp, err := client.Get(googleUserInfoURL)
@@ -78,7 +80,7 @@ func (p *GoogleProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 		return nil, fmt.Errorf("failed to decode user info: %w", err)
 	}
 
-	return &UserInfo{
+	return &oauth.UserInfo{
 		ID:            info.ID,
 		Email:         info.Email,
 		EmailVerified: info.VerifiedEmail,
