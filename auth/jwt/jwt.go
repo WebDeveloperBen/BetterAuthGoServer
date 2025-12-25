@@ -10,11 +10,11 @@ import (
 
 // Common errors
 var (
-	ErrInvalidToken       = errors.New("invalid token")
-	ErrExpiredToken       = errors.New("token expired")
-	ErrInvalidTokenType   = errors.New("invalid token type")
-	ErrTokenRevoked       = errors.New("token revoked")
-	ErrInvalidSigningKey  = errors.New("invalid signing key")
+	ErrInvalidToken         = errors.New("invalid token")
+	ErrExpiredToken         = errors.New("token expired")
+	ErrInvalidTokenType     = errors.New("invalid token type")
+	ErrTokenRevoked         = errors.New("token revoked")
+	ErrInvalidSigningKey    = errors.New("invalid signing key")
 	ErrUnsupportedAlgorithm = errors.New("unsupported algorithm")
 )
 
@@ -84,8 +84,8 @@ func DefaultConfig() Config {
 // Service handles JWT token generation and validation
 type Service struct {
 	config     Config
-	signingKey interface{}
-	verifyKey  interface{}
+	signingKey any
+	verifyKey  any
 	method     jwt.SigningMethod
 }
 
@@ -211,14 +211,13 @@ func (s *Service) generateRefreshToken(userID, sessionID string) (string, error)
 
 // ValidateToken validates a token and returns the claims
 func (s *Service) ValidateToken(ctx context.Context, tokenString string) (*Claims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (any, error) {
 		// Validate signing method
 		if token.Method.Alg() != string(s.config.Algorithm) {
 			return nil, ErrUnsupportedAlgorithm
 		}
 		return s.verifyKey, nil
 	})
-
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrExpiredToken

@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/csrf"
-	authjwt "github.com/webdeveloperben/BetterAuthGoServer/auth/jwt"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/ratelimit"
@@ -31,9 +30,6 @@ type Auth struct {
 
 	// OAuth service (optional)
 	oauth *OAuthService
-
-	// JWT service (optional)
-	jwt *authjwt.Service
 
 	// Plugin registry
 	plugins *plugin.Registry
@@ -95,29 +91,6 @@ func New(store models.Store, opts ...Option) (*Auth, error) {
 
 	// Merge plugin hooks with config hooks
 	a.mergePluginHooks()
-
-	// Initialize JWT service if enabled
-	// Note: In future phases, JWT will become a plugin
-	if cfg.JWTEnabled {
-		jwtCfg := authjwt.Config{
-			Algorithm:       cfg.JWTAlgorithm,
-			Secret:          cfg.Secret,
-			AccessTokenTTL:  cfg.JWTAccessTokenTTL,
-			RefreshTokenTTL: cfg.JWTRefreshTokenTTL,
-			Issuer:          cfg.JWTIssuer,
-			Audience:        cfg.JWTAudience,
-			TokenBlocklist:  cfg.JWTTokenBlocklist,
-		}
-		// Use BaseURL as issuer if not set
-		if jwtCfg.Issuer == "" {
-			jwtCfg.Issuer = cfg.BaseURL
-		}
-		jwtSvc, err := authjwt.NewService(jwtCfg)
-		if err != nil {
-			return nil, err
-		}
-		a.jwt = jwtSvc
-	}
 
 	// Start background cleanup if interval is configured and not skipping defaults
 	if cfg.SessionCleanupInterval > 0 && !cfg.SkipDefaults {

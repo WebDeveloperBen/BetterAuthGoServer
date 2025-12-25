@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
-	authjwt "github.com/webdeveloperben/BetterAuthGoServer/auth/jwt"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/kv"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
@@ -26,9 +25,9 @@ type Config struct {
 	SessionCookie   string
 
 	// Password
-	PasswordMinLength          int
-	PasswordMaxLength          int
-	RequirePasswordComplexity  bool // Require uppercase, lowercase, digit, and special char
+	PasswordMinLength         int
+	PasswordMaxLength         int
+	RequirePasswordComplexity bool // Require uppercase, lowercase, digit, and special char
 
 	// Email verification
 	RequireEmailVerification bool
@@ -75,15 +74,6 @@ type Config struct {
 	// Plugins registry for extensibility
 	Plugins *plugin.Registry
 
-	// JWT configuration (enables token-based auth alongside cookies)
-	JWTEnabled        bool
-	JWTAlgorithm      authjwt.Algorithm
-	JWTAccessTokenTTL time.Duration
-	JWTRefreshTokenTTL time.Duration
-	JWTIssuer         string
-	JWTAudience       string
-	JWTTokenBlocklist authjwt.TokenBlocklist
-
 	// Logger
 	Logger *slog.Logger
 }
@@ -108,10 +98,6 @@ func DefaultConfig() Config {
 		RateLimitMax:              100,
 		AuthRateLimitMax:          10,
 		SessionCleanupInterval:    1 * time.Hour, // Clean up expired sessions every hour
-		JWTEnabled:                false,         // Disabled by default
-		JWTAlgorithm:              authjwt.AlgorithmHS256,
-		JWTAccessTokenTTL:         15 * time.Minute,
-		JWTRefreshTokenTTL:        7 * 24 * time.Hour,
 		Logger:                    slog.Default(),
 	}
 }
@@ -323,51 +309,6 @@ func WithAfterHook(fn func(ctx *hooks.Context) error) Option {
 func WithPlugins(registry *plugin.Registry) Option {
 	return func(c *Config) {
 		c.Plugins = registry
-	}
-}
-
-// WithJWT enables JWT authentication alongside cookie-based sessions.
-// This adds /token endpoints for generating and refreshing JWT tokens.
-func WithJWT(enabled bool) Option {
-	return func(c *Config) {
-		c.JWTEnabled = enabled
-	}
-}
-
-// WithJWTAlgorithm sets the JWT signing algorithm.
-// Default is HS256. Supported: HS256, HS384, HS512.
-func WithJWTAlgorithm(alg authjwt.Algorithm) Option {
-	return func(c *Config) {
-		c.JWTAlgorithm = alg
-	}
-}
-
-// WithJWTTTL sets the TTL for access and refresh tokens.
-func WithJWTTTL(accessTTL, refreshTTL time.Duration) Option {
-	return func(c *Config) {
-		c.JWTAccessTokenTTL = accessTTL
-		c.JWTRefreshTokenTTL = refreshTTL
-	}
-}
-
-// WithJWTIssuer sets the JWT issuer claim.
-func WithJWTIssuer(issuer string) Option {
-	return func(c *Config) {
-		c.JWTIssuer = issuer
-	}
-}
-
-// WithJWTAudience sets the JWT audience claim.
-func WithJWTAudience(audience string) Option {
-	return func(c *Config) {
-		c.JWTAudience = audience
-	}
-}
-
-// WithJWTTokenBlocklist sets the token blocklist for revocation.
-func WithJWTTokenBlocklist(blocklist authjwt.TokenBlocklist) Option {
-	return func(c *Config) {
-		c.JWTTokenBlocklist = blocklist
 	}
 }
 

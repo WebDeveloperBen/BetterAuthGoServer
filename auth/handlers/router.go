@@ -60,14 +60,6 @@ func NewRouter(a *auth.Auth) http.Handler {
 		}
 	}))
 
-	// JWT endpoints (if enabled)
-	if a.JWTEnabled() {
-		mux.HandleFunc("POST /token", wrapHandler(a, "/token", Token(a)))
-		mux.HandleFunc("POST /token/refresh", wrapHandler(a, "/token/refresh", TokenRefresh(a)))
-		mux.HandleFunc("POST /token/revoke", wrapHandler(a, "/token/revoke", TokenRevoke(a)))
-		mux.HandleFunc("POST /token/introspect", wrapHandler(a, "/token/introspect", TokenIntrospect(a)))
-	}
-
 	// Admin endpoints (require admin role)
 	adminGetUser := AdminGetUser(a)
 	adminUpdateUser := AdminUpdateUser(a)
