@@ -115,7 +115,7 @@ func main() {
 	// Home page with OAuth links
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"message": "BetterAuth OAuth Example",
 			"oauth": map[string]string{
 				"google":   "/auth/oauth/google",

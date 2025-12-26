@@ -1,10 +1,12 @@
 package admin
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/admin/access"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
@@ -21,6 +23,7 @@ type Plugin struct {
 	service      *Service
 	handlers     *handlers
 	userProvider UserProvider
+	config       Config
 }
 
 // Ensure Plugin implements required interfaces
@@ -29,9 +32,15 @@ var (
 	_ plugin.RoutesProvider = (*Plugin)(nil)
 )
 
-// NewPlugin creates a new admin plugin.
-func NewPlugin() *Plugin {
-	return &Plugin{}
+// NewPlugin creates a new admin plugin with optional configuration.
+func NewPlugin(opts ...Option) *Plugin {
+	config := DefaultConfig()
+	for _, opt := range opts {
+		opt(&config)
+	}
+	return &Plugin{
+		config: config,
+	}
 }
 
 // Name returns the plugin identifier
@@ -65,7 +74,31 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.userProvider = userProvider
 
 	p.service = NewService(ctx.DB, p.logger)
-	p.handlers = newHandlers(p.service, ctx.Auth)
+	p.handlers = newHandlers(p.service, ctx.Auth, &p.config)
+
+	// Initialize access control
+	if p.config.AccessControl == nil {
+		ac, err := access.CreateDefaultAccessControl()
+		if err != nil {
+			return fmt.Errorf("failed to create default access control: %w", err)
+		}
+		p.config.AccessControl = ac
+		if p.config.Roles == nil {
+			adminRole, err := ac.GetRole("admin")
+			if err != nil {
+				return fmt.Errorf("failed to get admin role: %w", err)
+			}
+			userRole, err := ac.GetRole("user")
+			if err != nil {
+				return fmt.Errorf("failed to get user role: %w", err)
+			}
+			p.config.Roles = map[string]*access.Role{
+				"admin": adminRole,
+				"user":  userRole,
+			}
+		}
+
+	}
 
 	p.logger.Info("admin plugin initialized")
 	return nil
@@ -84,7 +117,7 @@ func (p *Plugin) Routes() []plugin.Route {
 		return nil
 	}
 
-	adminMw := requireAdmin(p.userProvider, p.logger)
+	adminMw := requireAdmin(p.userProvider, p.logger, p.config.AccessControl)
 
 	return []plugin.Route{
 		{
@@ -98,6 +131,20 @@ func (p *Plugin) Routes() []plugin.Route {
 			Method:      "GET",
 			Path:        "/admin/users/",
 			Handler:     p.handleUserRoutes,
+			RequireAuth: true,
+			Middleware:  []func(http.Handler) http.Handler{adminMw},
+		},
+		{
+			Method:      "POST",
+			Path:        "/admin/permissions/has-permission",
+			Handler:     p.handlers.hasPermission,
+			RequireAuth: true,
+			Middleware:  []func(http.Handler) http.Handler{adminMw},
+		},
+		{
+			Method:      "POST",
+			Path:        "/admin/permissions/check-role",
+			Handler:     p.handlers.checkRolePermission,
 			RequireAuth: true,
 			Middleware:  []func(http.Handler) http.Handler{adminMw},
 		},
@@ -151,20 +198,37 @@ func (p *Plugin) handleUserRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// RequireAdmin returns middleware that requires admin role.
+// RequireAdmin returns middleware that requires admin-level permissions.
 // This can be used by other packages to protect routes.
-func RequireAdmin(auth UserProvider, logger *slog.Logger) func(http.Handler) http.Handler {
+// The accessControl parameter should be the AccessControl instance from the admin plugin.
+func RequireAdmin(auth UserProvider, logger *slog.Logger, accessControl *access.AccessControl) func(http.Handler) http.Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return requireAdmin(auth, logger)
+	return requireAdmin(auth, logger, accessControl)
+}
+
+// RequirePermissions returns middleware that requires specific permissions.
+// This can be used by other packages to protect routes with fine-grained access control.
+// The permissions parameter is a map of resource names to required actions.
+// The accessControl parameter should be the AccessControl instance from the admin plugin.
+func RequirePermissions(auth UserProvider, logger *slog.Logger, accessControl *access.AccessControl, permissions map[string][]string) func(http.Handler) http.Handler {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return requirePermissions(auth, logger, accessControl, permissions)
 }
 
 // parseUserPath extracts the user ID and optional action from the path
 func parseUserPath(path string) (userID string, action string) {
-	path = strings.TrimPrefix(path, "/admin/users/")
+	path = strings.TrimPrefix(path, "/admin/users")
+	if path == "" {
+		return "", ""
+	}
+	// Remove leading slash if present
+	path = strings.TrimPrefix(path, "/")
 	parts := strings.Split(path, "/")
-	if len(parts) == 0 {
+	if len(parts) == 0 || parts[0] == "" {
 		return "", ""
 	}
 	userID = parts[0]

@@ -82,7 +82,7 @@ func main() {
 	// Home
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		json.NewEncoder(w).Encode(map[string]any{
 			"message": "BetterAuth Minimal Example",
 			"note":    "No rate limiting, no CSRF - minimal core auth only",
 			"endpoints": map[string]string{

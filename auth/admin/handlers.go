@@ -26,6 +26,17 @@ type updateUserRequest struct {
 	Role  *string `json:"role,omitempty"`
 }
 
+type hasPermissionRequest struct {
+	UserID      *string             `json:"userId,omitempty"`
+	Role        *string             `json:"role,omitempty"`
+	Permissions map[string][]string `json:"permissions,omitempty"`
+}
+
+type checkRolePermissionRequest struct {
+	Role        string              `json:"role"`
+	Permissions map[string][]string `json:"permissions"`
+}
+
 // Response types
 
 type errorResponse struct {
@@ -49,6 +60,10 @@ type userResponse struct {
 type listUsersResponse struct {
 	Users []*userResponse `json:"users"`
 	Total int64           `json:"total"`
+}
+
+type permissionResponse struct {
+	HasPermission bool `json:"hasPermission"`
 }
 
 // toUserResponse converts a models.User to userResponse
@@ -94,14 +109,16 @@ func decodeJSON(r *http.Request, v any) error {
 
 // handlers holds the admin handlers with access to the service
 type handlers struct {
-	service *Service
+	service AdminOperations
 	auth    plugin.AuthCore
+	config  *Config
 }
 
-func newHandlers(service *Service, auth plugin.AuthCore) *handlers {
+func newHandlers(service AdminOperations, auth plugin.AuthCore, config *Config) *handlers {
 	return &handlers{
 		service: service,
 		auth:    auth,
+		config:  config,
 	}
 }
 
@@ -248,4 +265,71 @@ func (h *handlers) setRole(w http.ResponseWriter, r *http.Request, userID string
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// hasPermission handles POST /admin/permissions/has-permission
+func (h *handlers) hasPermission(w http.ResponseWriter, r *http.Request) {
+	var req hasPermissionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid request body"))
+		return
+	}
+
+	var hasPermission bool
+	var err error
+
+	if h.config.AccessControl == nil {
+		writeError(w, http.StatusInternalServerError, errors.New("access control not configured"))
+		return
+	}
+
+	if req.UserID != nil {
+		// Check permission for a specific user
+		user, userErr := h.service.GetUser(r.Context(), *req.UserID)
+		if userErr != nil {
+			if errors.Is(userErr, ErrUserNotFound) {
+				writeError(w, http.StatusNotFound, errors.New("user not found"))
+			} else {
+				writeError(w, http.StatusInternalServerError, errors.New("internal server error"))
+			}
+			return
+		}
+		hasPermission = h.config.AccessControl.UserHasPermission(user.Role, req.Permissions)
+	} else if req.Role != nil {
+		// Check permission for a role
+		hasPermission, err = h.config.AccessControl.HasPermissions(*req.Role, req.Permissions)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, errors.New("internal server error"))
+			return
+		}
+	} else {
+		writeError(w, http.StatusBadRequest, errors.New("either userId or role must be provided"))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, permissionResponse{HasPermission: hasPermission})
+}
+
+// checkRolePermission handles POST /admin/permissions/check-role
+func (h *handlers) checkRolePermission(w http.ResponseWriter, r *http.Request) {
+	var req checkRolePermissionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid request body"))
+		return
+	}
+
+	if h.config.AccessControl == nil {
+		writeError(w, http.StatusInternalServerError, errors.New("access control not configured"))
+		return
+	}
+
+	role, err := h.config.AccessControl.GetRole(req.Role)
+	if err != nil {
+		writeError(w, http.StatusNotFound, errors.New("role not found"))
+		return
+	}
+
+	hasPermission := role.CheckRolePermission(req.Permissions)
+
+	writeJSON(w, http.StatusOK, permissionResponse{HasPermission: hasPermission})
 }

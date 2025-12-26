@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
@@ -42,6 +43,20 @@ func contextWithSession(ctx context.Context, session *models.Session) context.Co
 // contextWithUser adds a user to the context
 func contextWithUser(ctx context.Context, user *models.User) context.Context {
 	return context.WithValue(ctx, userContextKey, user)
+}
+
+// GetSessionInfoFromRequest gets the session ID and user ID from the request context.
+// Returns nil if no session is present. This method is used by plugins that need
+// to access session information without depending on the full models package.
+func (a *Auth) GetSessionInfoFromRequest(r *http.Request) *plugin.SessionInfo {
+	session := SessionFromContext(r.Context())
+	if session == nil {
+		return nil
+	}
+	return &plugin.SessionInfo{
+		ID:     session.ID,
+		UserID: session.UserID,
+	}
 }
 
 // ValidateSession validates a session token and returns the session if valid
