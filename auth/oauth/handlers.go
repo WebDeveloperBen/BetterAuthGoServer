@@ -1,3 +1,5 @@
+// Package oauth provides OAuth 2.0 authentication integration for the auth server.
+// It handles OAuth provider configuration, user account linking, and authentication flows.
 package oauth
 
 import (
@@ -61,7 +63,7 @@ func (p *Plugin) OAuthCallbackHandler() func(http.ResponseWriter, *http.Request,
 		}
 
 		// Create or update user account
-		user, err := p.completeOAuthUserCreation(r.Context(), provider, oauthResult, oauthState)
+		user, err := p.completeOAuthUserCreation(r.Context(), provider, oauthResult)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -96,7 +98,7 @@ func (p *Plugin) OAuthCallbackHandler() func(http.ResponseWriter, *http.Request,
 }
 
 // completeOAuthUserCreation handles the OAuth user creation/update logic
-func (p *Plugin) completeOAuthUserCreation(ctx context.Context, provider string, result *AuthResult, state *State) (*plugin.User, error) {
+func (p *Plugin) completeOAuthUserCreation(ctx context.Context, provider string, result *AuthResult) (*plugin.User, error) {
 	userInfo := result.UserInfo
 	if userInfo == nil {
 		return nil, ErrNoUserInfo
@@ -205,11 +207,8 @@ func (p *Plugin) completeOAuthUserCreation(ctx context.Context, provider string,
 		return nil, err
 	}
 
-	// Fire OAuth account linked hook
-	if err := p.auth.FireOAuthAccountLinked(ctx, user.ID, provider, userInfo.ID); err != nil {
-		// Log but don't fail - account creation succeeded
-		// The hook is for notifications/side effects, not critical operations
-	}
+	// Fire OAuth account linked hook (ignore errors - hook is for notifications/side effects)
+	p.auth.FireOAuthAccountLinked(ctx, user.ID, provider, userInfo.ID)
 
 	return user, nil
 }

@@ -81,36 +81,6 @@ func TestPluginIntegration_Close(t *testing.T) {
 	}
 }
 
-func TestPluginIntegration_Routes(t *testing.T) {
-	// This test requires the HTTP router which is now in the handlers package.
-	// Plugin routes are tested via e2e tests.
-	t.Skip("Plugin routes are tested via handlers package and e2e tests")
-}
-
-func TestPluginIntegration_Middleware(t *testing.T) {
-	// This test requires the HTTP router which is now in the handlers package.
-	// Plugin middleware is tested via e2e tests.
-	t.Skip("Plugin middleware is tested via handlers package and e2e tests")
-}
-
-// Note: ValidatorProvider tests have been removed since SignUp/SignIn are now
-// provided by the password plugin. Validator integration is tested via e2e tests
-// that exercise the password plugin's HTTP endpoints.
-
-func TestPluginIntegration_ValidateSignUp(t *testing.T) {
-	// SignUp is now handled by the password plugin, not core auth.
-	// Validator integration is tested via e2e tests that exercise
-	// the password plugin's HTTP endpoints.
-	t.Skip("SignUp moved to password plugin - validator integration tested via e2e")
-}
-
-func TestPluginIntegration_ValidateSignIn(t *testing.T) {
-	// SignIn is now handled by the password plugin, not core auth.
-	// Validator integration is tested via e2e tests that exercise
-	// the password plugin's HTTP endpoints.
-	t.Skip("SignIn moved to password plugin - validator integration tested via e2e")
-}
-
 func TestWithPlugins(t *testing.T) {
 	registry := plugin.NewRegistry(nil)
 	cfg := config.DefaultConfig()

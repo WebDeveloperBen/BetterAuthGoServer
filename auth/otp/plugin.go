@@ -36,9 +36,9 @@ type Plugin struct {
 
 // Compile-time interface checks
 var (
-	_ plugin.Plugin                    = (*Plugin)(nil)
-	_ plugin.MigrationsProvider        = (*Plugin)(nil)
-	_ plugin.EmailVerificationProvider = (*Plugin)(nil)
+	_ plugin.Plugin                     = (*Plugin)(nil)
+	_ plugin.MigrationsProvider         = (*Plugin)(nil)
+	_ plugin.EmailVerificationProvider  = (*Plugin)(nil)
 	_ plugin.PasswordResetTokenProvider = (*Plugin)(nil)
 )
 

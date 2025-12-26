@@ -5,7 +5,7 @@ package access
 var DefaultStatements = Statement{
 	"user": {
 		"create",
-		"list", 
+		"list",
 		"set-role",
 		"ban",
 		"impersonate",
@@ -42,7 +42,7 @@ func CreateDefaultRoles(ac *AccessControl) (admin, user *Role, err error) {
 // CreateDefaultAccessControl creates an AccessControl with default statements and roles.
 func CreateDefaultAccessControl() (*AccessControl, error) {
 	ac := NewAccessControl(DefaultStatements)
-	
+
 	admin, user, err := CreateDefaultRoles(ac)
 	if err != nil {
 		return nil, err

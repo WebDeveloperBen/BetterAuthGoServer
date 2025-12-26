@@ -8,15 +8,15 @@ import (
 
 // Event type constants for the authentication system
 const (
-	EventUserCreated             = "user.created"
-	EventUserUpdated             = "user.updated"
-	EventSignedIn                = "user.signed_in"
-	EventSignedOut               = "user.signed_out"
-	EventPasswordChanged         = "user.password_changed"
-	EventPasswordResetRequested  = "user.password_reset_requested"
-	EventEmailVerified           = "user.email_verified"
-	EventEmailVerificationSent   = "user.email_verification_sent"
-	EventOAuthAccountLinked      = "user.oauth_account_linked"
+	EventUserCreated            = "user.created"
+	EventUserUpdated            = "user.updated"
+	EventSignedIn               = "user.signed_in"
+	EventSignedOut              = "user.signed_out"
+	EventPasswordChanged        = "user.password_changed"
+	EventPasswordResetRequested = "user.password_reset_requested"
+	EventEmailVerified          = "user.email_verified"
+	EventEmailVerificationSent  = "user.email_verification_sent"
+	EventOAuthAccountLinked     = "user.oauth_account_linked"
 )
 
 // Event represents an auth event to be published or received via the EventBus

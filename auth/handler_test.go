@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -281,24 +282,6 @@ func createTestAuth(t *testing.T) (*auth.Auth, *mockStore) {
 	return a, store
 }
 
-func TestSignUp(t *testing.T) {
-	// Password routes are now provided by the password plugin which requires a real database.
-	// These tests are covered by e2e tests that use a real database.
-	t.Skip("Password routes require real database - tested via e2e tests")
-}
-
-func TestSignIn(t *testing.T) {
-	// Password routes are now provided by the password plugin which requires a real database.
-	// These tests are covered by e2e tests that use a real database.
-	t.Skip("Password routes require real database - tested via e2e tests")
-}
-
-func TestSignInInvalidCredentials(t *testing.T) {
-	// Password routes are now provided by the password plugin which requires a real database.
-	// These tests are covered by e2e tests that use a real database.
-	t.Skip("Password routes require real database - tested via e2e tests")
-}
-
 func TestOAuthProviders(t *testing.T) {
 	a, _ := createTestAuth(t)
 	defer a.Close()
@@ -333,35 +316,10 @@ func TestOAuthProviders(t *testing.T) {
 	}
 
 	// Verify google provider is in the list
-	found := false
-	for _, p := range response["providers"] {
-		if p == "google" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(response["providers"], "google")
 	if !found {
 		t.Error("Expected 'google' in providers list")
 	}
-}
-
-func TestPasswordReset(t *testing.T) {
-	// Password routes are now provided by the password plugin which requires a real database.
-	// These tests are covered by e2e tests that use a real database.
-	t.Skip("Password routes require real database - tested via e2e tests")
-}
-
-func TestPasswordResetNonExistentUser(t *testing.T) {
-	// Password routes are now provided by the password plugin which requires a real database.
-	// These tests are covered by e2e tests that use a real database.
-	t.Skip("Password routes require real database - tested via e2e tests")
-}
-
-func TestAdminEndpointRequiresAuth(t *testing.T) {
-	// Skip: Admin endpoints are now provided by the admin plugin.
-	// This test would require registering the admin plugin with a real database.
-	// Admin plugin has its own tests in auth/admin package.
-	t.Skip("Admin endpoints are now provided by the admin plugin")
 }
 
 func TestProfileEndpointRequiresAuth(t *testing.T) {

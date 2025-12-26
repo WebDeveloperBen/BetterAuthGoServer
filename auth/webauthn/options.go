@@ -4,17 +4,17 @@ import "time"
 
 // Config holds WebAuthn plugin configuration.
 type Config struct {
-	RPID                    string
-	RPDisplayName           string
-	RPOrigins               []string
-	AttestationPreference   string
-	UserVerification        string
-	Timeout                 time.Duration
-	AllowResidentKey        bool
+	RPID                      string
+	RPDisplayName             string
+	RPOrigins                 []string
+	AttestationPreference     string
+	UserVerification          string
+	Timeout                   time.Duration
+	AllowResidentKey          bool
 	AllowPasswordlessAccounts bool
-	AllowSecondFactor       bool
-	Debug                   bool
-	BaseURL                 string
+	AllowSecondFactor         bool
+	Debug                     bool
+	BaseURL                   string
 }
 
 // DefaultConfig returns the default WebAuthn configuration.

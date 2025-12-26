@@ -1,3 +1,5 @@
+// Package oauth provides OAuth 2.0 authentication integration for the auth server.
+// It handles OAuth provider configuration, user account linking, and authentication flows.
 package oauth
 
 import (

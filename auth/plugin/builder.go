@@ -49,18 +49,18 @@ var (
 	_ MigrationsProvider = (*BasePlugin)(nil)
 )
 
-// Plugin interface implementation
+// Name returns the plugin name.
 func (p *BasePlugin) Name() string           { return p.name }
 func (p *BasePlugin) Init(ctx Context) error { return p.initFn(ctx) }
 func (p *BasePlugin) Close() error           { return p.closeFn() }
 
-// RoutesProvider implementation
+// Routes returns the plugin routes.
 func (p *BasePlugin) Routes() []Route { return p.routes }
 
-// MiddlewareProvider implementation
+// Middleware returns the plugin middleware.
 func (p *BasePlugin) Middleware() []Middleware { return p.middleware }
 
-// MigrationsProvider implementation
+// Migrations returns the plugin migrations.
 func (p *BasePlugin) Migrations() []any { return p.migrations }
 
 // WithPluginName sets the plugin name

@@ -45,7 +45,7 @@ func CreateDefaultRoles(ac *AccessControl) (owner, admin, member *Role, err erro
 // CreateDefaultAccessControl creates an AccessControl with default statements and roles.
 func CreateDefaultAccessControl() (*AccessControl, error) {
 	ac := NewAccessControl(DefaultStatements)
-	
+
 	owner, admin, member, err := CreateDefaultRoles(ac)
 	if err != nil {
 		return nil, err

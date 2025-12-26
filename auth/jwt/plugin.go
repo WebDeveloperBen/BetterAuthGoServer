@@ -58,10 +58,10 @@ const (
 
 // Plugin wraps JWT functionality as an auth plugin
 type Plugin struct {
-	service  *Service
-	ctx      plugin.Context
-	auth     AuthProvider
-	opts     []Option
+	service *Service
+	ctx     plugin.Context
+	auth    AuthProvider
+	opts    []Option
 }
 
 // Ensure Plugin implements required interfaces

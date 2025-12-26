@@ -38,13 +38,13 @@ type Config struct {
 // DefaultConfig returns the default configuration for the admin plugin.
 func DefaultConfig() Config {
 	return Config{
-		DefaultRole:                "user",
-		AdminRoles:                 []string{"admin"},
-		AdminUserIDs:               []string{},
+		DefaultRole:                  "user",
+		AdminRoles:                   []string{"admin"},
+		AdminUserIDs:                 []string{},
 		ImpersonationSessionDuration: 1 * time.Hour,
-		DefaultBanReason:           "No reason",
-		BannedUserMessage:          "You have been banned from this application. Please contact support if you believe this is an error.",
-		AllowImpersonatingAdmins:   false,
+		DefaultBanReason:             "No reason",
+		BannedUserMessage:            "You have been banned from this application. Please contact support if you believe this is an error.",
+		AllowImpersonatingAdmins:     false,
 	}
 }
 
