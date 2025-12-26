@@ -24,140 +24,49 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
 )
 
+// Shared test infrastructure - initialized once in TestMain (in main_test.go)
+var (
+	sharedContainer testcontainers.Container
+	sharedConnStr   string
+)
+
 // TestEnv holds the test environment
 type TestEnv struct {
 	Auth      *auth.Auth
 	Store     *store.Store
 	DB        *bun.DB
-	Container testcontainers.Container
+	Container testcontainers.Container // nil when using shared container
 	Server    *httptest.Server
+	useShared bool
 }
 
-// Setup creates a full test environment with PostgreSQL
+// Setup creates a test environment using the shared PostgreSQL container.
+// Each test gets a fresh auth instance and server, but shares the database.
+// Call TruncateTables at the start of each test for isolation.
 func Setup(t *testing.T) *TestEnv {
 	t.Helper()
 	ctx := context.Background()
 
-	// Start PostgreSQL container
-	pgContainer, err := postgres.Run(ctx,
-		"postgres:16-alpine",
-		postgres.WithDatabase("testdb"),
-		postgres.WithUsername("testuser"),
-		postgres.WithPassword("testpass"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(30*time.Second),
-		),
-	)
-	if err != nil {
-		t.Fatalf("Failed to start PostgreSQL container: %v", err)
+	if sharedConnStr == "" {
+		t.Fatal("Shared container not initialized - TestMain not called?")
 	}
 
-	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to get connection string: %v", err)
-	}
-
-	// Connect with Bun
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
+	// Connect with Bun using shared container
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(sharedConnStr)))
 	bunDB := bun.NewDB(sqldb, pgdialect.New())
 
 	if err := bunDB.PingContext(ctx); err != nil {
-		pgContainer.Terminate(ctx)
 		t.Fatalf("Failed to ping database: %v", err)
 	}
 
-	// Create store and run migrations
+	// Create store and run migrations (idempotent)
 	dbStore := store.New(bunDB)
 	if err := dbStore.Migrate(ctx); err != nil {
 		bunDB.Close()
-		pgContainer.Terminate(ctx)
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	// Create auth instance
-	// Note: Rate limiting is disabled for e2e tests since:
-	// 1. Rate limit tests each create their own env with fresh rate limiters
-	// 2. Other tests (like max sessions) need to make many auth requests
-	// Rate limiting is tested separately with RateLimitEnabled=true
-	authInstance, err := auth.New(dbStore,
-		config.WithSecret("test-secret-key-32-characters!!!"), // Exactly 32 bytes
-		config.WithBaseURL("http://localhost:3000"),
-		config.WithSessionDuration(24*time.Hour),
-		config.WithAutoSignIn(true),
-		config.WithCSRF(false),                         // Disable CSRF for testing
-		config.WithPasswordComplexity(false),           // Disable complexity for simpler test passwords
-		config.WithSessionCleanupInterval(0),           // Disable background cleanup in tests
-		config.WithRateLimit(false, time.Minute, 1000), // Disable rate limiting for general e2e tests
-	)
-	if err != nil {
-		bunDB.Close()
-		pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to create auth instance: %v", err)
-	}
-
-	// Create test server - mount auth handler at /auth
-	mux := http.NewServeMux()
-	mux.Handle("/auth/", http.StripPrefix("/auth", authInstance.Handler()))
-	server := httptest.NewServer(mux)
-
-	return &TestEnv{
-		Auth:      authInstance,
-		Store:     dbStore,
-		DB:        bunDB,
-		Container: pgContainer,
-		Server:    server,
-	}
-}
-
-// SetupWithRateLimiting creates a test environment with rate limiting enabled.
-// Use this for tests that specifically test rate limiting behavior.
-func SetupWithRateLimiting(t *testing.T, authRateLimit int) *TestEnv {
-	t.Helper()
-	ctx := context.Background()
-
-	// Start PostgreSQL container
-	pgContainer, err := postgres.Run(ctx,
-		"postgres:16-alpine",
-		postgres.WithDatabase("testdb"),
-		postgres.WithUsername("testuser"),
-		postgres.WithPassword("testpass"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(30*time.Second),
-		),
-	)
-	if err != nil {
-		t.Fatalf("Failed to start PostgreSQL container: %v", err)
-	}
-
-	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to get connection string: %v", err)
-	}
-
-	// Connect with Bun
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
-	bunDB := bun.NewDB(sqldb, pgdialect.New())
-
-	if err := bunDB.PingContext(ctx); err != nil {
-		pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to ping database: %v", err)
-	}
-
-	// Create store and run migrations
-	dbStore := store.New(bunDB)
-	if err := dbStore.Migrate(ctx); err != nil {
-		bunDB.Close()
-		pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to run migrations: %v", err)
-	}
-
-	// Create auth instance with rate limiting
 	authInstance, err := auth.New(dbStore,
 		config.WithSecret("test-secret-key-32-characters!!!"),
 		config.WithBaseURL("http://localhost:3000"),
@@ -166,11 +75,10 @@ func SetupWithRateLimiting(t *testing.T, authRateLimit int) *TestEnv {
 		config.WithCSRF(false),
 		config.WithPasswordComplexity(false),
 		config.WithSessionCleanupInterval(0),
-		config.WithAuthRateLimit(authRateLimit), // Enable rate limiting with specified limit
+		config.WithRateLimit(false, time.Minute, 1000),
 	)
 	if err != nil {
 		bunDB.Close()
-		pgContainer.Terminate(ctx)
 		t.Fatalf("Failed to create auth instance: %v", err)
 	}
 
@@ -183,12 +91,140 @@ func SetupWithRateLimiting(t *testing.T, authRateLimit int) *TestEnv {
 		Auth:      authInstance,
 		Store:     dbStore,
 		DB:        bunDB,
-		Container: pgContainer,
+		Container: nil, // Using shared container
 		Server:    server,
+		useShared: true,
 	}
 }
 
-// Cleanup closes the database and terminates the container
+// SetupIsolated creates a fully isolated test environment with its own container.
+// Use this for tests that need special configuration (e.g., rate limiting tests).
+func SetupIsolated(t *testing.T) *TestEnv {
+	t.Helper()
+	ctx := context.Background()
+
+	// Start dedicated PostgreSQL container
+	pgContainer, err := postgres.Run(ctx,
+		"postgres:16-alpine",
+		postgres.WithDatabase("testdb"),
+		postgres.WithUsername("testuser"),
+		postgres.WithPassword("testpass"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(30*time.Second),
+		),
+	)
+	if err != nil {
+		t.Fatalf("Failed to start PostgreSQL container: %v", err)
+	}
+
+	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		pgContainer.Terminate(ctx)
+		t.Fatalf("Failed to get connection string: %v", err)
+	}
+
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
+	bunDB := bun.NewDB(sqldb, pgdialect.New())
+
+	if err := bunDB.PingContext(ctx); err != nil {
+		pgContainer.Terminate(ctx)
+		t.Fatalf("Failed to ping database: %v", err)
+	}
+
+	dbStore := store.New(bunDB)
+	if err := dbStore.Migrate(ctx); err != nil {
+		bunDB.Close()
+		pgContainer.Terminate(ctx)
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	authInstance, err := auth.New(dbStore,
+		config.WithSecret("test-secret-key-32-characters!!!"),
+		config.WithBaseURL("http://localhost:3000"),
+		config.WithSessionDuration(24*time.Hour),
+		config.WithAutoSignIn(true),
+		config.WithCSRF(false),
+		config.WithPasswordComplexity(false),
+		config.WithSessionCleanupInterval(0),
+		config.WithRateLimit(false, time.Minute, 1000),
+	)
+	if err != nil {
+		bunDB.Close()
+		pgContainer.Terminate(ctx)
+		t.Fatalf("Failed to create auth instance: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/auth/", http.StripPrefix("/auth", authInstance.Handler()))
+	server := httptest.NewServer(mux)
+
+	return &TestEnv{
+		Auth:      authInstance,
+		Store:     dbStore,
+		DB:        bunDB,
+		Container: pgContainer,
+		Server:    server,
+		useShared: false,
+	}
+}
+
+// SetupWithRateLimiting creates a test environment with rate limiting enabled.
+// Uses the shared container but creates a fresh auth instance with rate limiting.
+func SetupWithRateLimiting(t *testing.T, authRateLimit int) *TestEnv {
+	t.Helper()
+	ctx := context.Background()
+
+	if sharedConnStr == "" {
+		t.Fatal("Shared container not initialized - TestMain not called?")
+	}
+
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(sharedConnStr)))
+	bunDB := bun.NewDB(sqldb, pgdialect.New())
+
+	if err := bunDB.PingContext(ctx); err != nil {
+		t.Fatalf("Failed to ping database: %v", err)
+	}
+
+	dbStore := store.New(bunDB)
+	if err := dbStore.Migrate(ctx); err != nil {
+		bunDB.Close()
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
+	// Create auth instance with rate limiting
+	authInstance, err := auth.New(dbStore,
+		config.WithSecret("test-secret-key-32-characters!!!"),
+		config.WithBaseURL("http://localhost:3000"),
+		config.WithSessionDuration(24*time.Hour),
+		config.WithAutoSignIn(true),
+		config.WithCSRF(false),
+		config.WithPasswordComplexity(false),
+		config.WithSessionCleanupInterval(0),
+		config.WithAuthRateLimit(authRateLimit),
+	)
+	if err != nil {
+		bunDB.Close()
+		t.Fatalf("Failed to create auth instance: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/auth/", http.StripPrefix("/auth", authInstance.Handler()))
+	server := httptest.NewServer(mux)
+
+	return &TestEnv{
+		Auth:      authInstance,
+		Store:     dbStore,
+		DB:        bunDB,
+		Container: nil,
+		Server:    server,
+		useShared: true,
+	}
+}
+
+// Cleanup closes resources. For shared containers, only closes the connection.
+// The shared container is terminated in TestMain.
 func (env *TestEnv) Cleanup(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
@@ -202,7 +238,8 @@ func (env *TestEnv) Cleanup(t *testing.T) {
 	if env.DB != nil {
 		env.DB.Close()
 	}
-	if env.Container != nil {
+	// Only terminate container if using isolated mode
+	if !env.useShared && env.Container != nil {
 		if err := env.Container.Terminate(ctx); err != nil {
 			t.Logf("Failed to terminate container: %v", err)
 		}

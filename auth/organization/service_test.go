@@ -14,12 +14,9 @@ func TestService_CreateOrganization(t *testing.T) {
 	ctx := context.Background()
 	service := createTestService(t, tdb.DB)
 
-	// Create a test user
-	user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
-
 	t.Run("creates organization successfully", func(t *testing.T) {
 		tdb.truncateTables(t)
-		tdb.createTestUser(t, user.ID, user.Email, user.Name)
+		user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 		org, err := service.CreateOrganization(ctx, "Test Org", "test-org", user.ID, nil)
 		if err != nil {
@@ -51,7 +48,7 @@ func TestService_CreateOrganization(t *testing.T) {
 
 	t.Run("creates organization with metadata", func(t *testing.T) {
 		tdb.truncateTables(t)
-		tdb.createTestUser(t, user.ID, user.Email, user.Name)
+		user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 		metadata := map[string]any{
 			"industry": "technology",
@@ -70,7 +67,7 @@ func TestService_CreateOrganization(t *testing.T) {
 
 	t.Run("fails with duplicate slug", func(t *testing.T) {
 		tdb.truncateTables(t)
-		tdb.createTestUser(t, user.ID, user.Email, user.Name)
+		user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 		_, err := service.CreateOrganization(ctx, "First Org", "same-slug", user.ID, nil)
 		if err != nil {
@@ -85,7 +82,7 @@ func TestService_CreateOrganization(t *testing.T) {
 
 	t.Run("respects organization limit", func(t *testing.T) {
 		tdb.truncateTables(t)
-		tdb.createTestUser(t, user.ID, user.Email, user.Name)
+		user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 		// Create service with limit of 1
 		limitService := createTestService(t, tdb.DB, organization.WithOrganizationLimit(func(userID string) int { return 1 }))
@@ -103,7 +100,7 @@ func TestService_CreateOrganization(t *testing.T) {
 
 	t.Run("respects AllowUserToCreateOrganization", func(t *testing.T) {
 		tdb.truncateTables(t)
-		tdb.createTestUser(t, user.ID, user.Email, user.Name)
+		user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 		// Create service that doesn't allow org creation
 		restrictedService := createTestService(t, tdb.DB, organization.WithAllowUserToCreateOrganization(func(userID string) bool { return false }))
@@ -121,11 +118,10 @@ func TestService_GetOrganization(t *testing.T) {
 
 	ctx := context.Background()
 	service := createTestService(t, tdb.DB)
-	user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 	t.Run("gets organization by ID", func(t *testing.T) {
 		tdb.truncateTables(t)
-		tdb.createTestUser(t, user.ID, user.Email, user.Name)
+		user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 		created, _ := service.CreateOrganization(ctx, "Test Org", "test-org", user.ID, nil)
 
@@ -155,11 +151,10 @@ func TestService_GetOrganizationBySlug(t *testing.T) {
 
 	ctx := context.Background()
 	service := createTestService(t, tdb.DB)
-	user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 	t.Run("gets organization by slug", func(t *testing.T) {
 		tdb.truncateTables(t)
-		tdb.createTestUser(t, user.ID, user.Email, user.Name)
+		user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 		created, _ := service.CreateOrganization(ctx, "Test Org", "my-test-org", user.ID, nil)
 
@@ -189,11 +184,10 @@ func TestService_UpdateOrganization(t *testing.T) {
 
 	ctx := context.Background()
 	service := createTestService(t, tdb.DB)
-	user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 	t.Run("updates organization name", func(t *testing.T) {
 		tdb.truncateTables(t)
-		tdb.createTestUser(t, user.ID, user.Email, user.Name)
+		user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 		created, _ := service.CreateOrganization(ctx, "Old Name", "org-slug", user.ID, nil)
 
@@ -211,7 +205,7 @@ func TestService_UpdateOrganization(t *testing.T) {
 
 	t.Run("updates organization slug", func(t *testing.T) {
 		tdb.truncateTables(t)
-		tdb.createTestUser(t, user.ID, user.Email, user.Name)
+		user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 		created, _ := service.CreateOrganization(ctx, "Test Org", "old-slug", user.ID, nil)
 
@@ -229,7 +223,7 @@ func TestService_UpdateOrganization(t *testing.T) {
 
 	t.Run("fails with duplicate slug", func(t *testing.T) {
 		tdb.truncateTables(t)
-		tdb.createTestUser(t, user.ID, user.Email, user.Name)
+		user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 		_, _ = service.CreateOrganization(ctx, "First Org", "first-slug", user.ID, nil)
 		second, _ := service.CreateOrganization(ctx, "Second Org", "second-slug", user.ID, nil)
@@ -249,11 +243,10 @@ func TestService_DeleteOrganization(t *testing.T) {
 
 	ctx := context.Background()
 	service := createTestService(t, tdb.DB)
-	user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 	t.Run("deletes organization and related data", func(t *testing.T) {
 		tdb.truncateTables(t)
-		tdb.createTestUser(t, user.ID, user.Email, user.Name)
+		user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 		org, _ := service.CreateOrganization(ctx, "Test Org", "test-org", user.ID, nil)
 
@@ -285,11 +278,10 @@ func TestService_ListUserOrganizations(t *testing.T) {
 
 	ctx := context.Background()
 	service := createTestService(t, tdb.DB)
-	user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 	t.Run("lists user's organizations", func(t *testing.T) {
 		tdb.truncateTables(t)
-		tdb.createTestUser(t, user.ID, user.Email, user.Name)
+		user := tdb.createTestUser(t, "user-1", "test@example.com", "Test User")
 
 		_, _ = service.CreateOrganization(ctx, "Org 1", "org-1", user.ID, nil)
 		_, _ = service.CreateOrganization(ctx, "Org 2", "org-2", user.ID, nil)
