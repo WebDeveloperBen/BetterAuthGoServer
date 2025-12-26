@@ -118,10 +118,10 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]any{
 			"message": "BetterAuth OAuth Example",
 			"oauth": map[string]string{
-				"google":   "/auth/oauth/google",
-				"github":   "/auth/oauth/github",
-				"discord":  "/auth/oauth/discord",
-				"list":     "/auth/oauth/providers",
+				"google":  "/auth/oauth/google",
+				"github":  "/auth/oauth/github",
+				"discord": "/auth/oauth/discord",
+				"list":    "/auth/oauth/providers",
 			},
 			"auth": map[string]string{
 				"sign-up":  "/auth/sign-up",

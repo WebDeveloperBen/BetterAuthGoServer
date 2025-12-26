@@ -216,7 +216,6 @@ func (p *Plugin) completeOAuthUserCreation(ctx context.Context, provider string,
 	return user, nil
 }
 
-
 // Helper functions (adapted from handlers package)
 func writeJSON(w http.ResponseWriter, status int, v any) error {
 	w.Header().Set("Content-Type", "application/json")

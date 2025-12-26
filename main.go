@@ -88,33 +88,33 @@ func main() {
 		config.WithLogger(logger),
 
 		// ----- Session Configuration -----
-		config.WithSessionDuration(7*24*time.Hour),        // 7 days
-		config.WithSessionCookie("auth_session"),          // Session cookie name
-		config.WithSessionCleanupInterval(1*time.Hour),    // Auto-cleanup expired sessions
-		config.WithMaxSessionsPerUser(10),                 // Max concurrent sessions per user
+		config.WithSessionDuration(7*24*time.Hour),     // 7 days
+		config.WithSessionCookie("auth_session"),       // Session cookie name
+		config.WithSessionCleanupInterval(1*time.Hour), // Auto-cleanup expired sessions
+		config.WithMaxSessionsPerUser(10),              // Max concurrent sessions per user
 
 		// ----- Password Configuration -----
-		config.WithPasswordAuth(true),                     // Enable password auth
-		config.WithPasswordPolicy(8, 128),                 // Min 8, max 128 characters
-		config.WithPasswordComplexity(true),               // Require uppercase, lowercase, digit, special
-		config.WithPasswordResetExpiry(1*time.Hour),       // Password reset token expiry
-		config.WithAutoSignIn(true),                       // Auto sign-in after registration
+		config.WithPasswordAuth(true),               // Enable password auth
+		config.WithPasswordPolicy(8, 128),           // Min 8, max 128 characters
+		config.WithPasswordComplexity(true),         // Require uppercase, lowercase, digit, special
+		config.WithPasswordResetExpiry(1*time.Hour), // Password reset token expiry
+		config.WithAutoSignIn(true),                 // Auto sign-in after registration
 
 		// ----- Email Verification -----
-		config.WithEmailVerification(true, 24*time.Hour),  // Required, 24h token expiry
+		config.WithEmailVerification(true, 24*time.Hour), // Required, 24h token expiry
 
 		// ----- CSRF Protection -----
-		config.WithCSRF(true),                             // Enable CSRF protection
-		config.WithCSRFCookie("csrf_token"),               // CSRF cookie name
-		config.WithCSRFHeader("X-CSRF-Token"),             // CSRF header name
+		config.WithCSRF(true),                 // Enable CSRF protection
+		config.WithCSRFCookie("csrf_token"),   // CSRF cookie name
+		config.WithCSRFHeader("X-CSRF-Token"), // CSRF header name
 
 		// ----- Rate Limiting -----
-		config.WithRateLimit(true, 1*time.Minute, 100),    // 100 requests per minute
-		config.WithAuthRateLimit(10),                      // 10 auth attempts per minute
+		config.WithRateLimit(true, 1*time.Minute, 100), // 100 requests per minute
+		config.WithAuthRateLimit(10),                   // 10 auth attempts per minute
 
 		// ----- Trusted Origins/Proxies -----
 		config.WithTrustedOrigins(baseURL, frontendURL),
-		config.WithTrustedProxies("127.0.0.1", "::1"),     // Trust localhost proxies
+		config.WithTrustedProxies("127.0.0.1", "::1"), // Trust localhost proxies
 
 		// ----- Global Middleware Hooks -----
 		config.WithBeforeHook(func(ctx *hooks.Context) error {

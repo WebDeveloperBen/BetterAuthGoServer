@@ -449,7 +449,8 @@ func (m *mockSessionManager) GetSessionToken(r *http.Request) string {
 	return "test-token"
 }
 
-func (m *mockSessionManager) SetSessionCookie(w http.ResponseWriter, token string, expiresAt time.Time) {}
+func (m *mockSessionManager) SetSessionCookie(w http.ResponseWriter, token string, expiresAt time.Time) {
+}
 
 // mockHandlersUserProvider implements UserProvider for handler tests
 type mockHandlersUserProvider struct {

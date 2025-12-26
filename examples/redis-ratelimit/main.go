@@ -100,9 +100,9 @@ func main() {
 
 	// 7. Add rate limiting with Redis backend
 	authService.Use(ratelimit.NewPlugin(
-		ratelimit.WithLimit(100, time.Minute),      // 100 requests per minute
-		ratelimit.WithBackend(redisRateLimiter),    // Use Redis for distributed state
-		ratelimit.WithTrustedProxies([]string{      // Trust these proxies for X-Forwarded-For
+		ratelimit.WithLimit(100, time.Minute),   // 100 requests per minute
+		ratelimit.WithBackend(redisRateLimiter), // Use Redis for distributed state
+		ratelimit.WithTrustedProxies([]string{ // Trust these proxies for X-Forwarded-For
 			"127.0.0.1",
 			"10.0.0.0/8",
 		}),
@@ -124,10 +124,10 @@ func main() {
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"message":     "BetterAuth Redis Rate Limiting Example",
-			"redis":       redisAddr,
-			"rate_limit":  "100 requests/minute (shared across all instances)",
-			"docs":        "/auth/ endpoints available",
+			"message":    "BetterAuth Redis Rate Limiting Example",
+			"redis":      redisAddr,
+			"rate_limit": "100 requests/minute (shared across all instances)",
+			"docs":       "/auth/ endpoints available",
 		})
 	})
 
