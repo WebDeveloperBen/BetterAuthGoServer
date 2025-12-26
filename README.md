@@ -141,6 +141,8 @@ BetterAuth uses a plugin system for extensibility. Default plugins (CSRF, rate l
 
 ### Adding Plugins
 
+Plugins use a builder pattern with method chaining. Register plugins with `Use()` and check for errors with `Err()`:
+
 ```go
 import (
     "github.com/webdeveloperben/BetterAuthGoServer/auth"
@@ -156,14 +158,24 @@ authService, _ := auth.New(store,
     config.WithBaseURL(baseURL),
 )
 
-// Add JWT support
-authService.Use(jwt.NewPlugin(jwt.WithIssuer("myapp")))
+// Chain plugins using builder pattern
+authService.
+    Use(jwt.NewPlugin(jwt.WithIssuer("myapp"))).
+    Use(oauth.NewPlugin(
+        providers.NewGoogle(clientID, clientSecret, callbackURL),
+        providers.NewGitHub(clientID, clientSecret, callbackURL),
+    ))
 
-// Add OAuth providers
-authService.Use(oauth.NewPlugin(
-    providers.NewGoogle(clientID, clientSecret, callbackURL),
-    providers.NewGitHub(clientID, clientSecret, callbackURL),
-))
+// Check for any plugin registration errors
+if err := authService.Err(); err != nil {
+    log.Fatal("Failed to register plugins:", err)
+}
+```
+
+You can also register multiple plugins in a single `Use()` call:
+
+```go
+authService.Use(plugin1, plugin2, plugin3)
 ```
 
 ### Minimal Setup (No Defaults)
@@ -177,6 +189,9 @@ authService, _ := auth.New(store,
 
 // Add only what you need
 authService.Use(myCustomPlugin)
+if err := authService.Err(); err != nil {
+    log.Fatal(err)
+}
 ```
 
 ### Creating Custom Plugins
@@ -305,6 +320,11 @@ authService.Use(oauth.NewPlugin(
         "http://localhost:8080/auth/oauth/discord/callback",
     ),
 ))
+
+// Check for errors after registering plugins
+if err := authService.Err(); err != nil {
+    log.Fatal(err)
+}
 ```
 
 ### Frontend Integration
