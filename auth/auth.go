@@ -5,20 +5,22 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/csrf"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/defaults"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/events"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/ratelimit"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
 // Auth is the main authentication orchestrator
 type Auth struct {
-	config Config
+	config *config.Config
 	store  models.Store
 
 	// Password hasher
@@ -27,6 +29,9 @@ type Auth struct {
 	// Token utilities
 	tokenHasher    *token.Hasher
 	tokenEncryptor *token.Encryptor
+
+	// Event bus for publishing auth events
+	eventBus models.EventBus
 
 	// Plugin registry
 	plugins *plugin.Registry
@@ -43,19 +48,21 @@ type Auth struct {
 //   - Session cleanup
 //   - Admin endpoints
 //
-// Use WithoutDefaults() to disable default features and manually Use() plugins.
-func New(store models.Store, opts ...Option) (*Auth, error) {
-	cfg := DefaultConfig()
-	for _, opt := range opts {
-		opt(&cfg)
-	}
+// Use config.WithoutDefaults() to disable default features and manually Use() plugins.
+func New(store models.Store, opts ...config.Option) (*Auth, error) {
+	cfg := config.NewConfig(opts...)
 
-	if err := cfg.validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
 	if store == nil {
 		return nil, ErrMissingStore
+	}
+
+	// Create default EventBus if not provided
+	if cfg.EventBus == nil {
+		cfg.EventBus = events.Default(cfg.Logger)
 	}
 
 	// Create Auth instance
@@ -65,6 +72,7 @@ func New(store models.Store, opts ...Option) (*Auth, error) {
 		hasher:         NewArgon2PasswordHasher(),
 		tokenHasher:    token.NewHasher(cfg.Secret),
 		tokenEncryptor: token.NewEncryptor(cfg.Secret),
+		eventBus:       cfg.EventBus,
 	}
 
 	// Initialize plugin registry
@@ -77,7 +85,9 @@ func New(store models.Store, opts ...Option) (*Auth, error) {
 
 	// Register default plugins if not skipping defaults
 	if !cfg.SkipDefaults {
-		a.registerDefaultPlugins()
+		for _, p := range defaults.Plugins(cfg) {
+			a.plugins.Register(p)
+		}
 	}
 
 	// Initialize plugins with context that includes AuthCore
@@ -86,9 +96,6 @@ func New(store models.Store, opts ...Option) (*Auth, error) {
 		return nil, err
 	}
 
-	// Merge plugin hooks with config hooks
-	a.mergePluginHooks()
-
 	// Start background cleanup if interval is configured and not skipping defaults
 	if cfg.SessionCleanupInterval > 0 && !cfg.SkipDefaults {
 		a.stopCleanup = make(chan struct{})
@@ -96,36 +103,6 @@ func New(store models.Store, opts ...Option) (*Auth, error) {
 	}
 
 	return a, nil
-}
-
-// registerDefaultPlugins registers the default plugins
-func (a *Auth) registerDefaultPlugins() {
-	// Rate limiting plugin
-	if a.config.RateLimitEnabled {
-		var opts []ratelimit.Option
-		opts = append(opts, ratelimit.WithLimit(a.config.AuthRateLimitMax, a.config.RateLimitWindow))
-		if a.config.RateLimiterBackend != nil {
-			opts = append(opts, ratelimit.WithBackend(a.config.RateLimiterBackend))
-		}
-		if len(a.config.TrustedProxies) > 0 {
-			opts = append(opts, ratelimit.WithTrustedProxies(a.config.TrustedProxies))
-		}
-		a.plugins.Register(ratelimit.NewPlugin(opts...))
-	}
-
-	// CSRF protection plugin
-	if a.config.CSRFEnabled {
-		var opts []csrf.Option
-		if a.config.CSRFCookieName != "" {
-			opts = append(opts, csrf.WithCookieName(a.config.CSRFCookieName))
-		}
-		if a.config.CSRFHeaderName != "" {
-			opts = append(opts, csrf.WithHeaderName(a.config.CSRFHeaderName))
-		}
-		a.plugins.Register(csrf.NewPlugin(opts...))
-	}
-
-	// Future: Admin plugin, etc.
 }
 
 // Close stops background goroutines and cleans up resources
@@ -137,52 +114,37 @@ func (a *Auth) Close() {
 	if a.plugins != nil {
 		a.plugins.Close()
 	}
+	if a.eventBus != nil {
+		a.eventBus.Close()
+	}
 }
 
-// mergePluginHooks merges hooks from plugins with config hooks.
-// Plugin hooks are chained to run after config hooks.
-func (a *Auth) mergePluginHooks() {
-	if a.plugins == nil {
+// EventBus returns the event bus for subscribing to auth events.
+// Use this to add custom handlers for events like user creation, sign-in, etc.
+func (a *Auth) EventBus() models.EventBus {
+	return a.eventBus
+}
+
+// publishEvent publishes an event to the event bus.
+// Errors are logged but not returned since events are fire-and-forget.
+func (a *Auth) publishEvent(ctx context.Context, eventType string, payload any) {
+	if a.eventBus == nil {
 		return
 	}
 
-	pluginHooks := a.plugins.Hooks()
-
-	// Merge per-event hooks (plugin hooks run after config hooks)
-	if pluginHooks.OnUserCreated != nil {
-		prev := a.config.Hooks.OnUserCreated
-		a.config.Hooks.OnUserCreated = func(ctx context.Context, user *models.User) error {
-			if prev != nil {
-				if err := prev(ctx, user); err != nil {
-					return err
-				}
-			}
-			return pluginHooks.OnUserCreated(ctx, user.ID)
-		}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		a.config.Logger.Error("failed to marshal event payload", "event", eventType, "error", err)
+		return
 	}
 
-	if pluginHooks.OnSignIn != nil {
-		prev := a.config.Hooks.OnSignIn
-		a.config.Hooks.OnSignIn = func(ctx context.Context, user *models.User, session *models.Session) error {
-			if prev != nil {
-				if err := prev(ctx, user, session); err != nil {
-					return err
-				}
-			}
-			return pluginHooks.OnSignIn(ctx, user.ID, session.ID)
-		}
+	event := models.Event{
+		Type:    eventType,
+		Payload: payloadBytes,
 	}
 
-	if pluginHooks.OnSignOut != nil {
-		prev := a.config.Hooks.OnSignOut
-		a.config.Hooks.OnSignOut = func(ctx context.Context, user *models.User, session *models.Session) error {
-			if prev != nil {
-				if err := prev(ctx, user, session); err != nil {
-					return err
-				}
-			}
-			return pluginHooks.OnSignOut(ctx, user.ID, session.ID)
-		}
+	if err := a.eventBus.Publish(ctx, event); err != nil {
+		a.config.Logger.Error("failed to publish event", "event", eventType, "error", err)
 	}
 }
 
@@ -279,8 +241,8 @@ func (a *Auth) SignUp(ctx context.Context, req SignUpRequest, r *http.Request) (
 		return nil, nil, err
 	}
 
-	// Fire hook
-	a.config.Hooks.FireUserCreated(ctx, a.config.Logger, user)
+	// Publish user created event
+	a.publishEvent(ctx, models.EventUserCreated, models.UserCreatedPayload{User: user})
 
 	// Auto sign-in if enabled
 	var session *models.Session
@@ -289,7 +251,7 @@ func (a *Auth) SignUp(ctx context.Context, req SignUpRequest, r *http.Request) (
 		if err != nil {
 			return nil, nil, err
 		}
-		a.config.Hooks.FireSignIn(ctx, a.config.Logger, user, session)
+		a.publishEvent(ctx, models.EventSignedIn, models.SignedInPayload{User: user, Session: session})
 	}
 
 	return user, session, nil
@@ -335,8 +297,8 @@ func (a *Auth) SignIn(ctx context.Context, email, password string, r *http.Reque
 		return nil, nil, err
 	}
 
-	// Fire hook
-	a.config.Hooks.FireSignIn(ctx, a.config.Logger, user, session)
+	// Publish signed in event
+	a.publishEvent(ctx, models.EventSignedIn, models.SignedInPayload{User: user, Session: session})
 
 	return user, session, nil
 }
@@ -360,9 +322,9 @@ func (a *Auth) SignOut(ctx context.Context, sessionID string) error {
 		return err
 	}
 
-	// Fire hook
+	// Publish signed out event
 	if user != nil {
-		a.config.Hooks.FireSignOut(ctx, a.config.Logger, user, session)
+		a.publishEvent(ctx, models.EventSignedOut, models.SignedOutPayload{User: user, Session: session})
 	}
 
 	return nil
@@ -433,8 +395,8 @@ func (a *Auth) RequestPasswordReset(ctx context.Context, email string) error {
 		return err
 	}
 
-	// Fire hook with the raw token (for sending email)
-	a.config.Hooks.FirePasswordResetRequested(ctx, a.config.Logger, user, rawToken)
+	// Publish password reset requested event (includes raw token for sending email)
+	a.publishEvent(ctx, models.EventPasswordResetRequested, models.PasswordResetRequestedPayload{User: user, Token: rawToken})
 
 	return nil
 }
@@ -490,10 +452,10 @@ func (a *Auth) ConfirmPasswordReset(ctx context.Context, rawToken, newPassword s
 	// Invalidate all sessions for security
 	_ = a.store.DeleteSessionsByUserID(ctx, verification.UserID)
 
-	// Fire hook
+	// Publish password changed event
 	user, _ := a.store.GetUserByID(ctx, verification.UserID)
 	if user != nil {
-		a.config.Hooks.FirePasswordChanged(ctx, a.config.Logger, user)
+		a.publishEvent(ctx, models.EventPasswordChanged, models.PasswordChangedPayload{User: user})
 	}
 
 	return nil
@@ -535,10 +497,10 @@ func (a *Auth) ChangePassword(ctx context.Context, userID, oldPassword, newPassw
 	// Invalidate all sessions for security
 	_ = a.store.DeleteSessionsByUserID(ctx, userID)
 
-	// Fire hook
+	// Publish password changed event
 	user, _ := a.store.GetUserByID(ctx, userID)
 	if user != nil {
-		a.config.Hooks.FirePasswordChanged(ctx, a.config.Logger, user)
+		a.publishEvent(ctx, models.EventPasswordChanged, models.PasswordChangedPayload{User: user})
 	}
 
 	return nil
@@ -582,8 +544,8 @@ func (a *Auth) SendVerificationEmail(ctx context.Context, userID string) error {
 		return err
 	}
 
-	// Fire hook with the raw token (for sending email)
-	a.config.Hooks.FireEmailVerificationRequested(ctx, a.config.Logger, user, rawToken)
+	// Publish email verification sent event (includes raw token for sending email)
+	a.publishEvent(ctx, models.EventEmailVerificationSent, models.EmailVerificationSentPayload{User: user, Token: rawToken})
 
 	return nil
 }
@@ -614,10 +576,10 @@ func (a *Auth) VerifyEmail(ctx context.Context, rawToken string) error {
 	// Delete the verification token
 	_ = a.store.DeleteVerification(ctx, verification.ID)
 
-	// Fire hook
+	// Publish email verified event
 	user, _ := a.store.GetUserByID(ctx, verification.UserID)
 	if user != nil {
-		a.config.Hooks.FireEmailVerified(ctx, a.config.Logger, user)
+		a.publishEvent(ctx, models.EventEmailVerified, models.EmailVerifiedPayload{User: user})
 	}
 
 	return nil
@@ -625,53 +587,255 @@ func (a *Auth) VerifyEmail(ctx context.Context, rawToken string) error {
 
 // validatePassword checks if a password meets the requirements
 func (a *Auth) validatePassword(password string) error {
-	if len(password) < a.config.PasswordMinLength {
-		return ErrPasswordTooShort
-	}
-	if len(password) > a.config.PasswordMaxLength {
-		return ErrPasswordTooLong
-	}
-
-	// Check complexity requirements if enabled
-	if a.config.RequirePasswordComplexity {
-		var hasUpper, hasLower, hasDigit, hasSpecial bool
-		for _, c := range password {
-			switch {
-			case c >= 'A' && c <= 'Z':
-				hasUpper = true
-			case c >= 'a' && c <= 'z':
-				hasLower = true
-			case c >= '0' && c <= '9':
-				hasDigit = true
-			case isSpecialChar(c):
-				hasSpecial = true
-			}
-		}
-		if !hasUpper || !hasLower || !hasDigit || !hasSpecial {
-			return ErrPasswordTooWeak
-		}
-	}
-
-	return nil
-}
-
-// isSpecialChar returns true if the rune is a special character
-func isSpecialChar(c rune) bool {
-	specialChars := "!@#$%^&*()_+-=[]{}|;':\",./<>?`~"
-	for _, s := range specialChars {
-		if c == s {
-			return true
-		}
-	}
-	return false
+	return ValidatePassword(password, PasswordValidationConfig{
+		MinLength:         a.config.PasswordMinLength,
+		MaxLength:         a.config.PasswordMaxLength,
+		RequireComplexity: a.config.RequirePasswordComplexity,
+	})
 }
 
 // Config returns the auth configuration (read-only access)
-func (a *Auth) Config() Config {
+func (a *Auth) Config() *config.Config {
 	return a.config
 }
 
 // Store returns the store interface
 func (a *Auth) Store() models.Store {
 	return a.store
+}
+
+// =============================================================================
+// Plugin Integration
+// =============================================================================
+
+// Ensure Auth implements plugin.AuthCore at compile time
+var _ plugin.AuthCore = (*Auth)(nil)
+
+// Use adds a plugin to the auth instance.
+// The plugin is immediately initialized and its routes/middleware/hooks are registered.
+// This can be called after New() to add optional plugins.
+//
+// Example:
+//
+//	auth := betterauth.New(store, betterauth.WithSecret(secret))
+//	auth.Use(jwt.Plugin())
+//	auth.Use(oauth.Plugin(providers.Google(...)))
+func (a *Auth) Use(p plugin.Plugin) error {
+	// Ensure we have a plugin registry
+	if a.plugins == nil {
+		a.plugins = plugin.NewRegistry(a.config.Logger)
+		// Initialize the registry with context
+		pluginCtx := a.buildPluginContext()
+		if err := a.plugins.Init(pluginCtx); err != nil {
+			return err
+		}
+	}
+
+	return a.plugins.AddPlugin(p)
+}
+
+// buildPluginContext creates a plugin.Context with access to auth internals
+func (a *Auth) buildPluginContext() plugin.Context {
+	ctx := plugin.Context{
+		BaseURL:   a.config.BaseURL,
+		Secret:    a.config.Secret,
+		Auth:      a, // Auth implements plugin.AuthCore
+		Hasher:    a.tokenHasher,
+		Encryptor: a.tokenEncryptor,
+		Logger:    a.config.Logger,
+		EventBus:  a.eventBus,
+	}
+
+	// Check if store provides DB access
+	if dbProvider, ok := a.store.(plugin.DBProvider); ok {
+		ctx.DB = dbProvider.DB()
+	}
+
+	return ctx
+}
+
+// BaseURL returns the base URL configured for the auth service.
+// Implements plugin.AuthCore.
+func (a *Auth) BaseURL() string {
+	return a.config.BaseURL
+}
+
+// Secret returns the secret key.
+// Implements plugin.AuthCore.
+func (a *Auth) Secret() string {
+	return a.config.Secret
+}
+
+// CreateSessionForUser creates a new session for the given user.
+// Implements jwt.AuthProvider and oauth.AuthProvider.
+func (a *Auth) CreateSessionForUser(ctx context.Context, userID string, r *http.Request) (*plugin.Session, error) {
+	session, err := a.createSession(ctx, userID, r)
+	if err != nil {
+		return nil, err
+	}
+	return toPluginSession(session), nil
+}
+
+// VerifyPassword verifies a user's password.
+// Implements jwt.AuthProvider.
+func (a *Auth) VerifyPassword(ctx context.Context, userID string, password string) (bool, error) {
+	account, err := a.store.GetAccountByUserIDAndProvider(ctx, userID, models.ProviderEmail)
+	if err != nil {
+		return false, err
+	}
+	if account == nil || account.PasswordHash == nil {
+		return false, nil
+	}
+	return a.hasher.Verify(password, *account.PasswordHash), nil
+}
+
+// GetUserFromRequest retrieves the authenticated user from the request context.
+// Implements admin.UserProvider.
+func (a *Auth) GetUserFromRequest(r *http.Request) (*plugin.User, error) {
+	user := GetUserFromContext(r.Context())
+	if user == nil {
+		return nil, ErrForbidden
+	}
+	return toPluginUser(user), nil
+}
+
+// GetPluginUser retrieves a user by ID and converts to plugin.User.
+// Implements jwt.AuthProvider and oauth.AuthProvider.
+func (a *Auth) GetPluginUser(ctx context.Context, userID string) (*plugin.User, error) {
+	user, err := a.GetUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return toPluginUser(user), nil
+}
+
+// GetPluginUserByEmail retrieves a user by email and converts to plugin.User.
+// Implements jwt.AuthProvider and oauth.AuthProvider.
+func (a *Auth) GetPluginUserByEmail(ctx context.Context, email string) (*plugin.User, error) {
+	user, err := a.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	return toPluginUser(user), nil
+}
+
+// CreatePluginUser creates a new user from a plugin request.
+// This is used by OAuth and other plugins that need to create users without passwords.
+// Implements oauth.AuthProvider.
+func (a *Auth) CreatePluginUser(ctx context.Context, req plugin.CreateUserRequest) (*plugin.User, error) {
+	// Check if user already exists
+	existing, err := a.store.GetUserByEmail(ctx, req.Email)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, ErrUserAlreadyExists
+	}
+
+	now := time.Now()
+
+	// Create user
+	user := &models.User{
+		ID:            uuid.New().String(),
+		Email:         req.Email,
+		Name:          req.Name,
+		EmailVerified: req.EmailVerified,
+		Image:         req.Image,
+		Role:          "user",
+		Banned:        false,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	if err := a.store.CreateUser(ctx, user); err != nil {
+		return nil, err
+	}
+
+	// Publish user created event
+	a.publishEvent(ctx, models.EventUserCreated, models.UserCreatedPayload{User: user})
+
+	return toPluginUser(user), nil
+}
+
+// toPluginUser converts a models.User to plugin.User
+func toPluginUser(u *models.User) *plugin.User {
+	if u == nil {
+		return nil
+	}
+	return &plugin.User{
+		ID:            u.ID,
+		Email:         u.Email,
+		EmailVerified: u.EmailVerified,
+		Name:          u.Name,
+		Image:         u.Image,
+		Role:          u.Role,
+		Banned:        u.Banned,
+		CreatedAt:     u.CreatedAt,
+		UpdatedAt:     u.UpdatedAt,
+	}
+}
+
+// FireOAuthAccountLinked publishes an OAuth account linked event.
+// Implements oauth.AuthProvider.
+func (a *Auth) FireOAuthAccountLinked(ctx context.Context, userID, provider, providerAccountID string) error {
+	user, err := a.store.GetUserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	account := &models.Account{
+		UserID:            userID,
+		Provider:          models.ProviderType(provider),
+		ProviderAccountID: &providerAccountID,
+	}
+
+	a.publishEvent(ctx, models.EventOAuthAccountLinked, models.OAuthAccountLinkedPayload{User: user, Account: account})
+
+	return nil
+}
+
+// toPluginSession converts a models.Session to plugin.Session
+func toPluginSession(s *models.Session) *plugin.Session {
+	if s == nil {
+		return nil
+	}
+	return &plugin.Session{
+		ID:        s.ID,
+		UserID:    s.UserID,
+		IPAddress: s.IPAddress,
+		UserAgent: s.UserAgent,
+		CreatedAt: s.CreatedAt,
+		ExpiresAt: s.ExpiresAt,
+	}
+}
+
+// PluginRoutes returns all routes registered by plugins.
+// Used by the router to mount plugin-provided endpoints.
+func (a *Auth) PluginRoutes() []plugin.Route {
+	if a.plugins == nil {
+		return nil
+	}
+	return a.plugins.Routes()
+}
+
+// PluginMiddleware returns all middleware registered by plugins, sorted by priority.
+// Used by the router to apply plugin-provided middleware.
+func (a *Auth) PluginMiddleware() []plugin.Middleware {
+	if a.plugins == nil {
+		return nil
+	}
+	return a.plugins.Middleware()
+}
+
+// ChainPluginMiddleware applies all plugin middleware to a handler.
+func (a *Auth) ChainPluginMiddleware(h http.Handler) http.Handler {
+	if a.plugins == nil {
+		return h
+	}
+	return a.plugins.ChainMiddleware(h)
+}
+
+// SkipDefaults returns whether default features are disabled.
+func (a *Auth) SkipDefaults() bool {
+	return a.config.SkipDefaults
 }

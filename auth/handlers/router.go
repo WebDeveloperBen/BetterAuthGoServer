@@ -41,60 +41,7 @@ func NewRouter(a *auth.Auth) http.Handler {
 		revokeSession(w, r, sessionID)
 	}))))
 
-	// Admin endpoints (require admin role)
-	adminGetUser := AdminGetUser(a)
-	adminUpdateUser := AdminUpdateUser(a)
-	adminDeleteUser := AdminDeleteUser(a)
-	adminBanUser := AdminBanUser(a)
-	adminUnbanUser := AdminUnbanUser(a)
-	adminSetRole := AdminSetRole(a)
-
-	mux.Handle("GET /admin/users", a.RequireAdmin(http.HandlerFunc(wrapHandler(a, "/admin/users", AdminListUsers(a)))))
-	mux.Handle("GET /admin/users/", a.RequireAdmin(http.HandlerFunc(wrapHandler(a, "/admin/users/:id", func(w http.ResponseWriter, r *http.Request) {
-		userID, action := parseAdminUserPath(r.URL.Path)
-		if userID == "" {
-			WriteError(w, http.StatusNotFound, auth.ErrUserNotFound)
-			return
-		}
-		if action == "" {
-			adminGetUser(w, r, userID)
-		} else {
-			WriteError(w, http.StatusNotFound, auth.ErrUserNotFound)
-		}
-	}))))
-	mux.Handle("PATCH /admin/users/", a.RequireAdmin(http.HandlerFunc(wrapHandler(a, "/admin/users/:id", func(w http.ResponseWriter, r *http.Request) {
-		userID, _ := parseAdminUserPath(r.URL.Path)
-		if userID == "" {
-			WriteError(w, http.StatusNotFound, auth.ErrUserNotFound)
-			return
-		}
-		adminUpdateUser(w, r, userID)
-	}))))
-	mux.Handle("DELETE /admin/users/", a.RequireAdmin(http.HandlerFunc(wrapHandler(a, "/admin/users/:id", func(w http.ResponseWriter, r *http.Request) {
-		userID, _ := parseAdminUserPath(r.URL.Path)
-		if userID == "" {
-			WriteError(w, http.StatusNotFound, auth.ErrUserNotFound)
-			return
-		}
-		adminDeleteUser(w, r, userID)
-	}))))
-	mux.Handle("POST /admin/users/", a.RequireAdmin(http.HandlerFunc(wrapHandler(a, "/admin/users/:id/:action", func(w http.ResponseWriter, r *http.Request) {
-		userID, action := parseAdminUserPath(r.URL.Path)
-		if userID == "" {
-			WriteError(w, http.StatusNotFound, auth.ErrUserNotFound)
-			return
-		}
-		switch action {
-		case "ban":
-			adminBanUser(w, r, userID)
-		case "unban":
-			adminUnbanUser(w, r, userID)
-		case "role":
-			adminSetRole(w, r, userID)
-		default:
-			WriteError(w, http.StatusNotFound, auth.ErrUserNotFound)
-		}
-	}))))
+	// Admin endpoints are now provided by the admin plugin
 
 	// Self-service profile endpoints
 	unlinkAccount := UnlinkAccount(a)
@@ -147,14 +94,9 @@ func mountPluginRoutes(mux *http.ServeMux, a *auth.Auth) {
 
 // applyMiddleware applies the standard middleware stack
 func applyMiddleware(h http.Handler, a *auth.Auth) http.Handler {
-	// Apply plugin middleware first (sorted by priority)
-	// This includes rate limiting, CSRF, and any other registered plugins
+	// Apply plugin middleware (sorted by priority)
+	// This includes rate limiting, CSRF, CORS (if enabled), and any other registered plugins
 	h = a.ChainPluginMiddleware(h)
-
-	// Apply CORS (skip if using WithoutDefaults - will be a plugin in future)
-	if !a.SkipDefaults() {
-		h = a.CORS(h)
-	}
 
 	// Apply security headers
 	h = securityHeaders(h)

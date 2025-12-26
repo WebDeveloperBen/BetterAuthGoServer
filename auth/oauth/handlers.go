@@ -69,7 +69,7 @@ func (p *Plugin) OAuthCallbackHandler() func(http.ResponseWriter, *http.Request,
 		}
 
 		// Create session
-		session, err := p.ctx.Auth.CreateSessionForUser(r.Context(), user.ID, r)
+		session, err := p.auth.CreateSessionForUser(r.Context(), user.ID, r)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -114,7 +114,7 @@ func (p *Plugin) completeOAuthUserCreation(ctx context.Context, provider string,
 
 	if existingAccount != nil {
 		// Update existing account and return user
-		user, err := p.ctx.Auth.GetPluginUser(ctx, existingAccount.UserID)
+		user, err := p.auth.GetPluginUser(ctx, existingAccount.UserID)
 		if err != nil {
 			return nil, err
 		}
@@ -148,8 +148,8 @@ func (p *Plugin) completeOAuthUserCreation(ctx context.Context, provider string,
 		return user, nil
 	}
 
-	// Check if user exists by email (using AuthCore interface)
-	existingUser, err := p.ctx.Auth.GetPluginUserByEmail(ctx, userInfo.Email)
+	// Check if user exists by email
+	existingUser, err := p.auth.GetPluginUserByEmail(ctx, userInfo.Email)
 	if err != nil {
 		// ErrUserNotFound is expected if user doesn't exist
 		existingUser = nil
@@ -160,9 +160,9 @@ func (p *Plugin) completeOAuthUserCreation(ctx context.Context, provider string,
 		// Use existing user
 		user = existingUser
 	} else {
-		// Create new user through AuthCore
+		// Create new user
 		imagePtr := &userInfo.Picture
-		user, err = p.ctx.Auth.CreatePluginUser(ctx, plugin.CreateUserRequest{
+		user, err = p.auth.CreatePluginUser(ctx, plugin.CreateUserRequest{
 			Email:         userInfo.Email,
 			Name:          userInfo.Name,
 			EmailVerified: userInfo.EmailVerified,
@@ -207,7 +207,7 @@ func (p *Plugin) completeOAuthUserCreation(ctx context.Context, provider string,
 	}
 
 	// Fire OAuth account linked hook
-	if err := p.ctx.Auth.FireOAuthAccountLinked(ctx, user.ID, provider, userInfo.ID); err != nil {
+	if err := p.auth.FireOAuthAccountLinked(ctx, user.ID, provider, userInfo.ID); err != nil {
 		// Log but don't fail - account creation succeeded
 		// The hook is for notifications/side effects, not critical operations
 	}
@@ -231,7 +231,7 @@ func (p *Plugin) setSessionCookie(w http.ResponseWriter, session *plugin.Session
 
 // isSecure returns true if the base URL uses HTTPS
 func (p *Plugin) isSecure() bool {
-	return strings.HasPrefix(p.ctx.Auth.BaseURL(), "https://")
+	return strings.HasPrefix(p.auth.BaseURL(), "https://")
 }
 
 // Helper functions (adapted from handlers package)

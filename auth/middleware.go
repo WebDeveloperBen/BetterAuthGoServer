@@ -2,7 +2,6 @@ package auth
 
 import (
 	"net/http"
-	"strings"
 )
 
 // RequireAuth is middleware that requires a valid session
@@ -60,30 +59,6 @@ func (a *Auth) OptionalAuth(next http.Handler) http.Handler {
 	})
 }
 
-// CORS is middleware that handles CORS headers
-func (a *Auth) CORS(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-
-		// Check if origin is trusted
-		if a.isOriginTrusted(origin) {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, "+a.config.CSRFHeaderName)
-			w.Header().Set("Access-Control-Expose-Headers", "Set-Cookie")
-		}
-
-		// Handle preflight
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
-
 // RequireAdmin returns middleware that requires the user to have admin role
 func (a *Auth) RequireAdmin(next http.Handler) http.Handler {
 	return a.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -101,26 +76,6 @@ func (a *Auth) RequireAdmin(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	}))
-}
-
-// isOriginTrusted checks if an origin is in the trusted origins list
-func (a *Auth) isOriginTrusted(origin string) bool {
-	if origin == "" {
-		return false
-	}
-
-	for _, trusted := range a.config.TrustedOrigins {
-		if origin == trusted {
-			return true
-		}
-	}
-
-	// Also check if it matches the base URL
-	if strings.HasPrefix(a.config.BaseURL, origin) {
-		return true
-	}
-
-	return false
 }
 
 // AuthMiddleware returns middleware that can be used to protect routes

@@ -20,6 +20,7 @@ import (
 	"github.com/uptrace/bun/driver/pgdriver"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
 	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
@@ -83,14 +84,14 @@ func Setup(t *testing.T) *TestEnv {
 	// 2. Other tests (like max sessions) need to make many auth requests
 	// Rate limiting is tested separately with RateLimitEnabled=true
 	authInstance, err := auth.New(store,
-		auth.WithSecret("test-secret-key-32-characters!!!"), // Exactly 32 bytes
-		auth.WithBaseURL("http://localhost:3000"),
-		auth.WithSessionDuration(24*time.Hour),
-		auth.WithAutoSignIn(true),
-		auth.WithCSRF(false),                         // Disable CSRF for testing
-		auth.WithPasswordComplexity(false),           // Disable complexity for simpler test passwords
-		auth.WithSessionCleanupInterval(0),           // Disable background cleanup in tests
-		auth.WithRateLimit(false, time.Minute, 1000), // Disable rate limiting for general e2e tests
+		config.WithSecret("test-secret-key-32-characters!!!"), // Exactly 32 bytes
+		config.WithBaseURL("http://localhost:3000"),
+		config.WithSessionDuration(24*time.Hour),
+		config.WithAutoSignIn(true),
+		config.WithCSRF(false),                         // Disable CSRF for testing
+		config.WithPasswordComplexity(false),           // Disable complexity for simpler test passwords
+		config.WithSessionCleanupInterval(0),           // Disable background cleanup in tests
+		config.WithRateLimit(false, time.Minute, 1000), // Disable rate limiting for general e2e tests
 	)
 	if err != nil {
 		bunDB.Close()
@@ -159,14 +160,14 @@ func SetupWithRateLimiting(t *testing.T, authRateLimit int) *TestEnv {
 
 	// Create auth instance with rate limiting
 	authInstance, err := auth.New(store,
-		auth.WithSecret("test-secret-key-32-characters!!!"),
-		auth.WithBaseURL("http://localhost:3000"),
-		auth.WithSessionDuration(24*time.Hour),
-		auth.WithAutoSignIn(true),
-		auth.WithCSRF(false),
-		auth.WithPasswordComplexity(false),
-		auth.WithSessionCleanupInterval(0),
-		auth.WithAuthRateLimit(authRateLimit), // Enable rate limiting with specified limit
+		config.WithSecret("test-secret-key-32-characters!!!"),
+		config.WithBaseURL("http://localhost:3000"),
+		config.WithSessionDuration(24*time.Hour),
+		config.WithAutoSignIn(true),
+		config.WithCSRF(false),
+		config.WithPasswordComplexity(false),
+		config.WithSessionCleanupInterval(0),
+		config.WithAuthRateLimit(authRateLimit), // Enable rate limiting with specified limit
 	)
 	if err != nil {
 		bunDB.Close()

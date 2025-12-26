@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
@@ -44,10 +45,10 @@ func TestPluginIntegration_Init(t *testing.T) {
 	registry.Register(tp)
 
 	a, err := New(store,
-		WithSecret("super-secret-key-that-is-long-enough-for-testing"),
-		WithBaseURL("http://localhost:8080"),
-		WithPlugins(registry),
-		WithRateLimit(false, 0, 0),
+		config.WithSecret("super-secret-key-that-is-long-enough-for-testing"),
+		config.WithBaseURL("http://localhost:8080"),
+		config.WithPlugins(registry),
+		config.WithRateLimit(false, 0, 0),
 	)
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
@@ -66,10 +67,10 @@ func TestPluginIntegration_Close(t *testing.T) {
 	registry.Register(tp)
 
 	a, err := New(store,
-		WithSecret("super-secret-key-that-is-long-enough-for-testing"),
-		WithBaseURL("http://localhost:8080"),
-		WithPlugins(registry),
-		WithRateLimit(false, 0, 0),
+		config.WithSecret("super-secret-key-that-is-long-enough-for-testing"),
+		config.WithBaseURL("http://localhost:8080"),
+		config.WithPlugins(registry),
+		config.WithRateLimit(false, 0, 0),
 	)
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
@@ -118,11 +119,11 @@ func TestPluginIntegration_ValidateSignUp(t *testing.T) {
 	registry.Register(vp)
 
 	a, err := New(store,
-		WithSecret("super-secret-key-that-is-long-enough-for-testing"),
-		WithBaseURL("http://localhost:8080"),
-		WithPlugins(registry),
-		WithRateLimit(false, 0, 0),
-		WithPasswordComplexity(false),
+		config.WithSecret("super-secret-key-that-is-long-enough-for-testing"),
+		config.WithBaseURL("http://localhost:8080"),
+		config.WithPlugins(registry),
+		config.WithRateLimit(false, 0, 0),
+		config.WithPasswordComplexity(false),
 	)
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
@@ -149,10 +150,10 @@ func TestPluginIntegration_ValidateSignIn(t *testing.T) {
 	registry.Register(vp)
 
 	a, err := New(store,
-		WithSecret("super-secret-key-that-is-long-enough-for-testing"),
-		WithBaseURL("http://localhost:8080"),
-		WithPlugins(registry),
-		WithRateLimit(false, 0, 0),
+		config.WithSecret("super-secret-key-that-is-long-enough-for-testing"),
+		config.WithBaseURL("http://localhost:8080"),
+		config.WithPlugins(registry),
+		config.WithRateLimit(false, 0, 0),
 	)
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
@@ -168,9 +169,9 @@ func TestPluginIntegration_ValidateSignIn(t *testing.T) {
 
 func TestWithPlugins(t *testing.T) {
 	registry := plugin.NewRegistry(nil)
-	cfg := DefaultConfig()
+	cfg := config.DefaultConfig()
 
-	WithPlugins(registry)(&cfg)
+	config.WithPlugins(registry)(&cfg)
 
 	if cfg.Plugins != registry {
 		t.Error("WithPlugins did not set the registry")

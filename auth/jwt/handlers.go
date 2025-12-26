@@ -62,8 +62,8 @@ func (p *Plugin) handlePasswordGrant(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 
-	// Get user by email using plugin context
-	user, err := p.ctx.Auth.GetPluginUserByEmail(r.Context(), req.Email)
+	// Get user by email
+	user, err := p.auth.GetPluginUserByEmail(r.Context(), req.Email)
 	if err != nil || user == nil {
 		writeError(w, http.StatusUnauthorized, errInvalidCredentials)
 		return
@@ -75,15 +75,15 @@ func (p *Plugin) handlePasswordGrant(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 
-	// Verify password using plugin context
-	valid, err := p.ctx.Auth.VerifyPassword(r.Context(), user.ID, req.Password)
+	// Verify password
+	valid, err := p.auth.VerifyPassword(r.Context(), user.ID, req.Password)
 	if err != nil || !valid {
 		writeError(w, http.StatusUnauthorized, errInvalidCredentials)
 		return
 	}
 
 	// Create session for the JWT
-	session, err := p.ctx.Auth.CreateSessionForUser(r.Context(), user.ID, r)
+	session, err := p.auth.CreateSessionForUser(r.Context(), user.ID, r)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -125,7 +125,7 @@ func (p *Plugin) handleRefreshGrant(w http.ResponseWriter, r *http.Request, req 
 	}
 
 	// Get user info
-	user, err := p.ctx.Auth.GetPluginUser(r.Context(), claims.UserID)
+	user, err := p.auth.GetPluginUser(r.Context(), claims.UserID)
 	if err != nil || user == nil {
 		writeError(w, http.StatusUnauthorized, errInvalidToken)
 		return
@@ -175,7 +175,7 @@ func (p *Plugin) TokenRefreshHandler() http.HandlerFunc {
 		}
 
 		// Get user info
-		user, err := p.ctx.Auth.GetPluginUser(r.Context(), claims.UserID)
+		user, err := p.auth.GetPluginUser(r.Context(), claims.UserID)
 		if err != nil || user == nil {
 			writeError(w, http.StatusUnauthorized, errInvalidToken)
 			return

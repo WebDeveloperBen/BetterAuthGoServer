@@ -81,6 +81,11 @@ func (m *mockAuthCore) FireOAuthAccountLinked(ctx context.Context, userID, provi
 	return nil
 }
 
+func (m *mockAuthCore) GetUserFromRequest(r *http.Request) (*plugin.User, error) {
+	// For testing, we don't need this method to work
+	return nil, nil
+}
+
 type mockJWTService struct {
 	tokens map[string]*TokenPair
 }

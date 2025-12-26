@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
@@ -273,15 +274,6 @@ func (m *mockSessionStore) DeleteVerificationsByUserIDAndType(ctx context.Contex
 	return nil
 }
 
-func (m *mockSessionStore) CreateOAuthState(ctx context.Context, state *models.OAuthState) error {
-	return nil
-}
-func (m *mockSessionStore) GetOAuthState(ctx context.Context, state string) (*models.OAuthState, error) {
-	return nil, nil
-}
-func (m *mockSessionStore) DeleteOAuthState(ctx context.Context, state string) error { return nil }
-func (m *mockSessionStore) DeleteExpiredOAuthStates(ctx context.Context) error       { return nil }
-
 func (m *mockSessionStore) Migrate(ctx context.Context) error { return nil }
 
 func TestValidateSession_Valid(t *testing.T) {
@@ -539,7 +531,7 @@ func TestCreateSession(t *testing.T) {
 	auth := &Auth{
 		store:       store,
 		tokenHasher: hasher,
-		config: Config{
+		config: &config.Config{
 			SessionDuration: 24 * time.Hour,
 		},
 	}
@@ -585,7 +577,7 @@ func TestCreateSession_NilRequest(t *testing.T) {
 	auth := &Auth{
 		store:       store,
 		tokenHasher: hasher,
-		config: Config{
+		config: &config.Config{
 			SessionDuration: 24 * time.Hour,
 		},
 	}
@@ -611,7 +603,7 @@ func TestCreateSession_LongUserAgent(t *testing.T) {
 	auth := &Auth{
 		store:       store,
 		tokenHasher: hasher,
-		config: Config{
+		config: &config.Config{
 			SessionDuration: 24 * time.Hour,
 		},
 	}
@@ -647,7 +639,7 @@ func TestCreateSession_StoreError(t *testing.T) {
 	auth := &Auth{
 		store:       store,
 		tokenHasher: hasher,
-		config: Config{
+		config: &config.Config{
 			SessionDuration: 24 * time.Hour,
 		},
 	}

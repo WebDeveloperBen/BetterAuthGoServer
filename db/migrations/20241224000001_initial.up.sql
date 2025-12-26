@@ -1,3 +1,6 @@
+-- Core Auth Tables
+-- OAuth-specific tables (oauth_states, oauth_accounts) are managed by the OAuth plugin.
+
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(36) PRIMARY KEY,
@@ -15,17 +18,14 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 --bun:split
 
--- Accounts table (linked auth methods)
+-- Accounts table (email/password authentication)
+-- For OAuth providers, see the oauth plugin's oauth_accounts table.
 CREATE TABLE IF NOT EXISTS accounts (
     id VARCHAR(36) PRIMARY KEY,
     user_id VARCHAR(36) NOT NULL,
     provider VARCHAR(50) NOT NULL,
     provider_account_id VARCHAR(255),
     password_hash VARCHAR(255),
-    access_token TEXT,
-    refresh_token TEXT,
-    access_token_expires_at TIMESTAMP,
-    refresh_token_expires_at TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -87,19 +87,3 @@ CREATE INDEX IF NOT EXISTS idx_verifications_token_hash ON verifications(token_h
 --bun:split
 
 CREATE INDEX IF NOT EXISTS idx_verifications_user_id_type ON verifications(user_id, type);
-
---bun:split
-
--- OAuth states table
-CREATE TABLE IF NOT EXISTS oauth_states (
-    state VARCHAR(64) PRIMARY KEY,
-    provider VARCHAR(50) NOT NULL,
-    verifier VARCHAR(128),
-    redirect_to VARCHAR(500),
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at TIMESTAMP NOT NULL
-);
-
---bun:split
-
-CREATE INDEX IF NOT EXISTS idx_oauth_states_expires_at ON oauth_states(expires_at);

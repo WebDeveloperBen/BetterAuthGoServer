@@ -1,6 +1,5 @@
-DROP TABLE IF EXISTS oauth_states;
-
---bun:split
+-- Core Auth Tables - down migration
+-- OAuth-specific tables are managed by the OAuth plugin.
 
 DROP TABLE IF EXISTS verifications;
 

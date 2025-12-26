@@ -17,8 +17,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/providers"
@@ -47,35 +47,49 @@ func main() {
 
 	// Create auth instance
 	authService, err := auth.New(store,
-		auth.WithSecret(secret),
-		auth.WithBaseURL(baseURL),
-		auth.WithTrustedOrigins(baseURL, "http://localhost:3000"),
-		auth.WithHooks(hooks.Hooks{
-			OnUserCreated: func(ctx context.Context, user *models.User) error {
-				slog.Info("New user created", "id", user.ID, "email", user.Email)
-				return nil
-			},
-			OnPasswordResetRequested: func(ctx context.Context, user *models.User, token string) error {
-				// In production, send email with reset link
-				slog.Info("Password reset requested",
-					"user_id", user.ID,
-					"reset_url", baseURL+"/auth/password/confirm?token="+token,
-				)
-				return nil
-			},
-			OnEmailVerificationRequested: func(ctx context.Context, user *models.User, token string) error {
-				// In production, send verification email
-				slog.Info("Email verification requested",
-					"user_id", user.ID,
-					"verify_url", baseURL+"/auth/email/verify?token="+token,
-				)
-				return nil
-			},
-		}),
+		config.WithSecret(secret),
+		config.WithBaseURL(baseURL),
+		config.WithTrustedOrigins(baseURL, "http://localhost:3000"),
 	)
 	if err != nil {
 		log.Fatal("Failed to create auth service:", err)
 	}
+
+	// Subscribe to auth events
+	authService.EventBus().Subscribe(models.EventUserCreated, func(ctx context.Context, e models.Event) error {
+		var payload models.UserCreatedPayload
+		if err := e.UnmarshalPayload(&payload); err != nil {
+			return err
+		}
+		slog.Info("New user created", "id", payload.User.ID, "email", payload.User.Email)
+		return nil
+	})
+
+	authService.EventBus().Subscribe(models.EventPasswordResetRequested, func(ctx context.Context, e models.Event) error {
+		var payload models.PasswordResetRequestedPayload
+		if err := e.UnmarshalPayload(&payload); err != nil {
+			return err
+		}
+		// In production, send email with reset link
+		slog.Info("Password reset requested",
+			"user_id", payload.User.ID,
+			"reset_url", baseURL+"/auth/password/confirm?token="+payload.Token,
+		)
+		return nil
+	})
+
+	authService.EventBus().Subscribe(models.EventEmailVerificationSent, func(ctx context.Context, e models.Event) error {
+		var payload models.EmailVerificationSentPayload
+		if err := e.UnmarshalPayload(&payload); err != nil {
+			return err
+		}
+		// In production, send verification email
+		slog.Info("Email verification requested",
+			"user_id", payload.User.ID,
+			"verify_url", baseURL+"/auth/email/verify?token="+payload.Token,
+		)
+		return nil
+	})
 
 	// Register OAuth providers as plugin (optional)
 	var oauthProviders []oauth.Provider

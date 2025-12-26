@@ -1,13 +1,15 @@
 // Package plugin provides an extensibility framework for the auth library.
 // Plugins can add custom functionality like additional authentication methods,
-// storage backends, hooks, and middleware to the authentication system.
+// storage backends, event handlers, and middleware to the authentication system.
 package plugin
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/uptrace/bun"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
@@ -48,6 +50,12 @@ type Context struct {
 	// Token utilities for plugins that need to hash or encrypt tokens
 	Hasher    *token.Hasher
 	Encryptor *token.Encryptor
+
+	// Logger provides structured logging for plugins
+	Logger *slog.Logger
+
+	// EventBus for subscribing to auth events
+	EventBus models.EventBus
 }
 
 // RoutesProvider is implemented by plugins that add HTTP routes
@@ -78,31 +86,6 @@ type Route struct {
 type MigrationsProvider interface {
 	// Migrations returns the Bun models to migrate
 	Migrations() []any
-}
-
-// HooksProvider is implemented by plugins that want to hook into auth events
-type HooksProvider interface {
-	// Hooks returns hook functions to merge with existing hooks
-	Hooks() Hooks
-}
-
-// Hooks contains optional hook functions for auth events
-type Hooks struct {
-	// OnUserCreated is called after a new user is created
-	OnUserCreated func(ctx context.Context, userID string) error
-
-	// OnSignIn is called after successful sign in
-	OnSignIn func(ctx context.Context, userID, sessionID string) error
-
-	// OnSignOut is called after sign out
-	OnSignOut func(ctx context.Context, userID, sessionID string) error
-
-	// BeforeSignIn is called before sign in validation
-	// Return an error to prevent sign in
-	BeforeSignIn func(ctx context.Context, email string) error
-
-	// OnOAuthAccountLinked is called when an OAuth account is linked to a user
-	OnOAuthAccountLinked func(ctx context.Context, userID, provider, providerAccountID string) error
 }
 
 // MiddlewareProvider is implemented by plugins that add middleware

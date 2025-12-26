@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
@@ -112,27 +113,16 @@ func (m *mockStoreForMiddleware) DeleteVerificationsByUserIDAndType(ctx context.
 }
 func (m *mockStoreForMiddleware) DeleteExpiredVerifications(ctx context.Context) error { return nil }
 
-func (m *mockStoreForMiddleware) CreateOAuthState(ctx context.Context, state *models.OAuthState) error {
-	return nil
-}
-func (m *mockStoreForMiddleware) GetOAuthState(ctx context.Context, stateValue string) (*models.OAuthState, error) {
-	return nil, nil
-}
-func (m *mockStoreForMiddleware) DeleteOAuthState(ctx context.Context, stateValue string) error {
-	return nil
-}
-func (m *mockStoreForMiddleware) DeleteExpiredOAuthStates(ctx context.Context) error { return nil }
-
 func createTestAuth(t *testing.T) (*Auth, *mockStoreForMiddleware) {
 	t.Helper()
 	store := newMockStoreForMiddleware()
 
 	auth, err := New(store,
-		WithSecret("test-secret-32-bytes-long-here!!"),
-		WithBaseURL("http://localhost:3000"),
-		WithSessionCleanupInterval(0),
-		WithCSRF(true),
-		WithTrustedOrigins("http://localhost:3000", "https://example.com"),
+		config.WithSecret("test-secret-32-bytes-long-here!!"),
+		config.WithBaseURL("http://localhost:3000"),
+		config.WithSessionCleanupInterval(0),
+		config.WithCSRF(true),
+		config.WithTrustedOrigins("http://localhost:3000", "https://example.com"),
 	)
 	if err != nil {
 		t.Fatalf("Failed to create auth: %v", err)
@@ -362,103 +352,4 @@ func TestOptionalAuth_WithoutSession(t *testing.T) {
 	}
 }
 
-func TestCORS_TrustedOrigin(t *testing.T) {
-	auth, _ := createTestAuth(t)
-	defer auth.Close()
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	wrapped := auth.CORS(handler)
-
-	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("Origin", "https://example.com")
-	rec := httptest.NewRecorder()
-
-	wrapped.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("Status = %d, want %d", rec.Code, http.StatusOK)
-	}
-
-	if rec.Header().Get("Access-Control-Allow-Origin") != "https://example.com" {
-		t.Errorf("Access-Control-Allow-Origin = %s, want https://example.com",
-			rec.Header().Get("Access-Control-Allow-Origin"))
-	}
-
-	if rec.Header().Get("Access-Control-Allow-Credentials") != "true" {
-		t.Error("Access-Control-Allow-Credentials should be true")
-	}
-}
-
-func TestCORS_UntrustedOrigin(t *testing.T) {
-	auth, _ := createTestAuth(t)
-	defer auth.Close()
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	wrapped := auth.CORS(handler)
-
-	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("Origin", "https://untrusted.com")
-	rec := httptest.NewRecorder()
-
-	wrapped.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("Status = %d, want %d", rec.Code, http.StatusOK)
-	}
-
-	// Should not set CORS headers for untrusted origin
-	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
-		t.Error("Should not set Access-Control-Allow-Origin for untrusted origin")
-	}
-}
-
-func TestCORS_Preflight(t *testing.T) {
-	auth, _ := createTestAuth(t)
-	defer auth.Close()
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Error("Handler should not be called for OPTIONS preflight")
-	})
-
-	wrapped := auth.CORS(handler)
-
-	req := httptest.NewRequest("OPTIONS", "/", nil)
-	req.Header.Set("Origin", "https://example.com")
-	rec := httptest.NewRecorder()
-
-	wrapped.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNoContent {
-		t.Errorf("Status = %d, want %d", rec.Code, http.StatusNoContent)
-	}
-}
-
-func TestIsOriginTrusted(t *testing.T) {
-	auth, _ := createTestAuth(t)
-	defer auth.Close()
-
-	tests := []struct {
-		origin  string
-		trusted bool
-	}{
-		{"https://example.com", true},
-		{"http://localhost:3000", true},
-		{"https://untrusted.com", false},
-		{"http://evil.com", false},
-		{"", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.origin, func(t *testing.T) {
-			if got := auth.isOriginTrusted(tt.origin); got != tt.trusted {
-				t.Errorf("isOriginTrusted(%s) = %v, want %v", tt.origin, got, tt.trusted)
-			}
-		})
-	}
-}
+// CORS tests are now in the auth/cors package

@@ -13,6 +13,7 @@ type Plugin struct {
 	service   *Service
 	providers []Provider
 	ctx       plugin.Context
+	auth      AuthProvider
 }
 
 // Ensure Plugin implements required interfaces
@@ -41,6 +42,13 @@ func (p *Plugin) Name() string {
 // Init initializes the OAuth plugin
 func (p *Plugin) Init(ctx plugin.Context) error {
 	p.ctx = ctx
+
+	// Type-assert to get AuthProvider
+	auth, ok := ctx.Auth.(AuthProvider)
+	if !ok {
+		return nil // Auth doesn't support OAuth operations
+	}
+	p.auth = auth
 
 	// Create state store with auto-table creation
 	stateStore := NewDBStateStore(ctx.DB)

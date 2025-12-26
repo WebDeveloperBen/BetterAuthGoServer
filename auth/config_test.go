@@ -1,16 +1,14 @@
 package auth
 
 import (
-	"context"
 	"testing"
 	"time"
 
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
 )
 
 func TestDefaultConfig(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := config.DefaultConfig()
 
 	// Session defaults
 	if cfg.SessionDuration != 7*24*time.Hour {
@@ -86,12 +84,12 @@ func TestConfig_Validate(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		config    Config
+		cfg       config.Config
 		wantError error
 	}{
 		{
 			name: "valid config",
-			config: Config{
+			cfg: config.Config{
 				Secret:  validSecret,
 				BaseURL: "http://localhost:3000",
 			},
@@ -99,44 +97,44 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "missing secret",
-			config: Config{
+			cfg: config.Config{
 				Secret:  "",
 				BaseURL: "http://localhost:3000",
 			},
-			wantError: ErrMissingSecret,
+			wantError: config.ErrMissingSecret,
 		},
 		{
 			name: "secret too short",
-			config: Config{
+			cfg: config.Config{
 				Secret:  "short", // Less than 32 bytes
 				BaseURL: "http://localhost:3000",
 			},
-			wantError: ErrSecretTooShort,
+			wantError: config.ErrSecretTooShort,
 		},
 		{
 			name: "missing base URL",
-			config: Config{
+			cfg: config.Config{
 				Secret:  validSecret,
 				BaseURL: "",
 			},
-			wantError: ErrMissingBaseURL,
+			wantError: config.ErrMissingBaseURL,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.config.validate()
+			err := tt.cfg.Validate()
 			if err != tt.wantError {
-				t.Errorf("validate() error = %v, wantError %v", err, tt.wantError)
+				t.Errorf("Validate() error = %v, wantError %v", err, tt.wantError)
 			}
 		})
 	}
 }
 
 func TestWithSecret(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := config.DefaultConfig()
 	secret := "my-super-secret-key"
-	WithSecret(secret)(&cfg)
+	config.WithSecret(secret)(&cfg)
 
 	if cfg.Secret != secret {
 		t.Errorf("Secret = %s, want %s", cfg.Secret, secret)
@@ -144,9 +142,9 @@ func TestWithSecret(t *testing.T) {
 }
 
 func TestWithBaseURL(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := config.DefaultConfig()
 	url := "https://api.example.com"
-	WithBaseURL(url)(&cfg)
+	config.WithBaseURL(url)(&cfg)
 
 	if cfg.BaseURL != url {
 		t.Errorf("BaseURL = %s, want %s", cfg.BaseURL, url)
@@ -154,9 +152,9 @@ func TestWithBaseURL(t *testing.T) {
 }
 
 func TestWithSessionDuration(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := config.DefaultConfig()
 	duration := 48 * time.Hour
-	WithSessionDuration(duration)(&cfg)
+	config.WithSessionDuration(duration)(&cfg)
 
 	if cfg.SessionDuration != duration {
 		t.Errorf("SessionDuration = %v, want %v", cfg.SessionDuration, duration)
@@ -164,9 +162,9 @@ func TestWithSessionDuration(t *testing.T) {
 }
 
 func TestWithSessionCookie(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := config.DefaultConfig()
 	name := "my_session"
-	WithSessionCookie(name)(&cfg)
+	config.WithSessionCookie(name)(&cfg)
 
 	if cfg.SessionCookie != name {
 		t.Errorf("SessionCookie = %s, want %s", cfg.SessionCookie, name)
@@ -174,8 +172,8 @@ func TestWithSessionCookie(t *testing.T) {
 }
 
 func TestWithPasswordPolicy(t *testing.T) {
-	cfg := DefaultConfig()
-	WithPasswordPolicy(12, 64)(&cfg)
+	cfg := config.DefaultConfig()
+	config.WithPasswordPolicy(12, 64)(&cfg)
 
 	if cfg.PasswordMinLength != 12 {
 		t.Errorf("PasswordMinLength = %d, want 12", cfg.PasswordMinLength)
@@ -186,8 +184,8 @@ func TestWithPasswordPolicy(t *testing.T) {
 }
 
 func TestWithPasswordComplexity(t *testing.T) {
-	cfg := DefaultConfig()
-	WithPasswordComplexity(false)(&cfg)
+	cfg := config.DefaultConfig()
+	config.WithPasswordComplexity(false)(&cfg)
 
 	if cfg.RequirePasswordComplexity {
 		t.Error("RequirePasswordComplexity should be false")
@@ -195,8 +193,8 @@ func TestWithPasswordComplexity(t *testing.T) {
 }
 
 func TestWithEmailVerification(t *testing.T) {
-	cfg := DefaultConfig()
-	WithEmailVerification(true, 48*time.Hour)(&cfg)
+	cfg := config.DefaultConfig()
+	config.WithEmailVerification(true, 48*time.Hour)(&cfg)
 
 	if !cfg.RequireEmailVerification {
 		t.Error("RequireEmailVerification should be true")
@@ -207,9 +205,9 @@ func TestWithEmailVerification(t *testing.T) {
 }
 
 func TestWithPasswordResetExpiry(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := config.DefaultConfig()
 	expiry := 2 * time.Hour
-	WithPasswordResetExpiry(expiry)(&cfg)
+	config.WithPasswordResetExpiry(expiry)(&cfg)
 
 	if cfg.PasswordResetExpiry != expiry {
 		t.Errorf("PasswordResetExpiry = %v, want %v", cfg.PasswordResetExpiry, expiry)
@@ -217,8 +215,8 @@ func TestWithPasswordResetExpiry(t *testing.T) {
 }
 
 func TestWithAutoSignIn(t *testing.T) {
-	cfg := DefaultConfig()
-	WithAutoSignIn(false)(&cfg)
+	cfg := config.DefaultConfig()
+	config.WithAutoSignIn(false)(&cfg)
 
 	if cfg.AutoSignIn {
 		t.Error("AutoSignIn should be false")
@@ -226,8 +224,8 @@ func TestWithAutoSignIn(t *testing.T) {
 }
 
 func TestWithCSRF(t *testing.T) {
-	cfg := DefaultConfig()
-	WithCSRF(false)(&cfg)
+	cfg := config.DefaultConfig()
+	config.WithCSRF(false)(&cfg)
 
 	if cfg.CSRFEnabled {
 		t.Error("CSRFEnabled should be false")
@@ -235,9 +233,9 @@ func TestWithCSRF(t *testing.T) {
 }
 
 func TestWithCSRFCookie(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := config.DefaultConfig()
 	name := "_csrf"
-	WithCSRFCookie(name)(&cfg)
+	config.WithCSRFCookie(name)(&cfg)
 
 	if cfg.CSRFCookieName != name {
 		t.Errorf("CSRFCookieName = %s, want %s", cfg.CSRFCookieName, name)
@@ -245,9 +243,9 @@ func TestWithCSRFCookie(t *testing.T) {
 }
 
 func TestWithCSRFHeader(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := config.DefaultConfig()
 	name := "X-XSRF-Token"
-	WithCSRFHeader(name)(&cfg)
+	config.WithCSRFHeader(name)(&cfg)
 
 	if cfg.CSRFHeaderName != name {
 		t.Errorf("CSRFHeaderName = %s, want %s", cfg.CSRFHeaderName, name)
@@ -255,8 +253,8 @@ func TestWithCSRFHeader(t *testing.T) {
 }
 
 func TestWithRateLimit(t *testing.T) {
-	cfg := DefaultConfig()
-	WithRateLimit(false, 30*time.Second, 50)(&cfg)
+	cfg := config.DefaultConfig()
+	config.WithRateLimit(false, 30*time.Second, 50)(&cfg)
 
 	if cfg.RateLimitEnabled {
 		t.Error("RateLimitEnabled should be false")
@@ -270,8 +268,8 @@ func TestWithRateLimit(t *testing.T) {
 }
 
 func TestWithAuthRateLimit(t *testing.T) {
-	cfg := DefaultConfig()
-	WithAuthRateLimit(5)(&cfg)
+	cfg := config.DefaultConfig()
+	config.WithAuthRateLimit(5)(&cfg)
 
 	if cfg.AuthRateLimitMax != 5 {
 		t.Errorf("AuthRateLimitMax = %d, want 5", cfg.AuthRateLimitMax)
@@ -279,9 +277,9 @@ func TestWithAuthRateLimit(t *testing.T) {
 }
 
 func TestWithSessionCleanupInterval(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := config.DefaultConfig()
 	interval := 30 * time.Minute
-	WithSessionCleanupInterval(interval)(&cfg)
+	config.WithSessionCleanupInterval(interval)(&cfg)
 
 	if cfg.SessionCleanupInterval != interval {
 		t.Errorf("SessionCleanupInterval = %v, want %v", cfg.SessionCleanupInterval, interval)
@@ -289,9 +287,9 @@ func TestWithSessionCleanupInterval(t *testing.T) {
 }
 
 func TestWithTrustedOrigins(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := config.DefaultConfig()
 	origins := []string{"https://example.com", "https://api.example.com"}
-	WithTrustedOrigins(origins...)(&cfg)
+	config.WithTrustedOrigins(origins...)(&cfg)
 
 	if len(cfg.TrustedOrigins) != 2 {
 		t.Errorf("TrustedOrigins length = %d, want 2", len(cfg.TrustedOrigins))
@@ -302,9 +300,9 @@ func TestWithTrustedOrigins(t *testing.T) {
 }
 
 func TestWithTrustedProxies(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := config.DefaultConfig()
 	proxies := []string{"10.0.0.1", "10.0.0.2"}
-	WithTrustedProxies(proxies...)(&cfg)
+	config.WithTrustedProxies(proxies...)(&cfg)
 
 	if len(cfg.TrustedProxies) != 2 {
 		t.Errorf("TrustedProxies length = %d, want 2", len(cfg.TrustedProxies))
@@ -314,36 +312,22 @@ func TestWithTrustedProxies(t *testing.T) {
 	}
 }
 
-func TestWithHooks(t *testing.T) {
-	cfg := DefaultConfig()
-	h := hooks.Hooks{
-		OnUserCreated: func(ctx context.Context, user *models.User) error {
-			return nil
-		},
-	}
-	WithHooks(h)(&cfg)
-
-	if cfg.Hooks.OnUserCreated == nil {
-		t.Error("OnUserCreated hook should be set")
-	}
-}
-
 func TestMinSecretLength(t *testing.T) {
-	if MinSecretLength != 32 {
-		t.Errorf("MinSecretLength = %d, want 32", MinSecretLength)
+	if config.MinSecretLength != 32 {
+		t.Errorf("MinSecretLength = %d, want 32", config.MinSecretLength)
 	}
 }
 
 func TestConfigOptionsChaining(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := config.DefaultConfig()
 
 	// Apply multiple options
-	opts := []Option{
-		WithSecret("this-is-a-valid-32-byte-secret!!"),
-		WithBaseURL("https://api.example.com"),
-		WithSessionDuration(24 * time.Hour),
-		WithCSRF(false),
-		WithRateLimit(true, time.Minute, 200),
+	opts := []config.Option{
+		config.WithSecret("this-is-a-valid-32-byte-secret!!"),
+		config.WithBaseURL("https://api.example.com"),
+		config.WithSessionDuration(24 * time.Hour),
+		config.WithCSRF(false),
+		config.WithRateLimit(true, time.Minute, 200),
 	}
 
 	for _, opt := range opts {

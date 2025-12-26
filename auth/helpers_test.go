@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
 
@@ -181,7 +182,7 @@ func TestWriteError_DifferentStatuses(t *testing.T) {
 
 func TestSetSessionCookie(t *testing.T) {
 	auth := &Auth{
-		config: Config{
+		config: &config.Config{
 			SessionCookie: "session",
 			BaseURL:       "https://example.com",
 		},
@@ -228,7 +229,7 @@ func TestSetSessionCookie(t *testing.T) {
 
 func TestSetSessionCookie_HTTP(t *testing.T) {
 	auth := &Auth{
-		config: Config{
+		config: &config.Config{
 			SessionCookie: "session",
 			BaseURL:       "http://localhost:3000",
 		},
@@ -256,7 +257,7 @@ func TestSetSessionCookie_HTTP(t *testing.T) {
 
 func TestClearSessionCookie(t *testing.T) {
 	auth := &Auth{
-		config: Config{
+		config: &config.Config{
 			SessionCookie: "session",
 		},
 	}
@@ -283,7 +284,7 @@ func TestClearSessionCookie(t *testing.T) {
 
 func TestGetSessionToken_FromCookie(t *testing.T) {
 	auth := &Auth{
-		config: Config{
+		config: &config.Config{
 			SessionCookie: "session",
 		},
 	}
@@ -302,7 +303,7 @@ func TestGetSessionToken_FromCookie(t *testing.T) {
 
 func TestGetSessionToken_FromBearerHeader(t *testing.T) {
 	auth := &Auth{
-		config: Config{
+		config: &config.Config{
 			SessionCookie: "session",
 		},
 	}
@@ -318,7 +319,7 @@ func TestGetSessionToken_FromBearerHeader(t *testing.T) {
 
 func TestGetSessionToken_CookieTakesPrecedence(t *testing.T) {
 	auth := &Auth{
-		config: Config{
+		config: &config.Config{
 			SessionCookie: "session",
 		},
 	}
@@ -339,7 +340,7 @@ func TestGetSessionToken_CookieTakesPrecedence(t *testing.T) {
 
 func TestGetSessionToken_NoToken(t *testing.T) {
 	auth := &Auth{
-		config: Config{
+		config: &config.Config{
 			SessionCookie: "session",
 		},
 	}
@@ -354,7 +355,7 @@ func TestGetSessionToken_NoToken(t *testing.T) {
 
 func TestGetSessionToken_InvalidBearerFormat(t *testing.T) {
 	auth := &Auth{
-		config: Config{
+		config: &config.Config{
 			SessionCookie: "session",
 		},
 	}

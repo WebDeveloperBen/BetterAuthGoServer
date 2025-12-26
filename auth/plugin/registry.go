@@ -13,7 +13,6 @@ type Registry struct {
 	plugins    []Plugin
 	routes     []Route
 	middleware []Middleware
-	hooks      Hooks
 	ctx        Context
 	logger     *slog.Logger
 }
@@ -59,11 +58,6 @@ func (r *Registry) AddPlugin(p Plugin) error {
 		r.middleware = append(r.middleware, mp.Middleware()...)
 	}
 
-	// Merge hooks from plugin
-	if hp, ok := p.(HooksProvider); ok {
-		r.mergeHooks(hp.Hooks())
-	}
-
 	r.logger.Info("plugin added", "name", p.Name())
 	return nil
 }
@@ -87,11 +81,6 @@ func (r *Registry) Init(ctx Context) error {
 		// Collect middleware from plugins
 		if mp, ok := p.(MiddlewareProvider); ok {
 			r.middleware = append(r.middleware, mp.Middleware()...)
-		}
-
-		// Merge hooks from plugins
-		if hp, ok := p.(HooksProvider); ok {
-			r.mergeHooks(hp.Hooks())
 		}
 
 		r.logger.Info("plugin initialized", "name", p.Name())
@@ -153,11 +142,6 @@ func (r *Registry) ChainMiddleware(handler http.Handler) http.Handler {
 	return handler
 }
 
-// Hooks returns the merged hooks from all plugins
-func (r *Registry) Hooks() Hooks {
-	return r.hooks
-}
-
 // Migrations returns all models requiring migration from plugins
 func (r *Registry) Migrations() []any {
 	var models []any
@@ -182,69 +166,6 @@ func (r *Registry) Get(name string) Plugin {
 		}
 	}
 	return nil
-}
-
-// mergeHooks combines hooks from a plugin with existing hooks
-func (r *Registry) mergeHooks(h Hooks) {
-	if h.OnUserCreated != nil {
-		prev := r.hooks.OnUserCreated
-		r.hooks.OnUserCreated = func(ctx context.Context, userID string) error {
-			if prev != nil {
-				if err := prev(ctx, userID); err != nil {
-					return err
-				}
-			}
-			return h.OnUserCreated(ctx, userID)
-		}
-	}
-
-	if h.OnSignIn != nil {
-		prev := r.hooks.OnSignIn
-		r.hooks.OnSignIn = func(ctx context.Context, userID, sessionID string) error {
-			if prev != nil {
-				if err := prev(ctx, userID, sessionID); err != nil {
-					return err
-				}
-			}
-			return h.OnSignIn(ctx, userID, sessionID)
-		}
-	}
-
-	if h.OnSignOut != nil {
-		prev := r.hooks.OnSignOut
-		r.hooks.OnSignOut = func(ctx context.Context, userID, sessionID string) error {
-			if prev != nil {
-				if err := prev(ctx, userID, sessionID); err != nil {
-					return err
-				}
-			}
-			return h.OnSignOut(ctx, userID, sessionID)
-		}
-	}
-
-	if h.BeforeSignIn != nil {
-		prev := r.hooks.BeforeSignIn
-		r.hooks.BeforeSignIn = func(ctx context.Context, email string) error {
-			if prev != nil {
-				if err := prev(ctx, email); err != nil {
-					return err
-				}
-			}
-			return h.BeforeSignIn(ctx, email)
-		}
-	}
-
-	if h.OnOAuthAccountLinked != nil {
-		prev := r.hooks.OnOAuthAccountLinked
-		r.hooks.OnOAuthAccountLinked = func(ctx context.Context, userID, provider, providerAccountID string) error {
-			if prev != nil {
-				if err := prev(ctx, userID, provider, providerAccountID); err != nil {
-					return err
-				}
-			}
-			return h.OnOAuthAccountLinked(ctx, userID, provider, providerAccountID)
-		}
-	}
 }
 
 // ValidateSignUp runs all plugin validators for sign up

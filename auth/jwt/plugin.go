@@ -58,9 +58,10 @@ const (
 
 // Plugin wraps JWT functionality as an auth plugin
 type Plugin struct {
-	service *Service
-	ctx     plugin.Context
-	opts    []Option
+	service  *Service
+	ctx      plugin.Context
+	auth     AuthProvider
+	opts     []Option
 }
 
 // Ensure Plugin implements required interfaces
@@ -85,6 +86,13 @@ func (p *Plugin) Name() string {
 // Init initializes the JWT plugin
 func (p *Plugin) Init(ctx plugin.Context) error {
 	p.ctx = ctx
+
+	// Type-assert to get AuthProvider
+	auth, ok := ctx.Auth.(AuthProvider)
+	if !ok {
+		return nil // Auth doesn't support JWT operations
+	}
+	p.auth = auth
 
 	// Create JWT service config
 	config := DefaultConfig()

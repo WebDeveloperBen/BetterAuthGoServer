@@ -1,4 +1,4 @@
-package auth
+package config
 
 import (
 	"log/slog"
@@ -6,104 +6,9 @@ import (
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/kv"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
-
-// Config holds all configuration for the Auth system
-type Config struct {
-	// Required
-	Secret  string
-	BaseURL string
-
-	// SkipDefaults disables automatic registration of default plugins
-	// (rate limiting, CSRF, admin). Use this for minimal setups where
-	// you want full control over which features are enabled.
-	SkipDefaults bool
-
-	// Session
-	SessionDuration time.Duration
-	SessionCookie   string
-
-	// Password
-	PasswordMinLength         int
-	PasswordMaxLength         int
-	RequirePasswordComplexity bool // Require uppercase, lowercase, digit, and special char
-
-	// Email verification
-	RequireEmailVerification bool
-	EmailVerificationExpiry  time.Duration
-
-	// Password reset
-	PasswordResetExpiry time.Duration
-
-	// Auto sign-in after sign-up
-	AutoSignIn bool
-
-	// CSRF
-	CSRFEnabled    bool
-	CSRFCookieName string
-	CSRFHeaderName string
-
-	// Rate limiting
-	RateLimitEnabled bool
-	RateLimitWindow  time.Duration
-	RateLimitMax     int
-
-	// Auth endpoint rate limiting (stricter)
-	AuthRateLimitMax int
-
-	// Custom rate limiter backend (e.g., Redis)
-	// If nil, uses in-memory rate limiting
-	RateLimiterBackend kv.RateLimiter
-
-	// Session cleanup interval (0 to disable background cleanup)
-	SessionCleanupInterval time.Duration
-
-	// Trusted origins (for CORS and redirects)
-	TrustedOrigins []string
-
-	// Trusted proxies for X-Forwarded-For
-	TrustedProxies []string
-
-	// Hooks (per-event callbacks, backwards compatible)
-	Hooks hooks.Hooks
-
-	// MiddlewareHooks (global before/after middleware chains)
-	MiddlewareHooks *hooks.MiddlewareHooks
-
-	// Plugins registry for extensibility
-	Plugins *plugin.Registry
-
-	// Logger
-	Logger *slog.Logger
-}
-
-// DefaultConfig returns a Config with sensible defaults
-func DefaultConfig() Config {
-	return Config{
-		SessionDuration:           7 * 24 * time.Hour, // 7 days
-		SessionCookie:             "session",
-		PasswordMinLength:         8,
-		PasswordMaxLength:         128,
-		RequirePasswordComplexity: true,
-		RequireEmailVerification:  false,
-		EmailVerificationExpiry:   24 * time.Hour,
-		PasswordResetExpiry:       1 * time.Hour,
-		AutoSignIn:                true,
-		CSRFEnabled:               true,
-		CSRFCookieName:            "csrf_token",
-		CSRFHeaderName:            "X-CSRF-Token",
-		RateLimitEnabled:          true,
-		RateLimitWindow:           time.Minute,
-		RateLimitMax:              100,
-		AuthRateLimitMax:          10,
-		SessionCleanupInterval:    1 * time.Hour, // Clean up expired sessions every hour
-		Logger:                    slog.Default(),
-	}
-}
-
-// Option is a functional option for configuring Auth
-type Option func(*Config)
 
 // WithSecret sets the secret key for token signing and encryption
 func WithSecret(secret string) Option {
@@ -131,9 +36,9 @@ func WithBaseURL(url string) Option {
 //
 // Example:
 //
-//	auth := betterauth.New(store,
-//	    betterauth.WithSecret(secret),
-//	    betterauth.WithoutDefaults(),
+//	auth := auth.New(store,
+//	    config.WithSecret(secret),
+//	    config.WithoutDefaults(),
 //	)
 //	auth.Use(jwt.Plugin()) // Only JWT, nothing else
 func WithoutDefaults() Option {
@@ -262,12 +167,12 @@ func WithTrustedProxies(proxies ...string) Option {
 	}
 }
 
-// WithHooks sets the per-event hooks for auth events.
-// These hooks are called after specific events like user creation, sign-in, etc.
-// For global middleware-style hooks, use WithMiddlewareHooks instead.
-func WithHooks(h hooks.Hooks) Option {
+// WithEventBus sets a custom EventBus for auth events.
+// If not set, a default in-memory EventBus is created.
+// Use this to provide a custom EventBus implementation (e.g., backed by Redis).
+func WithEventBus(bus models.EventBus) Option {
 	return func(c *Config) {
-		c.Hooks = h
+		c.EventBus = bus
 	}
 }
 
@@ -317,21 +222,4 @@ func WithLogger(logger *slog.Logger) Option {
 	return func(c *Config) {
 		c.Logger = logger
 	}
-}
-
-// MinSecretLength is the minimum required length for the secret key
-const MinSecretLength = 32
-
-// validate checks that required configuration is present
-func (c *Config) validate() error {
-	if c.Secret == "" {
-		return ErrMissingSecret
-	}
-	if len(c.Secret) < MinSecretLength {
-		return ErrSecretTooShort
-	}
-	if c.BaseURL == "" {
-		return ErrMissingBaseURL
-	}
-	return nil
 }

@@ -1,38 +1,30 @@
 package plugin
 
 import (
-	"context"
-	"net/http"
 	"time"
 )
 
-// AuthCore provides plugins access to core authentication operations.
-// This interface breaks the circular dependency between auth and plugin packages.
-// The main Auth struct implements this interface.
+// AuthCore provides plugins access to minimal core auth configuration.
+// This interface is intentionally minimal - plugins should define their own
+// interfaces for the specific auth operations they need, then type-assert
+// to access those operations.
 //
-// Method names are prefixed with "Plugin" or use distinct names to avoid
-// conflicts with the main Auth methods that return different types.
+// Example:
+//
+//	type MyAuthProvider interface {
+//	    GetPluginUser(ctx context.Context, userID string) (*plugin.User, error)
+//	}
+//
+//	provider, ok := ctx.Auth.(MyAuthProvider)
+//	if !ok {
+//	    return errors.New("auth doesn't support required operations")
+//	}
 type AuthCore interface {
-	// User operations (return plugin-specific User type)
-	GetPluginUser(ctx context.Context, userID string) (*User, error)
-	GetPluginUserByEmail(ctx context.Context, email string) (*User, error)
-	CreatePluginUser(ctx context.Context, req CreateUserRequest) (*User, error)
-
-	// Session operations
-	ValidateSessionToken(ctx context.Context, token string) (*Session, error)
-	CreateSessionForUser(ctx context.Context, userID string, r *http.Request) (*Session, error)
-
-	// Password operations
-	VerifyPassword(ctx context.Context, userID string, password string) (bool, error)
-
-	// Config access
+	// BaseURL returns the configured base URL of the auth service
 	BaseURL() string
-	Secret() string
 
-	// Hook firing
-	// FireOAuthAccountLinked fires the OnOAuthAccountLinked hook.
-	// This allows plugins to trigger the hook without depending on models package.
-	FireOAuthAccountLinked(ctx context.Context, userID, provider, providerAccountID string) error
+	// Secret returns the auth secret key
+	Secret() string
 }
 
 // CreateUserRequest contains the data needed to create a user from a plugin.

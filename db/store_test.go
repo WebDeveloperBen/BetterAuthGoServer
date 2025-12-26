@@ -246,18 +246,16 @@ func TestAccountOperations(t *testing.T) {
 		}
 	})
 
-	t.Run("CreateAccount_OAuth", func(t *testing.T) {
+	t.Run("CreateAccount_WithProviderAccountID", func(t *testing.T) {
 		tdb.truncateTables(t)
 		user := createUser(t)
 
 		providerID := "google-123456"
-		accessToken := "encrypted-access-token"
 		account := &models.Account{
 			ID:                uuid.New().String(),
 			UserID:            user.ID,
 			Provider:          models.ProviderGoogle,
 			ProviderAccountID: &providerID,
-			AccessToken:       &accessToken,
 			CreatedAt:         time.Now(),
 			UpdatedAt:         time.Now(),
 		}
@@ -332,17 +330,20 @@ func TestAccountOperations(t *testing.T) {
 		tdb.truncateTables(t)
 		user := createUser(t)
 
+		providerID := "google-123"
 		account := &models.Account{
-			ID:        uuid.New().String(),
-			UserID:    user.ID,
-			Provider:  models.ProviderGoogle,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
+			ID:                uuid.New().String(),
+			UserID:            user.ID,
+			Provider:          models.ProviderGoogle,
+			ProviderAccountID: &providerID,
+			CreatedAt:         time.Now(),
+			UpdatedAt:         time.Now(),
 		}
 		_ = tdb.Store.CreateAccount(ctx, account)
 
-		newToken := "new-access-token"
-		account.AccessToken = &newToken
+		// Update the provider account ID
+		newProviderID := "google-456"
+		account.ProviderAccountID = &newProviderID
 
 		err := tdb.Store.UpdateAccount(ctx, account)
 		if err != nil {
@@ -350,8 +351,8 @@ func TestAccountOperations(t *testing.T) {
 		}
 
 		got, _ := tdb.Store.GetAccountByID(ctx, account.ID)
-		if got.AccessToken == nil || *got.AccessToken != newToken {
-			t.Error("UpdateAccount() failed to update access_token")
+		if got.ProviderAccountID == nil || *got.ProviderAccountID != newProviderID {
+			t.Error("UpdateAccount() failed to update provider_account_id")
 		}
 	})
 
@@ -824,143 +825,6 @@ func TestVerificationOperations(t *testing.T) {
 		got, _ = tdb.Store.GetVerificationByTokenHash(ctx, validHash)
 		if got == nil {
 			t.Error("DeleteExpiredVerifications() incorrectly deleted valid verification")
-		}
-	})
-}
-
-// TestOAuthStateOperations tests all OAuth state-related store operations
-func TestOAuthStateOperations(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
-	tdb := setupTestDB(t)
-	defer tdb.cleanup(t)
-
-	ctx := context.Background()
-
-	t.Run("CreateOAuthState", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		verifier := "pkce-verifier"
-		redirectTo := "/dashboard"
-		state := &models.OAuthState{
-			State:      uuid.New().String(),
-			Provider:   "google",
-			Verifier:   &verifier,
-			RedirectTo: &redirectTo,
-			CreatedAt:  time.Now(),
-			ExpiresAt:  time.Now().Add(10 * time.Minute),
-		}
-
-		err := tdb.Store.CreateOAuthState(ctx, state)
-		if err != nil {
-			t.Fatalf("CreateOAuthState() error = %v", err)
-		}
-	})
-
-	t.Run("GetOAuthState", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		stateValue := uuid.New().String()
-		verifier := "pkce-verifier"
-		state := &models.OAuthState{
-			State:     stateValue,
-			Provider:  "github",
-			Verifier:  &verifier,
-			CreatedAt: time.Now(),
-			ExpiresAt: time.Now().Add(10 * time.Minute),
-		}
-		_ = tdb.Store.CreateOAuthState(ctx, state)
-
-		got, err := tdb.Store.GetOAuthState(ctx, stateValue)
-		if err != nil {
-			t.Fatalf("GetOAuthState() error = %v", err)
-		}
-		if got == nil {
-			t.Fatal("GetOAuthState() returned nil")
-		}
-		if got.Provider != "github" {
-			t.Errorf("GetOAuthState().Provider = %v, want %v", got.Provider, "github")
-		}
-		if got.Verifier == nil || *got.Verifier != verifier {
-			t.Error("GetOAuthState().Verifier mismatch")
-		}
-	})
-
-	t.Run("GetOAuthState_NotFound", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		got, err := tdb.Store.GetOAuthState(ctx, "nonexistent")
-		if err != nil {
-			t.Fatalf("GetOAuthState() error = %v", err)
-		}
-		if got != nil {
-			t.Error("GetOAuthState() should return nil for non-existent state")
-		}
-	})
-
-	t.Run("DeleteOAuthState", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		stateValue := uuid.New().String()
-		state := &models.OAuthState{
-			State:     stateValue,
-			Provider:  "discord",
-			CreatedAt: time.Now(),
-			ExpiresAt: time.Now().Add(10 * time.Minute),
-		}
-		_ = tdb.Store.CreateOAuthState(ctx, state)
-
-		err := tdb.Store.DeleteOAuthState(ctx, stateValue)
-		if err != nil {
-			t.Fatalf("DeleteOAuthState() error = %v", err)
-		}
-
-		got, _ := tdb.Store.GetOAuthState(ctx, stateValue)
-		if got != nil {
-			t.Error("DeleteOAuthState() failed to delete state")
-		}
-	})
-
-	t.Run("DeleteExpiredOAuthStates", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		// Create expired state
-		expiredState := uuid.New().String()
-		expired := &models.OAuthState{
-			State:     expiredState,
-			Provider:  "google",
-			CreatedAt: time.Now().Add(-20 * time.Minute),
-			ExpiresAt: time.Now().Add(-10 * time.Minute), // Expired
-		}
-		_ = tdb.Store.CreateOAuthState(ctx, expired)
-
-		// Create valid state
-		validState := uuid.New().String()
-		valid := &models.OAuthState{
-			State:     validState,
-			Provider:  "google",
-			CreatedAt: time.Now(),
-			ExpiresAt: time.Now().Add(10 * time.Minute), // Not expired
-		}
-		_ = tdb.Store.CreateOAuthState(ctx, valid)
-
-		err := tdb.Store.DeleteExpiredOAuthStates(ctx)
-		if err != nil {
-			t.Fatalf("DeleteExpiredOAuthStates() error = %v", err)
-		}
-
-		// Expired should be gone
-		got, _ := tdb.Store.GetOAuthState(ctx, expiredState)
-		if got != nil {
-			t.Error("DeleteExpiredOAuthStates() failed to delete expired state")
-		}
-
-		// Valid should still exist
-		got, _ = tdb.Store.GetOAuthState(ctx, validState)
-		if got == nil {
-			t.Error("DeleteExpiredOAuthStates() incorrectly deleted valid state")
 		}
 	})
 }

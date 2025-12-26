@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
@@ -70,10 +71,10 @@ func createAdminTestAuth(t *testing.T) (*Auth, *mockAdminStore) {
 	store := newMockAdminStore()
 
 	auth, err := New(store,
-		WithSecret("test-secret-32-bytes-long-here!!"),
-		WithBaseURL("http://localhost:3000"),
-		WithSessionCleanupInterval(0),
-		WithCSRF(false), // Disable CSRF for testing
+		config.WithSecret("test-secret-32-bytes-long-here!!"),
+		config.WithBaseURL("http://localhost:3000"),
+		config.WithSessionCleanupInterval(0),
+		config.WithCSRF(false), // Disable CSRF for testing
 	)
 	if err != nil {
 		t.Fatalf("Failed to create auth: %v", err)

@@ -59,16 +59,6 @@ func (m *mockMiddlewarePlugin) Middleware() []Middleware {
 	return m.middleware
 }
 
-// mockHooksPlugin provides hooks
-type mockHooksPlugin struct {
-	mockPlugin
-	hooks Hooks
-}
-
-func (m *mockHooksPlugin) Hooks() Hooks {
-	return m.hooks
-}
-
 // mockMigrationsPlugin provides migrations
 type mockMigrationsPlugin struct {
 	mockPlugin
@@ -218,112 +208,6 @@ func TestRegistry_Init_CollectsMiddleware(t *testing.T) {
 	}
 }
 
-func TestRegistry_Init_CollectsHooks(t *testing.T) {
-	reg := NewRegistry(nil)
-	called := false
-	plugin := &mockHooksPlugin{
-		mockPlugin: mockPlugin{name: "hooks"},
-		hooks: Hooks{
-			OnUserCreated: func(ctx context.Context, userID string) error {
-				called = true
-				return nil
-			},
-		},
-	}
-	reg.Register(plugin)
-
-	err := reg.Init(Context{})
-	if err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-
-	hooks := reg.Hooks()
-	if hooks.OnUserCreated == nil {
-		t.Fatal("OnUserCreated hook should be set")
-	}
-
-	// Call the hook
-	hooks.OnUserCreated(context.Background(), "user-123")
-	if !called {
-		t.Error("hook should have been called")
-	}
-}
-
-func TestRegistry_Init_MergesHooks(t *testing.T) {
-	reg := NewRegistry(nil)
-
-	callOrder := []string{}
-
-	plugin1 := &mockHooksPlugin{
-		mockPlugin: mockPlugin{name: "hooks1"},
-		hooks: Hooks{
-			OnUserCreated: func(ctx context.Context, userID string) error {
-				callOrder = append(callOrder, "plugin1")
-				return nil
-			},
-		},
-	}
-	plugin2 := &mockHooksPlugin{
-		mockPlugin: mockPlugin{name: "hooks2"},
-		hooks: Hooks{
-			OnUserCreated: func(ctx context.Context, userID string) error {
-				callOrder = append(callOrder, "plugin2")
-				return nil
-			},
-		},
-	}
-
-	reg.Register(plugin1)
-	reg.Register(plugin2)
-
-	err := reg.Init(Context{})
-	if err != nil {
-		t.Fatalf("Init failed: %v", err)
-	}
-
-	// Call the merged hook
-	reg.Hooks().OnUserCreated(context.Background(), "user-123")
-
-	if len(callOrder) != 2 {
-		t.Fatalf("expected 2 calls, got %d", len(callOrder))
-	}
-	// Hooks should be called in order: plugin1 first, then plugin2
-	if callOrder[0] != "plugin1" || callOrder[1] != "plugin2" {
-		t.Errorf("call order = %v, want [plugin1 plugin2]", callOrder)
-	}
-}
-
-func TestRegistry_Init_MergedHooks_FirstError(t *testing.T) {
-	reg := NewRegistry(nil)
-
-	plugin1 := &mockHooksPlugin{
-		mockPlugin: mockPlugin{name: "hooks1"},
-		hooks: Hooks{
-			OnUserCreated: func(ctx context.Context, userID string) error {
-				return errors.New("first hook error")
-			},
-		},
-	}
-	plugin2 := &mockHooksPlugin{
-		mockPlugin: mockPlugin{name: "hooks2"},
-		hooks: Hooks{
-			OnUserCreated: func(ctx context.Context, userID string) error {
-				t.Error("second hook should not be called")
-				return nil
-			},
-		},
-	}
-
-	reg.Register(plugin1)
-	reg.Register(plugin2)
-	reg.Init(Context{})
-
-	err := reg.Hooks().OnUserCreated(context.Background(), "user-123")
-	if err == nil {
-		t.Error("expected error from first hook")
-	}
-}
-
 func TestRegistry_Close(t *testing.T) {
 	reg := NewRegistry(nil)
 	plugin := &mockPlugin{name: "test"}
@@ -428,17 +312,6 @@ func TestRegistry_Middleware(t *testing.T) {
 	reg := NewRegistry(nil)
 	if len(reg.Middleware()) != 0 {
 		t.Error("empty registry should have no middleware")
-	}
-}
-
-func TestRegistry_Hooks_Empty(t *testing.T) {
-	reg := NewRegistry(nil)
-	hooks := reg.Hooks()
-
-	// All hooks should be nil
-	if hooks.OnUserCreated != nil || hooks.OnSignIn != nil ||
-		hooks.OnSignOut != nil || hooks.BeforeSignIn != nil {
-		t.Error("empty registry should have nil hooks")
 	}
 }
 
@@ -617,101 +490,6 @@ func TestRegistry_ValidateSignIn_Error(t *testing.T) {
 	err := reg.ValidateSignIn(context.Background(), "locked@example.com")
 	if !errors.Is(err, expectedErr) {
 		t.Errorf("error = %v, want %v", err, expectedErr)
-	}
-}
-
-func TestRegistry_MergeHooks_OnSignIn(t *testing.T) {
-	reg := NewRegistry(nil)
-	called := false
-
-	plugin := &mockHooksPlugin{
-		mockPlugin: mockPlugin{name: "hooks"},
-		hooks: Hooks{
-			OnSignIn: func(ctx context.Context, userID, sessionID string) error {
-				called = true
-				return nil
-			},
-		},
-	}
-	reg.Register(plugin)
-	reg.Init(Context{})
-
-	err := reg.Hooks().OnSignIn(context.Background(), "user", "session")
-	if err != nil {
-		t.Errorf("OnSignIn failed: %v", err)
-	}
-	if !called {
-		t.Error("OnSignIn should have been called")
-	}
-}
-
-func TestRegistry_MergeHooks_OnSignOut(t *testing.T) {
-	reg := NewRegistry(nil)
-	called := false
-
-	plugin := &mockHooksPlugin{
-		mockPlugin: mockPlugin{name: "hooks"},
-		hooks: Hooks{
-			OnSignOut: func(ctx context.Context, userID, sessionID string) error {
-				called = true
-				return nil
-			},
-		},
-	}
-	reg.Register(plugin)
-	reg.Init(Context{})
-
-	err := reg.Hooks().OnSignOut(context.Background(), "user", "session")
-	if err != nil {
-		t.Errorf("OnSignOut failed: %v", err)
-	}
-	if !called {
-		t.Error("OnSignOut should have been called")
-	}
-}
-
-func TestRegistry_MergeHooks_BeforeSignIn(t *testing.T) {
-	reg := NewRegistry(nil)
-	called := false
-
-	plugin := &mockHooksPlugin{
-		mockPlugin: mockPlugin{name: "hooks"},
-		hooks: Hooks{
-			BeforeSignIn: func(ctx context.Context, email string) error {
-				called = true
-				return nil
-			},
-		},
-	}
-	reg.Register(plugin)
-	reg.Init(Context{})
-
-	err := reg.Hooks().BeforeSignIn(context.Background(), "test@example.com")
-	if err != nil {
-		t.Errorf("BeforeSignIn failed: %v", err)
-	}
-	if !called {
-		t.Error("BeforeSignIn should have been called")
-	}
-}
-
-func TestRegistry_MergeHooks_BeforeSignIn_BlocksSignIn(t *testing.T) {
-	reg := NewRegistry(nil)
-
-	plugin := &mockHooksPlugin{
-		mockPlugin: mockPlugin{name: "blocker"},
-		hooks: Hooks{
-			BeforeSignIn: func(ctx context.Context, email string) error {
-				return errors.New("sign in blocked")
-			},
-		},
-	}
-	reg.Register(plugin)
-	reg.Init(Context{})
-
-	err := reg.Hooks().BeforeSignIn(context.Background(), "test@example.com")
-	if err == nil {
-		t.Error("BeforeSignIn should block sign in")
 	}
 }
 

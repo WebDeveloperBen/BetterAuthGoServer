@@ -5,19 +5,17 @@ import (
 	"time"
 )
 
-// Account represents a linked authentication method for a user
+// Account represents a linked authentication method for a user.
+// For email/password auth, PasswordHash is populated.
+// For OAuth providers, see the oauth plugin's OAuthAccount type.
 type Account struct {
-	ID                    string
-	UserID                string
-	Provider              ProviderType
-	ProviderAccountID     *string
-	PasswordHash          *string
-	AccessToken           *string
-	RefreshToken          *string
-	AccessTokenExpiresAt  *time.Time
-	RefreshTokenExpiresAt *time.Time
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
+	ID                string
+	UserID            string
+	Provider          ProviderType
+	ProviderAccountID *string
+	PasswordHash      *string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // AccountStore defines account-related database operations

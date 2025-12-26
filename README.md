@@ -8,12 +8,13 @@ A complete, embeddable authentication library for Go applications. Handles email
 - **OAuth2 Providers** - Google, GitHub, Discord (extensible for more)
 - **Session Management** - Cookie-based sessions with optional Bearer token support
 - **Email Verification** - Token-based email verification flow
+- **Plugin Architecture** - Extend with JWT, OAuth, Admin, and custom plugins
 - **Security Built-in**
   - Argon2id password hashing
   - HMAC-SHA256 token hashing
   - AES-256-GCM OAuth token encryption
-  - CSRF protection
-  - Rate limiting
+  - CSRF protection (plugin)
+  - Rate limiting (plugin)
   - Secure cookie settings (HttpOnly, Secure, SameSite)
   - No user enumeration on login/reset endpoints
 - **Extensible Hooks** - React to auth events (user created, sign in, password changed, etc.)
@@ -37,6 +38,8 @@ import (
 
     "github.com/uptrace/bun"
     "github.com/webdeveloperben/BetterAuthGoServer/auth"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/config"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
     "github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
@@ -48,10 +51,10 @@ func main() {
     store := db.New(bunDB)
     store.Migrate(context.Background())
 
-    // 3. Create auth instance
+    // 3. Create auth instance with config options
     authService, err := auth.New(store,
-        auth.WithSecret("your-secret-key-minimum-32-characters!"),
-        auth.WithBaseURL("http://localhost:8080"),
+        config.WithSecret("your-secret-key-minimum-32-characters!"),
+        config.WithBaseURL("http://localhost:8080"),
     )
     if err != nil {
         log.Fatal(err)
@@ -60,7 +63,7 @@ func main() {
 
     // 4. Mount auth handler
     mux := http.NewServeMux()
-    mux.Handle("/auth/", http.StripPrefix("/auth", authService.Handler()))
+    mux.Handle("/auth/", http.StripPrefix("/auth", handlers.NewRouter(authService)))
 
     // 5. Protect your routes
     mux.Handle("GET /api/profile", authService.AuthMiddleware()(profileHandler()))
@@ -80,47 +83,120 @@ func profileHandler() http.Handler {
 
 ## Configuration
 
-Use functional options to configure the auth instance:
+Use functional options from the `config` package to configure the auth instance:
 
 ```go
+import (
+    "github.com/webdeveloperben/BetterAuthGoServer/auth"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/config"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
+)
+
 authService, err := auth.New(store,
     // Required
-    auth.WithSecret("your-secret-key-minimum-32-characters!"),
-    auth.WithBaseURL("http://localhost:8080"),
+    config.WithSecret("your-secret-key-minimum-32-characters!"),
+    config.WithBaseURL("http://localhost:8080"),
 
     // Session settings
-    auth.WithSessionDuration(7 * 24 * time.Hour),  // Default: 7 days
-    auth.WithSessionCookie("session"),              // Default: "session"
+    config.WithSessionDuration(7 * 24 * time.Hour),  // Default: 7 days
+    config.WithSessionCookie("session"),              // Default: "session"
 
     // Password policy
-    auth.WithPasswordPolicy(8, 128),                // Min/max length (default: 8, 128)
-    auth.WithPasswordComplexity(true),              // Require upper, lower, digit, special
+    config.WithPasswordPolicy(8, 128),                // Min/max length (default: 8, 128)
+    config.WithPasswordComplexity(true),              // Require upper, lower, digit, special
 
     // Email verification
-    auth.WithEmailVerification(true, 24*time.Hour), // Require verification, token expiry
+    config.WithEmailVerification(true, 24*time.Hour), // Require verification, token expiry
 
     // Password reset
-    auth.WithPasswordResetExpiry(1 * time.Hour),    // Default: 1 hour
+    config.WithPasswordResetExpiry(1 * time.Hour),    // Default: 1 hour
 
     // Auto sign-in after sign-up
-    auth.WithAutoSignIn(true),                      // Default: true
+    config.WithAutoSignIn(true),                      // Default: true
 
-    // Security
-    auth.WithCSRF(true),                            // Default: true
-    auth.WithRateLimit(true, time.Minute, 100),     // Enabled, window, max requests
-    auth.WithAuthRateLimit(10),                     // Stricter limit for auth endpoints
-    auth.WithTrustedOrigins("http://localhost:3000"),
-    auth.WithTrustedProxies("127.0.0.1"),
+    // Security (enabled by default via plugins)
+    config.WithCSRF(true),                            // Default: true
+    config.WithRateLimit(true, time.Minute, 100),     // Enabled, window, max requests
+    config.WithAuthRateLimit(10),                     // Stricter limit for auth endpoints
+    config.WithTrustedOrigins("http://localhost:3000"),
+    config.WithTrustedProxies("127.0.0.1"),
 
     // Cleanup
-    auth.WithSessionCleanupInterval(1 * time.Hour), // Auto-cleanup expired sessions
+    config.WithSessionCleanupInterval(1 * time.Hour), // Auto-cleanup expired sessions
 
     // Logging
-    auth.WithLogger(slog.Default()),
+    config.WithLogger(slog.Default()),
 
     // Hooks (see Hooks section)
-    auth.WithHooks(auth.Hooks{...}),
+    config.WithHooks(hooks.Hooks{...}),
+
+    // Disable default plugins for minimal setup
+    // config.WithoutDefaults(),
 )
+```
+
+## Plugin Architecture
+
+BetterAuth uses a plugin system for extensibility. Default plugins (CSRF, rate limiting) are enabled automatically unless you use `config.WithoutDefaults()`.
+
+### Adding Plugins
+
+```go
+import (
+    "github.com/webdeveloperben/BetterAuthGoServer/auth"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/config"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/jwt"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/providers"
+)
+
+// Create auth with defaults (includes CSRF + rate limiting)
+authService, _ := auth.New(store,
+    config.WithSecret(secret),
+    config.WithBaseURL(baseURL),
+)
+
+// Add JWT support
+authService.Use(jwt.NewPlugin(jwt.WithIssuer("myapp")))
+
+// Add OAuth providers
+authService.Use(oauth.NewPlugin(
+    providers.NewGoogle(clientID, clientSecret, callbackURL),
+    providers.NewGitHub(clientID, clientSecret, callbackURL),
+))
+```
+
+### Minimal Setup (No Defaults)
+
+```go
+authService, _ := auth.New(store,
+    config.WithSecret(secret),
+    config.WithBaseURL(baseURL),
+    config.WithoutDefaults(), // No CSRF, no rate limiting
+)
+
+// Add only what you need
+authService.Use(myCustomPlugin)
+```
+
+### Creating Custom Plugins
+
+```go
+import "github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
+
+// Using the plugin builder for simple plugins
+myPlugin := plugin.NewPlugin(
+    plugin.WithPluginName("my-plugin"),
+    plugin.WithPluginInit(func(ctx plugin.Context) error {
+        // Access auth internals via ctx
+        return nil
+    }),
+    plugin.WithPluginRoutes([]plugin.Route{
+        {Method: "GET", Path: "/my-endpoint", Handler: myHandler},
+    }),
+)
+
+authService.Use(myPlugin)
 ```
 
 ## API Endpoints
@@ -132,7 +208,7 @@ All endpoints are mounted under your chosen path (e.g., `/auth`).
 | POST | `/sign-up` | No | Create new user |
 | POST | `/sign-in` | No | Sign in with email/password |
 | POST | `/sign-out` | Yes | Sign out current session |
-| GET | `/me` | Yes | Get current user |
+| GET | `/profile` | Yes | Get current user |
 | POST | `/password/reset` | No | Request password reset |
 | POST | `/password/confirm` | No | Confirm password reset |
 | POST | `/password/change` | Yes | Change password |
@@ -141,56 +217,60 @@ All endpoints are mounted under your chosen path (e.g., `/auth`).
 | GET | `/sessions` | Yes | List all sessions |
 | DELETE | `/sessions` | Yes | Revoke all sessions |
 | DELETE | `/sessions/{id}` | Yes | Revoke specific session |
-| GET | `/oauth/providers` | No | List OAuth providers |
+| GET | `/oauth/providers` | No | List OAuth providers (with OAuth plugin) |
 | GET | `/oauth/{provider}` | No | Begin OAuth flow |
 | GET | `/oauth/{provider}/callback` | No | OAuth callback |
-
-See [`openapi.yaml`](./openapi.yaml) for complete API documentation.
 
 ## Hooks
 
 React to authentication events by providing hook functions:
 
 ```go
-auth.WithHooks(auth.Hooks{
-    OnUserCreated: func(ctx context.Context, user *auth.User) error {
+import (
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/config"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/models"
+)
+
+config.WithHooks(hooks.Hooks{
+    OnUserCreated: func(ctx context.Context, user *models.User) error {
         log.Printf("New user: %s", user.Email)
         return nil
     },
 
-    OnSignIn: func(ctx context.Context, user *auth.User, session *auth.Session) error {
+    OnSignIn: func(ctx context.Context, user *models.User, session *models.Session) error {
         log.Printf("User signed in: %s", user.Email)
         return nil
     },
 
-    OnSignOut: func(ctx context.Context, user *auth.User, session *auth.Session) error {
+    OnSignOut: func(ctx context.Context, user *models.User, session *models.Session) error {
         log.Printf("User signed out: %s", user.Email)
         return nil
     },
 
-    OnPasswordChanged: func(ctx context.Context, user *auth.User) error {
+    OnPasswordChanged: func(ctx context.Context, user *models.User) error {
         // Send notification email
         return nil
     },
 
-    OnPasswordResetRequested: func(ctx context.Context, user *auth.User, token string) error {
+    OnPasswordResetRequested: func(ctx context.Context, user *models.User, token string) error {
         // Send password reset email with token
         resetURL := fmt.Sprintf("https://yourapp.com/reset?token=%s", token)
         return sendEmail(user.Email, "Password Reset", resetURL)
     },
 
-    OnEmailVerificationRequested: func(ctx context.Context, user *auth.User, token string) error {
+    OnEmailVerificationRequested: func(ctx context.Context, user *models.User, token string) error {
         // Send verification email with token
         verifyURL := fmt.Sprintf("https://yourapp.com/verify?token=%s", token)
         return sendEmail(user.Email, "Verify Email", verifyURL)
     },
 
-    OnEmailVerified: func(ctx context.Context, user *auth.User) error {
+    OnEmailVerified: func(ctx context.Context, user *models.User) error {
         log.Printf("Email verified: %s", user.Email)
         return nil
     },
 
-    OnOAuthAccountLinked: func(ctx context.Context, user *auth.User, account *auth.Account) error {
+    OnOAuthAccountLinked: func(ctx context.Context, user *models.User, account *models.Account) error {
         log.Printf("OAuth account linked: %s -> %s", user.Email, account.Provider)
         return nil
     },
@@ -202,25 +282,28 @@ auth.WithHooks(auth.Hooks{
 ### Setup
 
 ```go
-import "github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
+import (
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/providers"
+)
 
-// Register providers after creating auth instance
-authService.RegisterOAuthProvider(oauth.NewGoogle(
-    os.Getenv("GOOGLE_CLIENT_ID"),
-    os.Getenv("GOOGLE_CLIENT_SECRET"),
-    "http://localhost:8080/auth/oauth/google/callback",
-))
-
-authService.RegisterOAuthProvider(oauth.NewGitHub(
-    os.Getenv("GITHUB_CLIENT_ID"),
-    os.Getenv("GITHUB_CLIENT_SECRET"),
-    "http://localhost:8080/auth/oauth/github/callback",
-))
-
-authService.RegisterOAuthProvider(oauth.NewDiscord(
-    os.Getenv("DISCORD_CLIENT_ID"),
-    os.Getenv("DISCORD_CLIENT_SECRET"),
-    "http://localhost:8080/auth/oauth/discord/callback",
+// Register OAuth as a plugin after creating auth instance
+authService.Use(oauth.NewPlugin(
+    providers.NewGoogle(
+        os.Getenv("GOOGLE_CLIENT_ID"),
+        os.Getenv("GOOGLE_CLIENT_SECRET"),
+        "http://localhost:8080/auth/oauth/google/callback",
+    ),
+    providers.NewGitHub(
+        os.Getenv("GITHUB_CLIENT_ID"),
+        os.Getenv("GITHUB_CLIENT_SECRET"),
+        "http://localhost:8080/auth/oauth/github/callback",
+    ),
+    providers.NewDiscord(
+        os.Getenv("DISCORD_CLIENT_ID"),
+        os.Getenv("DISCORD_CLIENT_SECRET"),
+        "http://localhost:8080/auth/oauth/discord/callback",
+    ),
 ))
 ```
 
@@ -251,13 +334,20 @@ userID := session.UserID
 
 ```go
 // Load session if present, but don't require it
-mux.Handle("GET /api/public", authService.OptionalAuthMiddleware()(handler))
+mux.Handle("GET /api/public", authService.OptionalAuth(handler))
 
 // Inside handler, session may be nil
 session := auth.SessionFromContext(r.Context())
 if session != nil {
     // User is authenticated
 }
+```
+
+### Require Admin
+
+```go
+// Require admin role - returns 403 if not admin
+mux.Handle("GET /admin/users", authService.RequireAdmin(handler))
 ```
 
 ## Database Setup
@@ -323,12 +413,6 @@ task test:unit         # Unit tests only (fast)
 task test:e2e          # E2E tests (requires Docker)
 task test:coverage     # Generate coverage report
 
-# Database migrations
-task db:migrate        # Run pending migrations
-task db:rollback       # Rollback last migration
-task db:status         # Show migration status
-task db:create -- name # Create new migration
-
 # Code quality
 task fmt               # Format code
 task vet               # Run go vet
@@ -337,31 +421,39 @@ task check             # Run all checks
 
 # Docker
 task up                # Start postgres + auth
-task up:dev            # Start with hot reload
 task down              # Stop all services
-task logs              # View logs
-task db:shell          # Open PostgreSQL shell
 ```
 
 ## Security Considerations
 
 - **Secret Key**: Use a cryptographically random string of at least 32 characters
 - **HTTPS**: Always use HTTPS in production (cookies are marked Secure automatically)
-- **Rate Limiting**: Enabled by default, configure limits based on your needs
-- **CSRF**: Enabled by default for state-changing operations
+- **Rate Limiting**: Enabled by default via plugin, configure limits based on your needs
+- **CSRF**: Enabled by default via plugin for state-changing operations
 - **Password Policy**: Complexity requirements enabled by default
 - **Session Cleanup**: Expired sessions are automatically cleaned up hourly
 
 ## Architecture
 
 ```
-auth/                  # Main package - public API and handlers
-├── oauth/             # OAuth2 provider implementations
+auth/                  # Main package - public API
+├── config/            # Configuration options
+├── handlers/          # HTTP handlers
+├── hooks/             # Event hooks system
+├── models/            # Data models and store interface
+├── plugin/            # Plugin system
+├── defaults/          # Default plugin bundle
+├── csrf/              # CSRF protection plugin
+├── ratelimit/         # Rate limiting plugin
+├── jwt/               # JWT authentication plugin
+├── oauth/             # OAuth2 plugin
+│   └── providers/     # OAuth provider implementations
+├── admin/             # Admin functionality plugin
 ├── token/             # Token generation and verification
-├── plugin/            # Plugin system for extensions
+├── kv/                # Key-value stores (memory, Redis)
+└── otel/              # OpenTelemetry observability
 db/                    # Database store implementation (Bun ORM)
 ├── migrations/        # SQL migrations
-cmd/migrate/           # Migration CLI tool
 tests/e2e/             # End-to-end tests
 ```
 

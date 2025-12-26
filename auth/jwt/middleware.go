@@ -60,7 +60,7 @@ func (p *Plugin) jwtAuthMiddleware() func(http.Handler) http.Handler {
 			}
 
 			// Get user information
-			user, err := p.ctx.Auth.GetPluginUser(r.Context(), claims.UserID)
+			user, err := p.auth.GetPluginUser(r.Context(), claims.UserID)
 			if err != nil || user == nil {
 				next.ServeHTTP(w, r)
 				return

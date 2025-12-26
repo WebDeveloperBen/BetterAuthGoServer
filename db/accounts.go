@@ -9,21 +9,19 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
 
-// Account model for Bun
+// Account model for Bun.
+// For email/password auth, PasswordHash is populated.
+// For OAuth providers, see the oauth plugin's OAuthAccount type.
 type Account struct {
 	bun.BaseModel `bun:"table:accounts,alias:a"`
 
-	ID                    string     `bun:"id,pk"`
-	UserID                string     `bun:"user_id,notnull"`
-	Provider              string     `bun:"provider,notnull"`
-	ProviderAccountID     *string    `bun:"provider_account_id"`
-	PasswordHash          *string    `bun:"password_hash"`
-	AccessToken           *string    `bun:"access_token"`
-	RefreshToken          *string    `bun:"refresh_token"`
-	AccessTokenExpiresAt  *time.Time `bun:"access_token_expires_at"`
-	RefreshTokenExpiresAt *time.Time `bun:"refresh_token_expires_at"`
-	CreatedAt             time.Time  `bun:"created_at,notnull,default:current_timestamp"`
-	UpdatedAt             time.Time  `bun:"updated_at,notnull,default:current_timestamp"`
+	ID                string    `bun:"id,pk"`
+	UserID            string    `bun:"user_id,notnull"`
+	Provider          string    `bun:"provider,notnull"`
+	ProviderAccountID *string   `bun:"provider_account_id"`
+	PasswordHash      *string   `bun:"password_hash"`
+	CreatedAt         time.Time `bun:"created_at,notnull,default:current_timestamp"`
+	UpdatedAt         time.Time `bun:"updated_at,notnull,default:current_timestamp"`
 
 	// Relations
 	User *User `bun:"rel:belongs-to,join:user_id=id"`
@@ -34,17 +32,13 @@ func toModelsAccount(a *Account) *models.Account {
 		return nil
 	}
 	return &models.Account{
-		ID:                    a.ID,
-		UserID:                a.UserID,
-		Provider:              models.ProviderType(a.Provider),
-		ProviderAccountID:     a.ProviderAccountID,
-		PasswordHash:          a.PasswordHash,
-		AccessToken:           a.AccessToken,
-		RefreshToken:          a.RefreshToken,
-		AccessTokenExpiresAt:  a.AccessTokenExpiresAt,
-		RefreshTokenExpiresAt: a.RefreshTokenExpiresAt,
-		CreatedAt:             a.CreatedAt,
-		UpdatedAt:             a.UpdatedAt,
+		ID:                a.ID,
+		UserID:            a.UserID,
+		Provider:          models.ProviderType(a.Provider),
+		ProviderAccountID: a.ProviderAccountID,
+		PasswordHash:      a.PasswordHash,
+		CreatedAt:         a.CreatedAt,
+		UpdatedAt:         a.UpdatedAt,
 	}
 }
 
@@ -53,17 +47,13 @@ func toBunAccount(a *models.Account) *Account {
 		return nil
 	}
 	return &Account{
-		ID:                    a.ID,
-		UserID:                a.UserID,
-		Provider:              string(a.Provider),
-		ProviderAccountID:     a.ProviderAccountID,
-		PasswordHash:          a.PasswordHash,
-		AccessToken:           a.AccessToken,
-		RefreshToken:          a.RefreshToken,
-		AccessTokenExpiresAt:  a.AccessTokenExpiresAt,
-		RefreshTokenExpiresAt: a.RefreshTokenExpiresAt,
-		CreatedAt:             a.CreatedAt,
-		UpdatedAt:             a.UpdatedAt,
+		ID:                a.ID,
+		UserID:            a.UserID,
+		Provider:          string(a.Provider),
+		ProviderAccountID: a.ProviderAccountID,
+		PasswordHash:      a.PasswordHash,
+		CreatedAt:         a.CreatedAt,
+		UpdatedAt:         a.UpdatedAt,
 	}
 }
 

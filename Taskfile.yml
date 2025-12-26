@@ -58,7 +58,7 @@ tasks:
     cmds:
       - go test -coverprofile=coverage.out ./...
       - go tool cover -html=coverage.out -o coverage.html
-      - echo "Coverage report: coverage.html"
+      - "echo Coverage report: coverage.html"
 
   test:race:
     desc: Run tests with race detector
@@ -89,9 +89,9 @@ tasks:
       - go run ./cmd/migrate status
 
   db:create:
-    desc: Create new migration (usage: task db:create -- <name>)
+    desc: Create new migration
     cmds:
-      - go run ./cmd/migrate create {{.CLI_ARGS}}
+      - go run ./cmd/migrate create
 
   # =============================================================================
   # Code Quality
@@ -143,7 +143,6 @@ tasks:
     desc: Install development tools
     cmds:
       - go install github.com/air-verse/air@latest
-      - go install github.com/golangci-lint/golangci-lint/cmd/golangci-lint@latest
 
   # =============================================================================
   # Docker & Compose
