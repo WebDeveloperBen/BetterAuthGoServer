@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -223,7 +224,7 @@ func (a *Auth) enforceMaxSessions(ctx context.Context, userID string) error {
 
 	// Delete oldest sessions to make room
 	toDelete := len(activeSessions) - maxAllowed
-	for i := 0; i < toDelete; i++ {
+	for i := range toDelete {
 		if err := a.store.DeleteSession(ctx, activeSessions[i].ID); err != nil {
 			a.config.Logger.Error("failed to delete old session",
 				"session_id", activeSessions[i].ID,
@@ -269,4 +270,160 @@ func getIPAddress(r *http.Request) string {
 
 	// Fall back to RemoteAddr
 	return r.RemoteAddr
+}
+
+// sessionManager implements plugin.SessionManager
+type sessionManager struct {
+	auth *Auth
+}
+
+// Ensure sessionManager implements plugin.SessionManager
+var _ plugin.SessionManager = (*sessionManager)(nil)
+
+// GetFromRequest extracts the current session from an HTTP request context.
+func (sm *sessionManager) GetFromRequest(r *http.Request) *plugin.Session {
+	session := SessionFromContext(r.Context())
+	if session == nil {
+		return nil
+	}
+	return toPluginSession(session)
+}
+
+// Create creates a new session for a user.
+func (sm *sessionManager) Create(ctx context.Context, userID string, r *http.Request) (*plugin.Session, error) {
+	session, err := sm.auth.createSession(ctx, userID, r)
+	if err != nil {
+		return nil, err
+	}
+	return toPluginSession(session), nil
+}
+
+// CreateWithImpersonation creates an impersonation session.
+func (sm *sessionManager) CreateWithImpersonation(ctx context.Context, targetUserID, impersonatedBy string, r *http.Request, duration time.Duration) (*plugin.Session, error) {
+	// Generate token
+	rawToken, err := token.Generate()
+	if err != nil {
+		return nil, err
+	}
+
+	tokenHash := sm.auth.tokenHasher.Hash(rawToken)
+	now := time.Now()
+
+	var ipAddress, userAgent *string
+	if r != nil {
+		ip := getIPAddress(r)
+		ipAddress = &ip
+
+		ua := r.UserAgent()
+		if len(ua) > 500 {
+			ua = ua[:500]
+		}
+		userAgent = &ua
+	}
+
+	session := &models.Session{
+		ID:             uuid.New().String(),
+		UserID:         targetUserID,
+		TokenHash:      tokenHash,
+		IPAddress:      ipAddress,
+		UserAgent:      userAgent,
+		CreatedAt:      now,
+		ExpiresAt:      now.Add(duration),
+		LastUsed:       now,
+		ImpersonatedBy: &impersonatedBy,
+		RawToken:       rawToken,
+	}
+
+	if err := sm.auth.store.CreateSession(ctx, session); err != nil {
+		return nil, err
+	}
+
+	return toPluginSession(session), nil
+}
+
+// Get retrieves a session by ID.
+func (sm *sessionManager) Get(ctx context.Context, sessionID string) (*plugin.Session, error) {
+	session, err := sm.auth.store.GetSessionByID(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return toPluginSession(session), nil
+}
+
+// Delete removes a session by ID.
+func (sm *sessionManager) Delete(ctx context.Context, sessionID string) error {
+	return sm.auth.store.DeleteSession(ctx, sessionID)
+}
+
+// WriteAuthResponse writes authentication credentials to the response.
+// If JWT plugin is registered, returns JWT tokens. Otherwise, sets session cookie.
+func (sm *sessionManager) WriteAuthResponse(w http.ResponseWriter, session *plugin.Session, user *plugin.User) error {
+	// Check if JWT plugin is registered
+	if sm.auth.plugins != nil {
+		if jwtPlugin := sm.auth.plugins.Get("jwt"); jwtPlugin != nil {
+			if tokenGen, ok := jwtPlugin.(plugin.JWTTokenGenerator); ok {
+				tokens, err := tokenGen.GenerateTokensForSession(session, user)
+				if err != nil {
+					return err
+				}
+				// Write JWT response
+				w.Header().Set("Content-Type", "application/json")
+				return json.NewEncoder(w).Encode(tokens)
+			}
+		}
+	}
+
+	// Default: set session cookie
+	sm.setSessionCookieInternal(w, session.RawToken, session.ExpiresAt)
+	return nil
+}
+
+// ClearAuthResponse clears authentication credentials.
+func (sm *sessionManager) ClearAuthResponse(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sm.auth.config.SessionCookie,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   sm.isSecure(),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1, // Delete cookie
+	})
+}
+
+// GetSessionToken returns the raw session token from the request cookie.
+func (sm *sessionManager) GetSessionToken(r *http.Request) string {
+	cookie, err := r.Cookie(sm.auth.config.SessionCookie)
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
+}
+
+// SetSessionCookie sets the session cookie directly with a token.
+func (sm *sessionManager) SetSessionCookie(w http.ResponseWriter, token string, expiresAt time.Time) {
+	sm.setSessionCookieInternal(w, token, expiresAt)
+}
+
+// setSessionCookieInternal is the internal implementation for setting session cookies.
+func (sm *sessionManager) setSessionCookieInternal(w http.ResponseWriter, token string, expiresAt time.Time) {
+	maxAge := int(time.Until(expiresAt).Seconds())
+	if maxAge < 0 {
+		maxAge = 0
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     sm.auth.config.SessionCookie,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   sm.isSecure(),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   maxAge,
+	})
+}
+
+// isSecure returns true if the base URL uses HTTPS.
+func (sm *sessionManager) isSecure() bool {
+	return len(sm.auth.config.BaseURL) >= 5 && sm.auth.config.BaseURL[:5] == "https"
 }

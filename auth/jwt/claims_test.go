@@ -15,7 +15,7 @@ func TestNewAccessClaims(t *testing.T) {
 	audience := "test-audience"
 	ttl := 15 * time.Minute
 
-	claims := NewAccessClaims(userID, sessionID, email, name, emailVerified, issuer, audience, ttl)
+	claims := NewAccessClaims(userID, sessionID, email, name, emailVerified, issuer, audience, ttl, nil)
 
 	// Check registered claims
 	if claims.Subject != userID {
@@ -62,7 +62,7 @@ func TestNewRefreshClaims(t *testing.T) {
 	audience := "test-audience"
 	ttl := 7 * 24 * time.Hour
 
-	claims := NewRefreshClaims(userID, sessionID, issuer, audience, ttl)
+	claims := NewRefreshClaims(userID, sessionID, issuer, audience, ttl, nil)
 
 	// Check registered claims
 	if claims.Subject != userID {
@@ -96,6 +96,49 @@ func TestNewRefreshClaims(t *testing.T) {
 	if claims.EmailVerified != false {
 		t.Errorf("EmailVerified should be false for refresh tokens, got %v", claims.EmailVerified)
 	}
+}
+
+func TestActorClaim(t *testing.T) {
+	t.Run("access token with actor", func(t *testing.T) {
+		actorID := "admin-123"
+		claims := NewAccessClaims("user-456", "session", "email", "name", true, "issuer", "audience", time.Hour, &actorID)
+
+		if claims.Act == nil {
+			t.Fatal("Act claim should be set")
+		}
+		if claims.Act.Sub != actorID {
+			t.Errorf("Act.Sub = %s, want %s", claims.Act.Sub, actorID)
+		}
+	})
+
+	t.Run("access token without actor", func(t *testing.T) {
+		claims := NewAccessClaims("user-456", "session", "email", "name", true, "issuer", "audience", time.Hour, nil)
+
+		if claims.Act != nil {
+			t.Error("Act claim should be nil when no actor provided")
+		}
+	})
+
+	t.Run("access token with empty actor", func(t *testing.T) {
+		empty := ""
+		claims := NewAccessClaims("user-456", "session", "email", "name", true, "issuer", "audience", time.Hour, &empty)
+
+		if claims.Act != nil {
+			t.Error("Act claim should be nil when empty actor provided")
+		}
+	})
+
+	t.Run("refresh token with actor", func(t *testing.T) {
+		actorID := "admin-123"
+		claims := NewRefreshClaims("user-456", "session", "issuer", "audience", time.Hour, &actorID)
+
+		if claims.Act == nil {
+			t.Fatal("Act claim should be set")
+		}
+		if claims.Act.Sub != actorID {
+			t.Errorf("Act.Sub = %s, want %s", claims.Act.Sub, actorID)
+		}
+	})
 }
 
 func TestGenerateJTI(t *testing.T) {

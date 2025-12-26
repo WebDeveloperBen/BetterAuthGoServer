@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,12 +14,25 @@ import (
 
 // mockUserProvider implements UserProvider for testing
 type mockUserProvider struct {
-	user *plugin.User
-	err  error
+	user  *plugin.User
+	users map[string]*plugin.User
+	err   error
 }
 
 func (m *mockUserProvider) GetUserFromRequest(r *http.Request) (*plugin.User, error) {
 	return m.user, m.err
+}
+
+func (m *mockUserProvider) GetPluginUser(ctx context.Context, userID string) (*plugin.User, error) {
+	if m.users != nil {
+		if user, ok := m.users[userID]; ok {
+			return user, nil
+		}
+	}
+	if m.user != nil && m.user.ID == userID {
+		return m.user, nil
+	}
+	return nil, m.err
 }
 
 func TestRequireAdmin_AdminUser(t *testing.T) {

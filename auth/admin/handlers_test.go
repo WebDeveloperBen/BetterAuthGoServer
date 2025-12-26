@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/admin/access"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
 // mockService implements AdminOperations for testing
@@ -146,7 +148,7 @@ func TestHasPermission_InvalidAccessControl(t *testing.T) {
 
 	// Create handlers with nil config (access control not configured)
 	config := &Config{}
-	handlers := newHandlers(service, &mockAuth{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
 
 	// Send valid JSON request
 	reqBody := hasPermissionRequest{
@@ -173,7 +175,7 @@ func TestHasPermission_UserNotFound(t *testing.T) {
 	// Create access control
 	ac, _ := access.CreateDefaultAccessControl()
 	config := &Config{AccessControl: ac}
-	handlers := newHandlers(service, &mockAuth{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
 
 	// Create request for non-existent user
 	reqBody := hasPermissionRequest{
@@ -208,7 +210,7 @@ func TestHasPermission_ValidUser(t *testing.T) {
 	// Create access control
 	ac, _ := access.CreateDefaultAccessControl()
 	config := &Config{AccessControl: ac}
-	handlers := newHandlers(service, &mockAuth{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
 
 	// Create request
 	reqBody := hasPermissionRequest{
@@ -245,7 +247,7 @@ func TestHasPermission_InvalidRole(t *testing.T) {
 	// Create access control
 	ac, _ := access.CreateDefaultAccessControl()
 	config := &Config{AccessControl: ac}
-	handlers := newHandlers(service, &mockAuth{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
 
 	// Create request with invalid role
 	reqBody := hasPermissionRequest{
@@ -273,7 +275,7 @@ func TestHasPermission_NoUserOrRole(t *testing.T) {
 	// Create access control
 	ac, _ := access.CreateDefaultAccessControl()
 	config := &Config{AccessControl: ac}
-	handlers := newHandlers(service, &mockAuth{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
 
 	// Create request with neither userId nor role
 	reqBody := hasPermissionRequest{
@@ -299,7 +301,7 @@ func TestCheckRolePermission_InvalidAccessControl(t *testing.T) {
 
 	// Create handlers with nil config
 	config := &Config{}
-	handlers := newHandlers(service, &mockAuth{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
 
 	// Send valid JSON request
 	reqBody := checkRolePermissionRequest{
@@ -326,7 +328,7 @@ func TestCheckRolePermission_InvalidRole(t *testing.T) {
 	// Create access control
 	ac, _ := access.CreateDefaultAccessControl()
 	config := &Config{AccessControl: ac}
-	handlers := newHandlers(service, &mockAuth{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
 
 	// Create request with invalid role
 	reqBody := checkRolePermissionRequest{
@@ -354,7 +356,7 @@ func TestCheckRolePermission_ValidRole(t *testing.T) {
 	// Create access control
 	ac, _ := access.CreateDefaultAccessControl()
 	config := &Config{AccessControl: ac}
-	handlers := newHandlers(service, &mockAuth{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
 
 	// Create request for admin role
 	reqBody := checkRolePermissionRequest{
@@ -394,4 +396,79 @@ func (m *mockAuth) BaseURL() string {
 
 func (m *mockAuth) Secret() string {
 	return "test-secret"
+}
+
+// mockSessionManager implements plugin.SessionManager for testing
+type mockSessionManager struct {
+	session *plugin.Session
+}
+
+func (m *mockSessionManager) GetFromRequest(r *http.Request) *plugin.Session {
+	return m.session
+}
+
+func (m *mockSessionManager) Create(ctx context.Context, userID string, r *http.Request) (*plugin.Session, error) {
+	return &plugin.Session{
+		ID:        "session-123",
+		UserID:    userID,
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+		RawToken:  "test-token",
+	}, nil
+}
+
+func (m *mockSessionManager) CreateWithImpersonation(ctx context.Context, targetUserID, impersonatedBy string, r *http.Request, duration time.Duration) (*plugin.Session, error) {
+	return &plugin.Session{
+		ID:             "imp-session-123",
+		UserID:         targetUserID,
+		ImpersonatedBy: &impersonatedBy,
+		CreatedAt:      time.Now(),
+		ExpiresAt:      time.Now().Add(duration),
+		RawToken:       "imp-test-token",
+	}, nil
+}
+
+func (m *mockSessionManager) Get(ctx context.Context, sessionID string) (*plugin.Session, error) {
+	if m.session != nil && m.session.ID == sessionID {
+		return m.session, nil
+	}
+	return nil, nil
+}
+
+func (m *mockSessionManager) Delete(ctx context.Context, sessionID string) error {
+	return nil
+}
+
+func (m *mockSessionManager) WriteAuthResponse(w http.ResponseWriter, session *plugin.Session, user *plugin.User) error {
+	return nil
+}
+
+func (m *mockSessionManager) ClearAuthResponse(w http.ResponseWriter) {}
+
+func (m *mockSessionManager) GetSessionToken(r *http.Request) string {
+	return "test-token"
+}
+
+func (m *mockSessionManager) SetSessionCookie(w http.ResponseWriter, token string, expiresAt time.Time) {}
+
+// mockHandlersUserProvider implements UserProvider for handler tests
+type mockHandlersUserProvider struct {
+	user  *plugin.User
+	users map[string]*plugin.User
+}
+
+func (m *mockHandlersUserProvider) GetUserFromRequest(r *http.Request) (*plugin.User, error) {
+	return m.user, nil
+}
+
+func (m *mockHandlersUserProvider) GetPluginUser(ctx context.Context, userID string) (*plugin.User, error) {
+	if m.users != nil {
+		if user, ok := m.users[userID]; ok {
+			return user, nil
+		}
+	}
+	if m.user != nil && m.user.ID == userID {
+		return m.user, nil
+	}
+	return nil, ErrUserNotFound
 }

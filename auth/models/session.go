@@ -16,6 +16,10 @@ type Session struct {
 	ExpiresAt time.Time
 	LastUsed  time.Time
 
+	// ImpersonatedBy is the user ID of the admin who started this impersonation session.
+	// If nil, this is a regular session (not impersonation).
+	ImpersonatedBy *string
+
 	// RawToken is not persisted - only set on creation
 	RawToken string
 }
@@ -23,6 +27,11 @@ type Session struct {
 // IsExpired returns true if the session has expired
 func (s *Session) IsExpired() bool {
 	return time.Now().After(s.ExpiresAt)
+}
+
+// IsImpersonation returns true if this is an impersonation session
+func (s *Session) IsImpersonation() bool {
+	return s.ImpersonatedBy != nil
 }
 
 // SessionStore defines session-related database operations

@@ -76,8 +76,11 @@ func (p *Plugin) OAuthCallbackHandler() func(http.ResponseWriter, *http.Request,
 			return
 		}
 
-		// Set session cookie
-		p.setSessionCookie(w, session)
+		// WriteAuthResponse handles both cookie and JWT modes
+		if err := p.ctx.Sessions.WriteAuthResponse(w, session, user); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 
 		// Redirect to the URL from state if provided, otherwise return JSON
 		redirectTo := ""
@@ -213,24 +216,6 @@ func (p *Plugin) completeOAuthUserCreation(ctx context.Context, provider string,
 	return user, nil
 }
 
-// setSessionCookie sets the session cookie
-func (p *Plugin) setSessionCookie(w http.ResponseWriter, session *plugin.Session) {
-	cookie := &http.Cookie{
-		Name:     "session",
-		Value:    session.ID,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   p.isSecure(),
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(session.ExpiresAt.Sub(session.CreatedAt).Seconds()),
-	}
-	http.SetCookie(w, cookie)
-}
-
-// isSecure returns true if the base URL uses HTTPS
-func (p *Plugin) isSecure() bool {
-	return strings.HasPrefix(p.auth.BaseURL(), "https://")
-}
 
 // Helper functions (adapted from handlers package)
 func writeJSON(w http.ResponseWriter, status int, v any) error {

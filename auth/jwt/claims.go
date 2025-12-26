@@ -29,6 +29,17 @@ type Claims struct {
 
 	// TokenType indicates whether this is an access or refresh token
 	TokenType TokenType `json:"type,omitempty"`
+
+	// Act is the actor claim per RFC 8693 - represents who is acting on behalf of the subject.
+	// Used for impersonation: contains the admin user ID who initiated the impersonation.
+	Act *ActorClaim `json:"act,omitempty"`
+}
+
+// ActorClaim represents the actor claim per RFC 8693.
+// This is used when a user (typically an admin) is acting on behalf of another user.
+type ActorClaim struct {
+	// Sub is the subject (user ID) of the actor
+	Sub string `json:"sub"`
 }
 
 // TokenType represents the type of JWT token
@@ -40,9 +51,10 @@ const (
 )
 
 // NewAccessClaims creates new claims for an access token.
-func NewAccessClaims(userID, sessionID, email, name string, emailVerified bool, issuer, audience string, ttl time.Duration) *Claims {
+// The actorID parameter is optional - if provided, it sets the "act" claim for impersonation.
+func NewAccessClaims(userID, sessionID, email, name string, emailVerified bool, issuer, audience string, ttl time.Duration, actorID *string) *Claims {
 	now := time.Now()
-	return &Claims{
+	claims := &Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
 			Subject:   userID,
@@ -59,12 +71,20 @@ func NewAccessClaims(userID, sessionID, email, name string, emailVerified bool, 
 		EmailVerified: emailVerified,
 		TokenType:     TokenTypeAccess,
 	}
+
+	// Set actor claim for impersonation sessions
+	if actorID != nil && *actorID != "" {
+		claims.Act = &ActorClaim{Sub: *actorID}
+	}
+
+	return claims
 }
 
 // NewRefreshClaims creates new claims for a refresh token.
-func NewRefreshClaims(userID, sessionID, issuer, audience string, ttl time.Duration) *Claims {
+// The actorID parameter is optional - if provided, it sets the "act" claim for impersonation.
+func NewRefreshClaims(userID, sessionID, issuer, audience string, ttl time.Duration, actorID *string) *Claims {
 	now := time.Now()
-	return &Claims{
+	claims := &Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    issuer,
 			Subject:   userID,
@@ -78,6 +98,13 @@ func NewRefreshClaims(userID, sessionID, issuer, audience string, ttl time.Durat
 		SessionID: sessionID,
 		TokenType: TokenTypeRefresh,
 	}
+
+	// Set actor claim for impersonation sessions
+	if actorID != nil && *actorID != "" {
+		claims.Act = &ActorClaim{Sub: *actorID}
+	}
+
+	return claims
 }
 
 // IsExpired returns true if the token has expired.

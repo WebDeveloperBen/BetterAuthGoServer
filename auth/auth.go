@@ -370,6 +370,7 @@ func (a *Auth) buildPluginContext() plugin.Context {
 		BaseURL:   a.config.BaseURL,
 		Secret:    a.config.Secret,
 		Auth:      a, // Auth implements plugin.AuthCore
+		Sessions:  &sessionManager{auth: a},
 		Hasher:    a.tokenHasher,
 		Encryptor: a.tokenEncryptor,
 		Logger:    a.config.Logger,
@@ -560,13 +561,14 @@ func toPluginSession(s *models.Session) *plugin.Session {
 		return nil
 	}
 	return &plugin.Session{
-		ID:        s.ID,
-		UserID:    s.UserID,
-		IPAddress: s.IPAddress,
-		UserAgent: s.UserAgent,
-		CreatedAt: s.CreatedAt,
-		ExpiresAt: s.ExpiresAt,
-		RawToken:  s.RawToken,
+		ID:             s.ID,
+		UserID:         s.UserID,
+		IPAddress:      s.IPAddress,
+		UserAgent:      s.UserAgent,
+		CreatedAt:      s.CreatedAt,
+		ExpiresAt:      s.ExpiresAt,
+		ImpersonatedBy: s.ImpersonatedBy,
+		RawToken:       s.RawToken,
 	}
 }
 

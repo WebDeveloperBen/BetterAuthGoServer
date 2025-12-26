@@ -30,13 +30,6 @@ type AuthProvider interface {
 // This allows the password plugin to work with any plugin that provides password reset tokens.
 type PasswordResetTokenProvider = plugin.PasswordResetTokenProvider
 
-// SessionCookieSetter is an interface for setting session cookies.
-// The main Auth struct implements this.
-type SessionCookieSetter interface {
-	SetPluginSessionCookie(w http.ResponseWriter, session *plugin.Session)
-	ClearSessionCookie(w http.ResponseWriter)
-}
-
 // SessionGetter is an interface for retrieving the session from request context.
 // The main Auth struct implements this via SessionFromContext.
 type SessionGetter interface {

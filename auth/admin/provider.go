@@ -14,6 +14,9 @@ import (
 type UserProvider interface {
 	// GetUserFromRequest retrieves the authenticated user from the request context
 	GetUserFromRequest(r *http.Request) (*plugin.User, error)
+
+	// GetPluginUser retrieves a user by ID
+	GetPluginUser(ctx context.Context, userID string) (*plugin.User, error)
 }
 
 // AdminUserUpdates contains fields that can be updated by an admin.

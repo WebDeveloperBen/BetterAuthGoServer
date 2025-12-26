@@ -12,6 +12,9 @@ var (
 	ErrInvalidSigningKey    = errors.New("jwt: invalid signing key")
 	ErrUnsupportedAlgorithm = errors.New("jwt: unsupported algorithm")
 
+	// Plugin errors
+	ErrNotInitialized = errors.New("jwt: plugin not initialized")
+
 	// Request errors
 	ErrInvalidRequest     = errors.New("jwt: invalid request")
 	ErrInvalidGrantType   = errors.New("jwt: invalid grant type")

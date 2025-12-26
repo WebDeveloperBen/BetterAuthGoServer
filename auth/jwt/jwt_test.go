@@ -361,14 +361,14 @@ func TestService_TokenBlocklist(t *testing.T) {
 
 func TestClaims_IsExpired(t *testing.T) {
 	t.Run("not expired", func(t *testing.T) {
-		claims := NewAccessClaims("user", "session", "email", "name", true, "issuer", "audience", time.Hour)
+		claims := NewAccessClaims("user", "session", "email", "name", true, "issuer", "audience", time.Hour, nil)
 		if claims.IsExpired() {
 			t.Error("Token should not be expired")
 		}
 	})
 
 	t.Run("expired", func(t *testing.T) {
-		claims := NewAccessClaims("user", "session", "email", "name", true, "issuer", "audience", -time.Hour)
+		claims := NewAccessClaims("user", "session", "email", "name", true, "issuer", "audience", -time.Hour, nil)
 		if !claims.IsExpired() {
 			t.Error("Token should be expired")
 		}

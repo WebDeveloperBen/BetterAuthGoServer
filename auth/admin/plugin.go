@@ -74,7 +74,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.userProvider = userProvider
 
 	p.service = NewService(ctx.DB, p.logger)
-	p.handlers = newHandlers(p.service, ctx.Auth, &p.config)
+	p.handlers = newHandlers(p.service, ctx.Auth, ctx.Sessions, userProvider, &p.config)
 
 	// Initialize access control
 	if p.config.AccessControl == nil {
@@ -147,6 +147,20 @@ func (p *Plugin) Routes() []plugin.Route {
 			Handler:     p.handlers.checkRolePermission,
 			RequireAuth: true,
 			Middleware:  []func(http.Handler) http.Handler{adminMw},
+		},
+		{
+			Method:      "POST",
+			Path:        "/admin/impersonate-user",
+			Handler:     p.handlers.impersonateUser,
+			RequireAuth: true,
+			Middleware:  []func(http.Handler) http.Handler{adminMw},
+		},
+		{
+			Method:      "POST",
+			Path:        "/admin/stop-impersonating",
+			Handler:     p.handlers.stopImpersonating,
+			RequireAuth: true,
+			// Note: No admin middleware - any authenticated user with an impersonation session can stop
 		},
 	}
 }

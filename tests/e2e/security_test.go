@@ -220,7 +220,7 @@ func TestSessionCookieSecurity(t *testing.T) {
 	env := Setup(t)
 	defer env.Cleanup(t)
 
-	t.Run("SessionCookieHasStrictSameSite", func(t *testing.T) {
+	t.Run("SessionCookieHasLaxSameSite", func(t *testing.T) {
 		env.TruncateTables(t)
 
 		body := map[string]string{
@@ -233,8 +233,11 @@ func TestSessionCookieSecurity(t *testing.T) {
 
 		for _, cookie := range resp.Cookies() {
 			if cookie.Name == "session" {
-				if cookie.SameSite != http.SameSiteStrictMode {
-					t.Errorf("Session cookie SameSite = %v, want SameSiteStrictMode", cookie.SameSite)
+				// Lax mode is preferred over Strict for session cookies:
+				// - Prevents CSRF for state-changing requests (POST/PUT/DELETE)
+				// - Allows users to stay logged in when clicking links from external sites
+				if cookie.SameSite != http.SameSiteLaxMode {
+					t.Errorf("Session cookie SameSite = %v, want SameSiteLaxMode", cookie.SameSite)
 				}
 				break
 			}

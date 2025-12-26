@@ -28,7 +28,6 @@ type Plugin struct {
 	ctx           plugin.Context
 	service       *Service
 	auth          AuthProvider
-	sessionCookie SessionCookieSetter
 	sessionGetter SessionGetter
 	opts          []Option
 }
@@ -66,11 +65,6 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		return nil
 	}
 	p.auth = auth
-
-	// Try to get SessionCookieSetter (optional)
-	if setter, ok := ctx.Auth.(SessionCookieSetter); ok {
-		p.sessionCookie = setter
-	}
 
 	// Try to get SessionGetter (optional, required for password change)
 	if getter, ok := ctx.Auth.(SessionGetter); ok {

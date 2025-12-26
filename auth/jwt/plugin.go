@@ -69,6 +69,7 @@ var (
 	_ plugin.Plugin             = (*Plugin)(nil)
 	_ plugin.RoutesProvider     = (*Plugin)(nil)
 	_ plugin.MiddlewareProvider = (*Plugin)(nil)
+	_ plugin.JWTTokenGenerator  = (*Plugin)(nil)
 )
 
 // NewPlugin creates a new JWT plugin with the given options
@@ -168,4 +169,33 @@ func (p *Plugin) Middleware() []plugin.Middleware {
 			Handler:  p.jwtAuthMiddleware(),
 		},
 	}
+}
+
+// GenerateTokensForSession implements plugin.JWTTokenGenerator.
+// This allows other plugins to request JWT tokens for a session.
+// If the session is an impersonation session, the "act" claim will be set per RFC 8693.
+func (p *Plugin) GenerateTokensForSession(session *plugin.Session, user *plugin.User) (*plugin.TokenPair, error) {
+	if p.service == nil {
+		return nil, ErrNotInitialized
+	}
+
+	userInfo := UserInfo{
+		ID:            user.ID,
+		Email:         user.Email,
+		Name:          user.Name,
+		EmailVerified: user.EmailVerified,
+		ActorID:       session.ImpersonatedBy, // Set actor for impersonation sessions
+	}
+
+	pair, err := p.service.GenerateTokenPair(userInfo, session.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &plugin.TokenPair{
+		AccessToken:  pair.AccessToken,
+		RefreshToken: pair.RefreshToken,
+		TokenType:    pair.TokenType,
+		ExpiresIn:    pair.ExpiresIn,
+	}, nil
 }

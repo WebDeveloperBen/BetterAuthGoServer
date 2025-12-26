@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
@@ -37,6 +38,14 @@ type checkRolePermissionRequest struct {
 	Permissions map[string][]string `json:"permissions"`
 }
 
+type impersonateUserRequest struct {
+	UserID string `json:"userId"`
+}
+
+type stopImpersonatingRequest struct {
+	// Empty - uses session from cookie
+}
+
 // Response types
 
 type errorResponse struct {
@@ -64,6 +73,19 @@ type listUsersResponse struct {
 
 type permissionResponse struct {
 	HasPermission bool `json:"hasPermission"`
+}
+
+type impersonationResponse struct {
+	Session sessionResponse `json:"session"`
+	User    *userResponse   `json:"user"`
+}
+
+type sessionResponse struct {
+	ID        string  `json:"id"`
+	UserID    string  `json:"userId"`
+	ExpiresAt string  `json:"expiresAt"`
+	IPAddress *string `json:"ipAddress,omitempty"`
+	UserAgent *string `json:"userAgent,omitempty"`
 }
 
 // toUserResponse converts a models.User to userResponse
@@ -109,16 +131,20 @@ func decodeJSON(r *http.Request, v any) error {
 
 // handlers holds the admin handlers with access to the service
 type handlers struct {
-	service AdminOperations
-	auth    plugin.AuthCore
-	config  *Config
+	service      AdminOperations
+	auth         plugin.AuthCore
+	sessions     plugin.SessionManager
+	userProvider UserProvider
+	config       *Config
 }
 
-func newHandlers(service AdminOperations, auth plugin.AuthCore, config *Config) *handlers {
+func newHandlers(service AdminOperations, auth plugin.AuthCore, sessions plugin.SessionManager, userProvider UserProvider, config *Config) *handlers {
 	return &handlers{
-		service: service,
-		auth:    auth,
-		config:  config,
+		service:      service,
+		auth:         auth,
+		sessions:     sessions,
+		userProvider: userProvider,
+		config:       config,
 	}
 }
 
@@ -332,4 +358,169 @@ func (h *handlers) checkRolePermission(w http.ResponseWriter, r *http.Request) {
 	hasPermission := role.CheckRolePermission(req.Permissions)
 
 	writeJSON(w, http.StatusOK, permissionResponse{HasPermission: hasPermission})
+}
+
+// impersonateUser handles POST /admin/impersonate-user
+func (h *handlers) impersonateUser(w http.ResponseWriter, r *http.Request) {
+	var req impersonateUserRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid request body"))
+		return
+	}
+
+	if req.UserID == "" {
+		writeError(w, http.StatusBadRequest, errors.New("userId is required"))
+		return
+	}
+
+	// Get the current admin user
+	adminUser, err := h.userProvider.GetUserFromRequest(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, ErrImpersonationNotAllowed)
+		return
+	}
+
+	// Check if user has impersonation permission
+	if h.config.AccessControl != nil {
+		hasPermission := h.config.AccessControl.UserHasPermission(adminUser.Role, map[string][]string{
+			"user": {"impersonate"},
+		})
+		if !hasPermission {
+			writeError(w, http.StatusForbidden, ErrImpersonationNotAllowed)
+			return
+		}
+	}
+
+	// Get the target user
+	targetUser, err := h.userProvider.GetPluginUser(r.Context(), req.UserID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, ErrUserNotFound)
+		return
+	}
+
+	// Check if target is an admin (and if we're allowed to impersonate admins)
+	if !h.config.AllowImpersonatingAdmins {
+		isTargetAdmin := false
+		for _, adminRole := range h.config.AdminRoles {
+			if targetUser.Role == adminRole {
+				isTargetAdmin = true
+				break
+			}
+		}
+		if isTargetAdmin {
+			writeError(w, http.StatusForbidden, ErrCannotImpersonateAdmins)
+			return
+		}
+	}
+
+	// Get current session to verify user is authenticated
+	currentSession := h.sessions.GetFromRequest(r)
+	if currentSession == nil {
+		writeError(w, http.StatusUnauthorized, ErrImpersonationNotAllowed)
+		return
+	}
+
+	// Get the current session token (we need to store this for restoration)
+	adminSessionToken := h.sessions.GetSessionToken(r)
+	if adminSessionToken == "" {
+		writeError(w, http.StatusUnauthorized, ErrImpersonationNotAllowed)
+		return
+	}
+
+	// Create impersonation session
+	impersonationSession, err := h.sessions.CreateWithImpersonation(
+		r.Context(),
+		targetUser.ID,
+		adminUser.ID,
+		r,
+		h.config.ImpersonationSessionDuration,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, errors.New("failed to create impersonation session"))
+		return
+	}
+
+	// Store the admin's original session token for restoration
+	http.SetCookie(w, &http.Cookie{
+		Name:     "admin_session_token",
+		Value:    adminSessionToken,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(h.config.ImpersonationSessionDuration.Seconds()),
+	})
+
+	// Set the impersonation session cookie
+	h.sessions.SetSessionCookie(w, impersonationSession.RawToken, impersonationSession.ExpiresAt)
+
+	writeJSON(w, http.StatusOK, impersonationResponse{
+		Session: sessionResponse{
+			ID:        impersonationSession.ID,
+			UserID:    impersonationSession.UserID,
+			ExpiresAt: impersonationSession.ExpiresAt.Format("2006-01-02T15:04:05Z"),
+			IPAddress: impersonationSession.IPAddress,
+			UserAgent: impersonationSession.UserAgent,
+		},
+		User: &userResponse{
+			ID:            targetUser.ID,
+			Email:         targetUser.Email,
+			EmailVerified: targetUser.EmailVerified,
+			Name:          targetUser.Name,
+			Image:         targetUser.Image,
+			Role:          targetUser.Role,
+			Banned:        targetUser.Banned,
+			CreatedAt:     targetUser.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			UpdatedAt:     targetUser.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		},
+	})
+}
+
+// stopImpersonating handles POST /admin/stop-impersonating
+func (h *handlers) stopImpersonating(w http.ResponseWriter, r *http.Request) {
+	// Get current session
+	currentSession := h.sessions.GetFromRequest(r)
+	if currentSession == nil {
+		writeError(w, http.StatusUnauthorized, ErrNotImpersonating)
+		return
+	}
+
+	// Check if this is an impersonation session
+	if !currentSession.IsImpersonation() {
+		writeError(w, http.StatusBadRequest, ErrNotImpersonating)
+		return
+	}
+
+	// Get the admin's original session token from cookie
+	adminTokenCookie, err := r.Cookie("admin_session_token")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, ErrImpersonationSessionInvalid)
+		return
+	}
+
+	// Delete the impersonation session
+	if err := h.sessions.Delete(r.Context(), currentSession.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, errors.New("failed to delete impersonation session"))
+		return
+	}
+
+	// Clear the admin_session_token cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "admin_session_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1, // Delete the cookie
+	})
+
+	// Restore the admin's original session
+	// Use a reasonable expiration (24 hours from now) since we don't have the original expiry
+	h.sessions.SetSessionCookie(w, adminTokenCookie.Value, time.Now().Add(24*time.Hour))
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"message": "Impersonation ended. Original admin session restored.",
+	})
 }

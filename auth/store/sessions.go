@@ -13,14 +13,15 @@ import (
 type Session struct {
 	bun.BaseModel `bun:"table:sessions,alias:s"`
 
-	ID        string    `bun:"id,pk"`
-	UserID    string    `bun:"user_id,notnull"`
-	TokenHash string    `bun:"token_hash,notnull,unique"`
-	IPAddress *string   `bun:"ip_address"`
-	UserAgent *string   `bun:"user_agent"`
-	CreatedAt time.Time `bun:"created_at,notnull,default:current_timestamp"`
-	ExpiresAt time.Time `bun:"expires_at,notnull"`
-	LastUsed  time.Time `bun:"last_used,notnull,default:current_timestamp"`
+	ID             string    `bun:"id,pk"`
+	UserID         string    `bun:"user_id,notnull"`
+	TokenHash      string    `bun:"token_hash,notnull,unique"`
+	IPAddress      *string   `bun:"ip_address"`
+	UserAgent      *string   `bun:"user_agent"`
+	CreatedAt      time.Time `bun:"created_at,notnull,default:current_timestamp"`
+	ExpiresAt      time.Time `bun:"expires_at,notnull"`
+	LastUsed       time.Time `bun:"last_used,notnull,default:current_timestamp"`
+	ImpersonatedBy *string   `bun:"impersonated_by"`
 
 	// Relations
 	User *User `bun:"rel:belongs-to,join:user_id=id"`
@@ -31,14 +32,15 @@ func toModelsSession(s *Session) *models.Session {
 		return nil
 	}
 	return &models.Session{
-		ID:        s.ID,
-		UserID:    s.UserID,
-		TokenHash: s.TokenHash,
-		IPAddress: s.IPAddress,
-		UserAgent: s.UserAgent,
-		CreatedAt: s.CreatedAt,
-		ExpiresAt: s.ExpiresAt,
-		LastUsed:  s.LastUsed,
+		ID:             s.ID,
+		UserID:         s.UserID,
+		TokenHash:      s.TokenHash,
+		IPAddress:      s.IPAddress,
+		UserAgent:      s.UserAgent,
+		CreatedAt:      s.CreatedAt,
+		ExpiresAt:      s.ExpiresAt,
+		LastUsed:       s.LastUsed,
+		ImpersonatedBy: s.ImpersonatedBy,
 	}
 }
 
@@ -47,14 +49,15 @@ func toBunSession(s *models.Session) *Session {
 		return nil
 	}
 	return &Session{
-		ID:        s.ID,
-		UserID:    s.UserID,
-		TokenHash: s.TokenHash,
-		IPAddress: s.IPAddress,
-		UserAgent: s.UserAgent,
-		CreatedAt: s.CreatedAt,
-		ExpiresAt: s.ExpiresAt,
-		LastUsed:  s.LastUsed,
+		ID:             s.ID,
+		UserID:         s.UserID,
+		TokenHash:      s.TokenHash,
+		IPAddress:      s.IPAddress,
+		UserAgent:      s.UserAgent,
+		CreatedAt:      s.CreatedAt,
+		ExpiresAt:      s.ExpiresAt,
+		LastUsed:       s.LastUsed,
+		ImpersonatedBy: s.ImpersonatedBy,
 	}
 }
 

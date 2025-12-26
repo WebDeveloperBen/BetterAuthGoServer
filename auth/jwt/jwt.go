@@ -146,6 +146,9 @@ type UserInfo struct {
 	Email         string
 	Name          string
 	EmailVerified bool
+	// ActorID is the ID of the user acting on behalf of this user (for impersonation).
+	// If set, the "act" claim will be included in generated tokens per RFC 8693.
+	ActorID *string
 }
 
 // GenerateTokenPair generates a new access/refresh token pair
@@ -155,7 +158,7 @@ func (s *Service) GenerateTokenPair(user UserInfo, sessionID string) (*TokenPair
 		return nil, err
 	}
 
-	refreshToken, err := s.generateRefreshToken(user.ID, sessionID)
+	refreshToken, err := s.generateRefreshToken(user, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -179,6 +182,7 @@ func (s *Service) generateAccessToken(user UserInfo, sessionID string) (string, 
 		s.config.Issuer,
 		s.config.Audience,
 		s.config.AccessTokenTTL,
+		user.ActorID,
 	)
 
 	token := jwt.NewWithClaims(s.method, claims)
@@ -186,13 +190,14 @@ func (s *Service) generateAccessToken(user UserInfo, sessionID string) (string, 
 }
 
 // generateRefreshToken generates a new refresh token
-func (s *Service) generateRefreshToken(userID, sessionID string) (string, error) {
+func (s *Service) generateRefreshToken(user UserInfo, sessionID string) (string, error) {
 	claims := NewRefreshClaims(
-		userID,
+		user.ID,
 		sessionID,
 		s.config.Issuer,
 		s.config.Audience,
 		s.config.RefreshTokenTTL,
+		user.ActorID,
 	)
 
 	token := jwt.NewWithClaims(s.method, claims)
@@ -274,6 +279,11 @@ func (s *Service) RefreshTokens(ctx context.Context, refreshToken string, user U
 		if err := s.config.TokenBlocklist.Revoke(ctx, claims.ID, claims.ExpiresAt.Time); err != nil {
 			return nil, err
 		}
+	}
+
+	// Preserve actor claim from the original token (for impersonation sessions)
+	if claims.Act != nil && user.ActorID == nil {
+		user.ActorID = &claims.Act.Sub
 	}
 
 	// Generate new token pair

@@ -107,8 +107,12 @@ func (p *Plugin) handleSignUp() http.HandlerFunc {
 			User: toUserResponse(user),
 		}
 
-		if session != nil && p.sessionCookie != nil {
-			p.sessionCookie.SetPluginSessionCookie(w, session)
+		if session != nil {
+			// WriteAuthResponse handles both cookie and JWT modes
+			if err := p.ctx.Sessions.WriteAuthResponse(w, session, user); err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
 			resp.Session = toSessionResponse(session)
 		}
 
@@ -140,8 +144,10 @@ func (p *Plugin) handleSignIn() http.HandlerFunc {
 			return
 		}
 
-		if p.sessionCookie != nil {
-			p.sessionCookie.SetPluginSessionCookie(w, session)
+		// WriteAuthResponse handles both cookie and JWT modes
+		if err := p.ctx.Sessions.WriteAuthResponse(w, session, user); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
 		}
 
 		writeJSON(w, http.StatusOK, authResponse{
@@ -241,9 +247,7 @@ func (p *Plugin) handlePasswordChange() http.HandlerFunc {
 		}
 
 		// Clear session cookie since all sessions are invalidated
-		if p.sessionCookie != nil {
-			p.sessionCookie.ClearSessionCookie(w)
-		}
+		p.ctx.Sessions.ClearAuthResponse(w)
 
 		w.WriteHeader(http.StatusNoContent)
 	}

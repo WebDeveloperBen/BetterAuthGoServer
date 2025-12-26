@@ -47,6 +47,10 @@ type Context struct {
 	// May be nil during early initialization phases.
 	Auth AuthCore
 
+	// Sessions provides session management operations for plugins.
+	// Allows plugins to get, create, and delete sessions.
+	Sessions SessionManager
+
 	// Token utilities for plugins that need to hash or encrypt tokens
 	Hasher    *token.Hasher
 	Encryptor *token.Encryptor
