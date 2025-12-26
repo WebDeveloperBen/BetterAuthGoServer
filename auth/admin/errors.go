@@ -2,9 +2,9 @@ package admin
 
 import "errors"
 
-// Common errors for admin operations.
+// Admin plugin errors
 var (
-	ErrUserNotFound      = errors.New("user not found")
-	ErrInvalidRequest    = errors.New("invalid request")
-	ErrAdminNotSupported = errors.New("admin operations not supported by store")
+	ErrUserNotFound      = errors.New("admin: user not found")
+	ErrInvalidRequest    = errors.New("admin: invalid request")
+	ErrAdminNotSupported = errors.New("admin: operations not supported by store")
 )

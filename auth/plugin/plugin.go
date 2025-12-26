@@ -118,3 +118,29 @@ type ValidatorProvider interface {
 	// ValidateSignIn validates sign in, return error to reject
 	ValidateSignIn(ctx context.Context, email string) error
 }
+
+// EmailVerificationProvider is implemented by plugins that handle email verification tokens.
+// This allows the auth package to send/verify emails without importing specific plugin packages.
+//
+// Implementations should return models.ErrVerificationNotFound for invalid tokens
+// and models.ErrVerificationExpired for expired tokens.
+type EmailVerificationProvider interface {
+	// CreateEmailVerificationToken creates a token and returns the raw token to send via email.
+	CreateEmailVerificationToken(ctx context.Context, userID string) (rawToken string, err error)
+
+	// ConsumeEmailVerificationToken validates and consumes a token, returning the user ID.
+	ConsumeEmailVerificationToken(ctx context.Context, rawToken string) (userID string, err error)
+}
+
+// PasswordResetTokenProvider is implemented by plugins that handle password reset tokens.
+// This allows the password plugin to request/verify reset tokens without importing specific plugins.
+//
+// Implementations should return models.ErrVerificationNotFound for invalid tokens
+// and models.ErrVerificationExpired for expired tokens.
+type PasswordResetTokenProvider interface {
+	// CreatePasswordResetToken creates a token and returns the raw token to send via email.
+	CreatePasswordResetToken(ctx context.Context, userID string) (rawToken string, err error)
+
+	// ConsumePasswordResetToken validates and consumes a token, returning the user ID.
+	ConsumePasswordResetToken(ctx context.Context, rawToken string) (userID string, err error)
+}

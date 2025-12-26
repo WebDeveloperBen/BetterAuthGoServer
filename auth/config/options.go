@@ -162,6 +162,15 @@ func WithSessionCleanupInterval(d time.Duration) Option {
 	}
 }
 
+// WithMaxSessionsPerUser sets the maximum concurrent sessions allowed per user.
+// When creating a new session would exceed this limit, the oldest sessions are deleted.
+// Set to 0 for unlimited sessions. Default is 10.
+func WithMaxSessionsPerUser(max int) Option {
+	return func(c *Config) {
+		c.MaxSessionsPerUser = max
+	}
+}
+
 // WithTrustedOrigins sets the trusted origins for CORS and redirects
 func WithTrustedOrigins(origins ...string) Option {
 	return func(c *Config) {

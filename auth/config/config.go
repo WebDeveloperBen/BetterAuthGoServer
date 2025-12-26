@@ -61,6 +61,11 @@ type Config struct {
 	// Session cleanup interval (0 to disable background cleanup)
 	SessionCleanupInterval time.Duration
 
+	// MaxSessionsPerUser limits concurrent sessions per user.
+	// When creating a new session would exceed this limit, the oldest sessions are deleted.
+	// Set to 0 for unlimited sessions (default: 10).
+	MaxSessionsPerUser int
+
 	// Trusted origins (for CORS and redirects)
 	TrustedOrigins []string
 
@@ -120,6 +125,9 @@ func NewConfig(opts ...Option) *Config {
 
 		// Session cleanup (background goroutine)
 		SessionCleanupInterval: 1 * time.Hour,
+
+		// Max sessions per user
+		MaxSessionsPerUser: 10,
 
 		// Logging
 		Logger: slog.Default(),

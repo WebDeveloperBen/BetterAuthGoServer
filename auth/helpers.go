@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
 // JSON response helpers
@@ -37,8 +38,14 @@ type SessionResponse struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-// toUserResponse converts a User to UserResponse
-func toUserResponse(u *models.User) *UserResponse {
+// AccountResponse represents an OAuth account in API responses
+type AccountResponse struct {
+	ID       string `json:"id"`
+	Provider string `json:"provider"`
+}
+
+// ToUserResponse converts a User to UserResponse
+func ToUserResponse(u *models.User) *UserResponse {
 	if u == nil {
 		return nil
 	}
@@ -56,16 +63,19 @@ func toUserResponse(u *models.User) *UserResponse {
 	}
 }
 
-// toSessionResponse converts a Session to SessionResponse
-func toSessionResponse(s *models.Session) *SessionResponse {
+// ToSessionResponse converts a Session to SessionResponse
+func ToSessionResponse(s *models.Session) *SessionResponse {
+	if s == nil {
+		return nil
+	}
 	return &SessionResponse{
 		ID:        s.ID,
 		ExpiresAt: s.ExpiresAt,
 	}
 }
 
-// writeJSON writes a JSON response
-func writeJSON(w http.ResponseWriter, status int, data any) {
+// WriteJSON writes a JSON response
+func WriteJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if data != nil {
@@ -73,9 +83,9 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 	}
 }
 
-// writeError writes an error response
-func writeError(w http.ResponseWriter, status int, err error) {
-	writeJSON(w, status, ErrorResponse{
+// WriteError writes an error response
+func WriteError(w http.ResponseWriter, status int, err error) {
+	WriteJSON(w, status, ErrorResponse{
 		Error:   http.StatusText(status),
 		Message: err.Error(),
 	})
@@ -84,9 +94,27 @@ func writeError(w http.ResponseWriter, status int, err error) {
 // Cookie helpers
 
 // SetSessionCookie sets the session cookie on the response
-// After setting the cookie, the RawToken is cleared from the session to minimize
-// the time sensitive data remains in memory
+// After setting the cookie, the RawToken is cleared from the session to minimize the time sensitive data remains in memory
 func (a *Auth) SetSessionCookie(w http.ResponseWriter, session *models.Session) {
+	secure := strings.HasPrefix(a.config.BaseURL, "https://")
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     a.config.SessionCookie,
+		Value:    session.RawToken,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+		Expires:  session.ExpiresAt,
+	})
+
+	// Clear the raw token from memory after setting the cookie
+	session.RawToken = ""
+}
+
+// SetPluginSessionCookie sets the session cookie from a plugin session.
+// This is used by plugins that need to set session cookies.
+func (a *Auth) SetPluginSessionCookie(w http.ResponseWriter, session *plugin.Session) {
 	secure := strings.HasPrefix(a.config.BaseURL, "https://")
 
 	http.SetCookie(w, &http.Cookie{
@@ -131,7 +159,7 @@ func (a *Auth) GetSessionToken(r *http.Request) string {
 	return ""
 }
 
-// decodeJSON decodes a JSON request body
-func decodeJSON(r *http.Request, v any) error {
+// DecodeJSON decodes a JSON request body
+func DecodeJSON(r *http.Request, v any) error {
 	return json.NewDecoder(r.Body).Decode(v)
 }

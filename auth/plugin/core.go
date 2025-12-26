@@ -58,6 +58,9 @@ type Session struct {
 	UserAgent *string
 	CreatedAt time.Time
 	ExpiresAt time.Time
+	// RawToken is the unhashed session token, needed for setting cookies.
+	// Only populated when a new session is created.
+	RawToken string
 }
 
 // SessionInfo is a minimal session info for plugins that only need ID and UserID.

@@ -29,7 +29,6 @@ import (
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
 	kvredis "github.com/webdeveloperben/BetterAuthGoServer/auth/kv/redis"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/ratelimit"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
@@ -116,7 +115,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Mount auth endpoints under /auth/
-	mux.Handle("/auth/", http.StripPrefix("/auth", handlers.NewRouter(authService)))
+	mux.Handle("/auth/", http.StripPrefix("/auth", authService.Handler()))
 
 	// Protected endpoint example
 	mux.Handle("GET /api/profile", authService.AuthMiddleware()(http.HandlerFunc(profileHandler)))

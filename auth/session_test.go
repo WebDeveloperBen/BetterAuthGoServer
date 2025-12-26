@@ -317,7 +317,7 @@ func TestValidateSession_NotFound(t *testing.T) {
 	}
 
 	_, err := auth.ValidateSession(context.Background(), "non-existent-token")
-	if !errors.Is(err, ErrSessionNotFound) {
+	if !errors.Is(err, models.ErrSessionNotFound) {
 		t.Errorf("error = %v, want ErrSessionNotFound", err)
 	}
 }
@@ -345,7 +345,7 @@ func TestValidateSession_Expired(t *testing.T) {
 	}
 
 	_, err := auth.ValidateSession(context.Background(), rawToken)
-	if !errors.Is(err, ErrSessionExpired) {
+	if !errors.Is(err, models.ErrSessionExpired) {
 		t.Errorf("error = %v, want ErrSessionExpired", err)
 	}
 }
@@ -483,7 +483,7 @@ func TestRefreshSession_NotFound(t *testing.T) {
 	auth := &Auth{store: store}
 
 	_, err := auth.RefreshSession(context.Background(), "non-existent")
-	if !errors.Is(err, ErrSessionNotFound) {
+	if !errors.Is(err, models.ErrSessionNotFound) {
 		t.Errorf("error = %v, want ErrSessionNotFound", err)
 	}
 }

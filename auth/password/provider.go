@@ -26,24 +26,14 @@ type AuthProvider interface {
 	BaseURL() string
 }
 
-// OTPService defines the OTP operations required for password reset.
-type OTPService interface {
-	// CreateToken creates a new OTP token
-	CreateToken(ctx context.Context, userID string, tokenType string) (string, error)
-
-	// ConsumeToken consumes an OTP token and returns the token data
-	ConsumeToken(ctx context.Context, rawToken string, tokenType string) (*OTPToken, error)
-}
-
-// OTPToken represents an OTP token's data.
-type OTPToken struct {
-	UserID string
-}
+// PasswordResetTokenProvider is an alias for the plugin interface.
+// This allows the password plugin to work with any plugin that provides password reset tokens.
+type PasswordResetTokenProvider = plugin.PasswordResetTokenProvider
 
 // SessionCookieSetter is an interface for setting session cookies.
 // The main Auth struct implements this.
 type SessionCookieSetter interface {
-	SetSessionCookie(w http.ResponseWriter, session interface{})
+	SetPluginSessionCookie(w http.ResponseWriter, session *plugin.Session)
 	ClearSessionCookie(w http.ResponseWriter)
 }
 

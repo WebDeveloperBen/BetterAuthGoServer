@@ -8,4 +8,7 @@ var (
 
 	// ErrTokenExpired is returned when a verification token has expired.
 	ErrTokenExpired = errors.New("otp: token expired")
+
+	// Plugin configuration errors
+	ErrPluginNotConfigured = errors.New("otp: plugin not configured")
 )

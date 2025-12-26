@@ -108,7 +108,7 @@ func (p *Plugin) handleSignUp() http.HandlerFunc {
 		}
 
 		if session != nil && p.sessionCookie != nil {
-			p.sessionCookie.SetSessionCookie(w, session)
+			p.sessionCookie.SetPluginSessionCookie(w, session)
 			resp.Session = toSessionResponse(session)
 		}
 
@@ -141,7 +141,7 @@ func (p *Plugin) handleSignIn() http.HandlerFunc {
 		}
 
 		if p.sessionCookie != nil {
-			p.sessionCookie.SetSessionCookie(w, session)
+			p.sessionCookie.SetPluginSessionCookie(w, session)
 		}
 
 		writeJSON(w, http.StatusOK, authResponse{

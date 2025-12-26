@@ -119,7 +119,7 @@ func (m *mockJWTService) ValidateToken(ctx context.Context, tokenString string) 
 			UserID: userID,
 		}, nil
 	}
-	return nil, errInvalidToken
+	return nil, ErrInvalidToken
 }
 
 func (m *mockJWTService) ValidateRefreshToken(ctx context.Context, tokenString string) (*Claims, error) {
@@ -129,7 +129,7 @@ func (m *mockJWTService) ValidateRefreshToken(ctx context.Context, tokenString s
 			UserID: userID,
 		}, nil
 	}
-	return nil, errInvalidToken
+	return nil, ErrInvalidToken
 }
 
 func (m *mockJWTService) ValidateAccessToken(ctx context.Context, tokenString string) (*Claims, error) {

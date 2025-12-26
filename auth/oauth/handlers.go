@@ -3,7 +3,6 @@ package oauth
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -50,7 +49,7 @@ func (p *Plugin) OAuthCallbackHandler() func(http.ResponseWriter, *http.Request,
 		state := r.URL.Query().Get("state")
 
 		if code == "" || state == "" {
-			writeError(w, http.StatusBadRequest, errors.New("missing code or state parameter"))
+			writeError(w, http.StatusBadRequest, ErrMissingCode)
 			return
 		}
 
@@ -100,7 +99,7 @@ func (p *Plugin) OAuthCallbackHandler() func(http.ResponseWriter, *http.Request,
 func (p *Plugin) completeOAuthUserCreation(ctx context.Context, provider string, result *AuthResult, state *State) (*plugin.User, error) {
 	userInfo := result.UserInfo
 	if userInfo == nil {
-		return nil, errors.New("no user info in OAuth result")
+		return nil, ErrNoUserInfo
 	}
 
 	// Initialize account store for OAuth-specific operations
@@ -253,7 +252,7 @@ func (p *Plugin) OAuthDynamicHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		provider, isCallback := parseOAuthPath(r.URL.Path)
 		if provider == "" {
-			writeError(w, http.StatusNotFound, errors.New("oauth provider not found"))
+			writeError(w, http.StatusNotFound, ErrProviderNotFound)
 			return
 		}
 

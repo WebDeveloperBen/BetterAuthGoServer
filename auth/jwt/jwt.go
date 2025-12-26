@@ -8,16 +8,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// Common errors
-var (
-	ErrInvalidToken         = errors.New("invalid token")
-	ErrExpiredToken         = errors.New("token expired")
-	ErrInvalidTokenType     = errors.New("invalid token type")
-	ErrTokenRevoked         = errors.New("token revoked")
-	ErrInvalidSigningKey    = errors.New("invalid signing key")
-	ErrUnsupportedAlgorithm = errors.New("unsupported algorithm")
-)
-
 // Algorithm represents the JWT signing algorithm
 type Algorithm string
 

@@ -15,7 +15,6 @@ import (
 	"github.com/uptrace/bun/dialect/sqlitedialect"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -75,7 +74,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Mount auth endpoints
-	mux.Handle("/auth/", http.StripPrefix("/auth", handlers.NewRouter(authService)))
+	mux.Handle("/auth/", http.StripPrefix("/auth", authService.Handler()))
 
 	// Protected endpoint
 	mux.Handle("GET /api/profile", authService.AuthMiddleware()(http.HandlerFunc(profileHandler)))

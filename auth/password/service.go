@@ -13,48 +13,45 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
-// Service errors.
-var (
-	ErrUserAlreadyExists    = errors.New("user already exists")
-	ErrInvalidCredentials   = errors.New("invalid email or password")
-	ErrAccountNotFound      = errors.New("email account not found")
-	ErrOTPPluginNotFound    = errors.New("otp plugin not configured")
-	ErrVerificationNotFound = errors.New("verification token not found or expired")
-	ErrVerificationExpired  = errors.New("verification token has expired")
-)
-
-// TokenType for password reset tokens.
-const TokenTypePasswordReset = "password_reset"
-
 // Service handles password authentication operations.
 type Service struct {
-	db       *bun.DB
-	hasher   PasswordHasher
-	auth     AuthProvider
-	otp      OTPService
-	eventBus models.EventBus
-	config   Config
-	logger   *slog.Logger
+	db            *bun.DB
+	hasher        models.PasswordHasher
+	auth          AuthProvider
+	tokenProvider PasswordResetTokenProvider
+	eventBus      models.EventBus
+	config        Config
+	logger        *slog.Logger
+	lockout       *lockoutService
 }
 
 // NewService creates a new password service.
 func NewService(
 	db *bun.DB,
 	auth AuthProvider,
-	otp OTPService,
+	tokenProvider PasswordResetTokenProvider,
 	eventBus models.EventBus,
 	config Config,
 	logger *slog.Logger,
 ) *Service {
 	return &Service{
-		db:       db,
-		hasher:   NewArgon2PasswordHasher(),
-		auth:     auth,
-		otp:      otp,
-		eventBus: eventBus,
-		config:   config,
-		logger:   logger,
+		db:            db,
+		hasher:        models.NewArgon2PasswordHasher(),
+		auth:          auth,
+		tokenProvider: tokenProvider,
+		eventBus:      eventBus,
+		config:        config,
+		logger:        logger,
+		lockout:       newLockoutService(config.LockoutStore, config.LockoutThreshold, config.LockoutDuration),
 	}
+}
+
+// Close releases resources held by the service.
+func (s *Service) Close() error {
+	if s.lockout != nil {
+		return s.lockout.Close()
+	}
+	return nil
 }
 
 // SignUp creates a new user with email/password authentication.
@@ -66,7 +63,7 @@ func (s *Service) SignUp(ctx context.Context, email, password, name string, r *h
 
 	// Check if user already exists
 	existing, err := s.auth.GetPluginUserByEmail(ctx, email)
-	if err != nil && !errors.Is(err, ErrUserNotFound) {
+	if err != nil && !errors.Is(err, models.ErrUserNotFound) {
 		return nil, nil, err
 	}
 	if existing != nil {
@@ -118,12 +115,24 @@ func (s *Service) SignUp(ctx context.Context, email, password, name string, r *h
 
 // SignIn authenticates a user with email/password.
 func (s *Service) SignIn(ctx context.Context, email, password string, r *http.Request) (*plugin.User, *plugin.Session, error) {
+	// Check if account is locked
+	if locked, err := s.lockout.IsLocked(ctx, email); err != nil {
+		s.logger.Error("failed to check lockout status", "email", email, "error", err)
+		// Continue on error - don't block legitimate users due to lockout service issues
+	} else if locked {
+		return nil, nil, ErrAccountLocked
+	}
+
 	// Get user - use constant time comparison to prevent timing attacks
 	user, err := s.auth.GetPluginUserByEmail(ctx, email)
 	if err != nil {
 		// Still hash the password to prevent timing attacks
 		_, _ = s.hasher.Hash(password)
-		if errors.Is(err, ErrUserNotFound) {
+		// Record failure for lockout (even for non-existent users to prevent enumeration)
+		if _, lockErr := s.lockout.RecordFailure(ctx, email); lockErr != nil {
+			s.logger.Error("failed to record login failure", "email", email, "error", lockErr)
+		}
+		if errors.Is(err, models.ErrUserNotFound) {
 			return nil, nil, ErrInvalidCredentials
 		}
 		return nil, nil, err
@@ -132,12 +141,25 @@ func (s *Service) SignIn(ctx context.Context, email, password string, r *http.Re
 	// Get email account
 	account, err := s.getEmailAccount(ctx, user.ID)
 	if err != nil || account == nil || account.PasswordHash == nil {
+		// Record failure
+		if _, lockErr := s.lockout.RecordFailure(ctx, email); lockErr != nil {
+			s.logger.Error("failed to record login failure", "email", email, "error", lockErr)
+		}
 		return nil, nil, ErrInvalidCredentials
 	}
 
 	// Verify password
 	if !s.hasher.Verify(password, *account.PasswordHash) {
+		// Record failure
+		if _, lockErr := s.lockout.RecordFailure(ctx, email); lockErr != nil {
+			s.logger.Error("failed to record login failure", "email", email, "error", lockErr)
+		}
 		return nil, nil, ErrInvalidCredentials
+	}
+
+	// Successful login - clear any failure count
+	if err := s.lockout.ClearFailures(ctx, email); err != nil {
+		s.logger.Error("failed to clear login failures", "email", email, "error", err)
 	}
 
 	// Create session
@@ -166,14 +188,19 @@ func (s *Service) ChangePassword(ctx context.Context, userID, oldPassword, newPa
 	}
 
 	// Update password
-	return s.updatePassword(ctx, userID, newPassword)
+	if err := s.updatePassword(ctx, userID, newPassword); err != nil {
+		return err
+	}
+
+	// Invalidate all sessions for security
+	return s.deleteUserSessions(ctx, userID)
 }
 
 // RequestPasswordReset initiates a password reset flow.
 func (s *Service) RequestPasswordReset(ctx context.Context, email string) error {
-	// Check if OTP service is available
-	if s.otp == nil {
-		return ErrOTPPluginNotFound
+	// Check if token provider is available
+	if s.tokenProvider == nil {
+		return ErrPasswordResetNotAvailable
 	}
 
 	// Get user - don't reveal if user exists
@@ -184,7 +211,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 	}
 
 	// Create password reset token
-	_, err = s.otp.CreateToken(ctx, user.ID, TokenTypePasswordReset)
+	_, err = s.tokenProvider.CreatePasswordResetToken(ctx, user.ID)
 	if err != nil {
 		return err
 	}
@@ -197,9 +224,9 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 
 // ConfirmPasswordReset completes a password reset.
 func (s *Service) ConfirmPasswordReset(ctx context.Context, token, newPassword string) error {
-	// Check if OTP service is available
-	if s.otp == nil {
-		return ErrOTPPluginNotFound
+	// Check if token provider is available
+	if s.tokenProvider == nil {
+		return ErrPasswordResetNotAvailable
 	}
 
 	// Validate new password
@@ -207,25 +234,20 @@ func (s *Service) ConfirmPasswordReset(ctx context.Context, token, newPassword s
 		return err
 	}
 
-	// Consume the token
-	otpToken, err := s.otp.ConsumeToken(ctx, token, TokenTypePasswordReset)
+	// Consume the token (provider maps errors to models.ErrVerificationNotFound/Expired)
+	userID, err := s.tokenProvider.ConsumePasswordResetToken(ctx, token)
 	if err != nil {
-		// Map OTP errors to more user-friendly errors
-		return s.mapOTPError(err)
+		return err
 	}
 
 	// Update password
-	if err := s.updatePassword(ctx, otpToken.UserID, newPassword); err != nil {
+	if err := s.updatePassword(ctx, userID, newPassword); err != nil {
 		return err
 	}
 
 	// Invalidate all sessions for security
-	// This is handled by deleting sessions through the store
-	return s.deleteUserSessions(ctx, otpToken.UserID)
+	return s.deleteUserSessions(ctx, userID)
 }
-
-// ErrUserNotFound is returned when a user is not found.
-var ErrUserNotFound = errors.New("user not found")
 
 // createEmailAccount creates an email account for a user.
 func (s *Service) createEmailAccount(ctx context.Context, userID, passwordHash string) error {
@@ -285,19 +307,6 @@ func (s *Service) deleteUserSessions(ctx context.Context, userID string) error {
 		Where("user_id = ?", userID).
 		Exec(ctx)
 	return err
-}
-
-// mapOTPError maps OTP errors to password service errors.
-func (s *Service) mapOTPError(err error) error {
-	errStr := err.Error()
-	switch {
-	case errStr == "token not found":
-		return ErrVerificationNotFound
-	case errStr == "token expired":
-		return ErrVerificationExpired
-	default:
-		return err
-	}
 }
 
 // Account represents an email account in the database.

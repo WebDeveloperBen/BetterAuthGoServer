@@ -512,10 +512,10 @@ func TestErrors(t *testing.T) {
 		err  error
 		want string
 	}{
-		{ErrProviderNotFound, "oauth provider not found"},
-		{ErrStateMismatch, "oauth state mismatch"},
-		{ErrStateExpired, "oauth state expired"},
-		{ErrStateNotFound, "oauth state not found"},
+		{ErrProviderNotFound, "oauth: provider not found"},
+		{ErrStateMismatch, "oauth: state mismatch"},
+		{ErrStateExpired, "oauth: state expired"},
+		{ErrStateNotFound, "oauth: state not found"},
 	}
 
 	for _, e := range errors {

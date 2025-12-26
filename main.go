@@ -18,7 +18,6 @@ import (
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/providers"
@@ -119,7 +118,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Mount auth handler at /auth
-	mux.Handle("/auth/", http.StripPrefix("/auth", handlers.NewRouter(authService)))
+	mux.Handle("/auth/", http.StripPrefix("/auth", authService.Handler()))
 
 	// Example protected route
 	mux.Handle("GET /api/profile", authService.AuthMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

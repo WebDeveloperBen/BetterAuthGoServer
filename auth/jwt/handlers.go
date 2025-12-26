@@ -2,7 +2,6 @@ package jwt
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 )
 
@@ -41,7 +40,7 @@ func (p *Plugin) TokenHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req tokenRequest
 		if err := decodeJSON(r, &req); err != nil {
-			writeError(w, http.StatusBadRequest, errInvalidRequest)
+			writeError(w, http.StatusBadRequest, ErrInvalidRequest)
 			return
 		}
 
@@ -51,34 +50,34 @@ func (p *Plugin) TokenHandler() http.HandlerFunc {
 		case "refresh_token":
 			p.handleRefreshGrant(w, r, req)
 		default:
-			writeError(w, http.StatusBadRequest, errInvalidGrantType)
+			writeError(w, http.StatusBadRequest, ErrInvalidGrantType)
 		}
 	}
 }
 
 func (p *Plugin) handlePasswordGrant(w http.ResponseWriter, r *http.Request, req tokenRequest) {
 	if req.Email == "" || req.Password == "" {
-		writeError(w, http.StatusBadRequest, errInvalidCredentials)
+		writeError(w, http.StatusBadRequest, ErrInvalidCredentials)
 		return
 	}
 
 	// Get user by email
 	user, err := p.auth.GetPluginUserByEmail(r.Context(), req.Email)
 	if err != nil || user == nil {
-		writeError(w, http.StatusUnauthorized, errInvalidCredentials)
+		writeError(w, http.StatusUnauthorized, ErrInvalidCredentials)
 		return
 	}
 
 	// Check if user is banned
 	if user.Banned {
-		writeError(w, http.StatusForbidden, errUserBanned)
+		writeError(w, http.StatusForbidden, ErrUserBanned)
 		return
 	}
 
 	// Verify password
 	valid, err := p.auth.VerifyPassword(r.Context(), user.ID, req.Password)
 	if err != nil || !valid {
-		writeError(w, http.StatusUnauthorized, errInvalidCredentials)
+		writeError(w, http.StatusUnauthorized, ErrInvalidCredentials)
 		return
 	}
 
@@ -113,21 +112,21 @@ func (p *Plugin) handlePasswordGrant(w http.ResponseWriter, r *http.Request, req
 
 func (p *Plugin) handleRefreshGrant(w http.ResponseWriter, r *http.Request, req tokenRequest) {
 	if req.RefreshToken == "" {
-		writeError(w, http.StatusBadRequest, errInvalidRequest)
+		writeError(w, http.StatusBadRequest, ErrInvalidRequest)
 		return
 	}
 
 	// Validate refresh token to get user info
 	claims, err := p.service.ValidateRefreshToken(r.Context(), req.RefreshToken)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, errInvalidToken)
+		writeError(w, http.StatusUnauthorized, ErrInvalidToken)
 		return
 	}
 
 	// Get user info
 	user, err := p.auth.GetPluginUser(r.Context(), claims.UserID)
 	if err != nil || user == nil {
-		writeError(w, http.StatusUnauthorized, errInvalidToken)
+		writeError(w, http.StatusUnauthorized, ErrInvalidToken)
 		return
 	}
 
@@ -141,7 +140,7 @@ func (p *Plugin) handleRefreshGrant(w http.ResponseWriter, r *http.Request, req 
 	// Generate new token pair
 	pair, err := p.service.RefreshTokens(r.Context(), req.RefreshToken, userInfo)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, errInvalidToken)
+		writeError(w, http.StatusUnauthorized, ErrInvalidToken)
 		return
 	}
 
@@ -158,26 +157,26 @@ func (p *Plugin) TokenRefreshHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req refreshTokenRequest
 		if err := decodeJSON(r, &req); err != nil {
-			writeError(w, http.StatusBadRequest, errInvalidRequest)
+			writeError(w, http.StatusBadRequest, ErrInvalidRequest)
 			return
 		}
 
 		if req.RefreshToken == "" {
-			writeError(w, http.StatusBadRequest, errInvalidRequest)
+			writeError(w, http.StatusBadRequest, ErrInvalidRequest)
 			return
 		}
 
 		// Validate refresh token to get user info
 		claims, err := p.service.ValidateRefreshToken(r.Context(), req.RefreshToken)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, errInvalidToken)
+			writeError(w, http.StatusUnauthorized, ErrInvalidToken)
 			return
 		}
 
 		// Get user info
 		user, err := p.auth.GetPluginUser(r.Context(), claims.UserID)
 		if err != nil || user == nil {
-			writeError(w, http.StatusUnauthorized, errInvalidToken)
+			writeError(w, http.StatusUnauthorized, ErrInvalidToken)
 			return
 		}
 
@@ -191,7 +190,7 @@ func (p *Plugin) TokenRefreshHandler() http.HandlerFunc {
 		// Generate new token pair
 		pair, err := p.service.RefreshTokens(r.Context(), req.RefreshToken, userInfo)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, errInvalidToken)
+			writeError(w, http.StatusUnauthorized, ErrInvalidToken)
 			return
 		}
 
@@ -209,12 +208,12 @@ func (p *Plugin) TokenRevokeHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req revokeTokenRequest
 		if err := decodeJSON(r, &req); err != nil {
-			writeError(w, http.StatusBadRequest, errInvalidRequest)
+			writeError(w, http.StatusBadRequest, ErrInvalidRequest)
 			return
 		}
 
 		if req.Token == "" {
-			writeError(w, http.StatusBadRequest, errInvalidRequest)
+			writeError(w, http.StatusBadRequest, ErrInvalidRequest)
 			return
 		}
 
@@ -232,7 +231,7 @@ func (p *Plugin) TokenIntrospectHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req introspectTokenRequest
 		if err := decodeJSON(r, &req); err != nil {
-			writeError(w, http.StatusBadRequest, errInvalidRequest)
+			writeError(w, http.StatusBadRequest, ErrInvalidRequest)
 			return
 		}
 
@@ -284,11 +283,3 @@ func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, map[string]string{"error": err.Error()})
 }
 
-// Error variables
-var (
-	errInvalidRequest     = errors.New("invalid request")
-	errInvalidGrantType   = errors.New("invalid grant type")
-	errInvalidCredentials = errors.New("invalid credentials")
-	errInvalidToken       = errors.New("invalid token")
-	errUserBanned         = errors.New("user banned")
-)

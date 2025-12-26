@@ -1,4 +1,4 @@
-package password
+package models
 
 import (
 	"github.com/alexedwards/argon2id"

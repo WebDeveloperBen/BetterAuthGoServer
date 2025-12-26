@@ -6,20 +6,12 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 	"golang.org/x/oauth2"
-)
-
-var (
-	ErrProviderNotFound = errors.New("oauth provider not found")
-	ErrStateMismatch    = errors.New("oauth state mismatch")
-	ErrStateExpired     = errors.New("oauth state expired")
-	ErrStateNotFound    = errors.New("oauth state not found")
 )
 
 // StateStore defines the interface for storing OAuth state

@@ -6,7 +6,6 @@ package auth
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/defaults"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/events"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/otp"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
@@ -26,7 +24,7 @@ type Auth struct {
 	store  models.Store
 
 	// Password hasher
-	hasher PasswordHasher
+	hasher models.PasswordHasher
 
 	// Token utilities
 	tokenHasher    *token.Hasher
@@ -59,7 +57,7 @@ func New(store models.Store, opts ...config.Option) (*Auth, error) {
 	}
 
 	if store == nil {
-		return nil, ErrMissingStore
+		return nil, models.ErrMissingStore
 	}
 
 	// Create default EventBus if not provided
@@ -71,7 +69,7 @@ func New(store models.Store, opts ...config.Option) (*Auth, error) {
 	a := &Auth{
 		config:         cfg,
 		store:          store,
-		hasher:         NewArgon2PasswordHasher(),
+		hasher:         models.NewArgon2PasswordHasher(),
 		tokenHasher:    token.NewHasher(cfg.Secret),
 		tokenEncryptor: token.NewEncryptor(cfg.Secret),
 		eventBus:       cfg.EventBus,
@@ -184,7 +182,7 @@ func (a *Auth) SignOut(ctx context.Context, sessionID string) error {
 		return err
 	}
 	if session == nil {
-		return ErrSessionNotFound
+		return models.ErrSessionNotFound
 	}
 
 	user, err := a.store.GetUserByID(ctx, session.UserID)
@@ -216,7 +214,7 @@ func (a *Auth) GetUser(ctx context.Context, userID string) (*models.User, error)
 		return nil, err
 	}
 	if user == nil {
-		return nil, ErrUserNotFound
+		return nil, models.ErrUserNotFound
 	}
 	return user, nil
 }
@@ -228,7 +226,7 @@ func (a *Auth) GetUserByEmail(ctx context.Context, email string) (*models.User, 
 		return nil, err
 	}
 	if user == nil {
-		return nil, ErrUserNotFound
+		return nil, models.ErrUserNotFound
 	}
 	return user, nil
 }
@@ -240,18 +238,18 @@ func (a *Auth) SendVerificationEmail(ctx context.Context, userID string) error {
 		return err
 	}
 	if user == nil {
-		return ErrUserNotFound
+		return models.ErrUserNotFound
 	}
 	if user.EmailVerified {
-		return ErrEmailAlreadyVerified
+		return models.ErrEmailAlreadyVerified
 	}
 
-	otpSvc := a.otpService()
-	if otpSvc == nil {
-		return ErrOTPPluginNotConfigured
+	provider := a.emailVerificationProvider()
+	if provider == nil {
+		return models.ErrEmailVerificationNotAvailable
 	}
 
-	rawToken, err := otpSvc.CreateToken(ctx, userID, otp.TokenTypeEmailVerification)
+	rawToken, err := provider.CreateEmailVerificationToken(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -262,37 +260,26 @@ func (a *Auth) SendVerificationEmail(ctx context.Context, userID string) error {
 
 // VerifyEmail verifies a user's email with the provided token
 func (a *Auth) VerifyEmail(ctx context.Context, rawToken string) error {
-	otpSvc := a.otpService()
-	if otpSvc == nil {
-		return ErrOTPPluginNotConfigured
+	provider := a.emailVerificationProvider()
+	if provider == nil {
+		return models.ErrEmailVerificationNotAvailable
 	}
 
-	tok, err := otpSvc.ConsumeToken(ctx, rawToken, otp.TokenTypeEmailVerification)
+	userID, err := provider.ConsumeEmailVerificationToken(ctx, rawToken)
 	if err != nil {
-		return a.mapOTPError(err)
-	}
-
-	if err := a.store.SetEmailVerified(ctx, tok.UserID, true); err != nil {
 		return err
 	}
 
-	user, _ := a.store.GetUserByID(ctx, tok.UserID)
+	if err := a.store.SetEmailVerified(ctx, userID, true); err != nil {
+		return err
+	}
+
+	user, _ := a.store.GetUserByID(ctx, userID)
 	if user != nil {
 		a.publishEvent(ctx, models.EventEmailVerified, models.EmailVerifiedPayload{User: user})
 	}
 
 	return nil
-}
-
-// mapOTPError maps OTP package errors to auth package errors.
-func (a *Auth) mapOTPError(err error) error {
-	if errors.Is(err, otp.ErrTokenNotFound) {
-		return ErrVerificationNotFound
-	}
-	if errors.Is(err, otp.ErrTokenExpired) {
-		return ErrVerificationExpired
-	}
-	return err
 }
 
 // Config returns the auth configuration (read-only access)
@@ -305,18 +292,16 @@ func (a *Auth) Store() models.Store {
 	return a.store
 }
 
-// otpService returns the OTP service from the plugin registry.
-// Returns nil if the OTP plugin is not registered.
-func (a *Auth) otpService() *otp.Service {
+// emailVerificationProvider finds a plugin that implements EmailVerificationProvider.
+// Returns nil if no such plugin is registered.
+func (a *Auth) emailVerificationProvider() plugin.EmailVerificationProvider {
 	if a.plugins == nil {
 		return nil
 	}
-	p := a.plugins.Get(otp.PluginName)
-	if p == nil {
-		return nil
-	}
-	if otpPlugin, ok := p.(*otp.Plugin); ok {
-		return otpPlugin.Service()
+	for _, p := range a.plugins.Plugins() {
+		if provider, ok := p.(plugin.EmailVerificationProvider); ok {
+			return provider
+		}
 	}
 	return nil
 }
@@ -411,7 +396,7 @@ func (a *Auth) VerifyPassword(ctx context.Context, userID string, password strin
 func (a *Auth) GetUserFromRequest(r *http.Request) (*plugin.User, error) {
 	user := GetUserFromContext(r.Context())
 	if user == nil {
-		return nil, ErrForbidden
+		return nil, models.ErrForbidden
 	}
 	return toPluginUser(user), nil
 }
@@ -430,12 +415,20 @@ func (a *Auth) GetSessionFromRequest(r *http.Request) *plugin.SessionInfo {
 }
 
 // GetPlugin returns a plugin by name from the registry.
-// Implements password.pluginRegistryGetter.
 func (a *Auth) GetPlugin(name string) plugin.Plugin {
 	if a.plugins == nil {
 		return nil
 	}
 	return a.plugins.Get(name)
+}
+
+// GetPlugins returns all registered plugins.
+// Implements password.pluginRegistryGetter.
+func (a *Auth) GetPlugins() []plugin.Plugin {
+	if a.plugins == nil {
+		return nil
+	}
+	return a.plugins.Plugins()
 }
 
 // GetPluginUser retrieves a user by ID and converts to plugin.User.
@@ -468,7 +461,7 @@ func (a *Auth) CreatePluginUser(ctx context.Context, req plugin.CreateUserReques
 		return nil, err
 	}
 	if existing != nil {
-		return nil, ErrUserAlreadyExists
+		return nil, models.ErrUserAlreadyExists
 	}
 
 	now := time.Now()
@@ -545,6 +538,7 @@ func toPluginSession(s *models.Session) *plugin.Session {
 		UserAgent: s.UserAgent,
 		CreatedAt: s.CreatedAt,
 		ExpiresAt: s.ExpiresAt,
+		RawToken:  s.RawToken,
 	}
 }
 

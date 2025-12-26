@@ -1,6 +1,10 @@
 package password
 
-import "time"
+import (
+	"time"
+
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/kv"
+)
 
 // Config holds the password plugin configuration.
 type Config struct {
@@ -18,6 +22,18 @@ type Config struct {
 
 	// AutoSignIn automatically signs in the user after sign-up (default: true)
 	AutoSignIn bool
+
+	// LockoutThreshold is the number of failed login attempts before account lockout (default: 10)
+	// Set to 0 to disable lockout.
+	LockoutThreshold int
+
+	// LockoutDuration is how long an account remains locked (default: 15 minutes)
+	LockoutDuration time.Duration
+
+	// LockoutStore is the kv.Store used for tracking failed attempts and lockouts.
+	// If nil, an in-memory store is used (suitable for single-instance deployments).
+	// For clustered deployments, use a Redis-backed store.
+	LockoutStore kv.Store
 }
 
 // DefaultConfig returns the default password configuration.
@@ -28,6 +44,9 @@ func DefaultConfig() Config {
 		RequireComplexity: true,
 		ResetTokenExpiry:  time.Hour,
 		AutoSignIn:        true,
+		LockoutThreshold:  10,
+		LockoutDuration:   15 * time.Minute,
+		// LockoutStore: nil means use in-memory (created in Init)
 	}
 }
 
@@ -66,5 +85,28 @@ func WithResetExpiry(d time.Duration) Option {
 func WithAutoSignIn(enabled bool) Option {
 	return func(c *Config) {
 		c.AutoSignIn = enabled
+	}
+}
+
+// WithLockoutThreshold sets the number of failed attempts before account lockout.
+// Set to 0 to disable lockout.
+func WithLockoutThreshold(n int) Option {
+	return func(c *Config) {
+		c.LockoutThreshold = n
+	}
+}
+
+// WithLockoutDuration sets how long an account remains locked after too many failed attempts.
+func WithLockoutDuration(d time.Duration) Option {
+	return func(c *Config) {
+		c.LockoutDuration = d
+	}
+}
+
+// WithLockoutStore sets a custom kv.Store for tracking failed attempts and lockouts.
+// Use this with a Redis-backed store for clustered deployments.
+func WithLockoutStore(store kv.Store) Option {
+	return func(c *Config) {
+		c.LockoutStore = store
 	}
 }

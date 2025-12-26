@@ -3,17 +3,10 @@ package csrf
 
 import (
 	"crypto/subtle"
-	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
-)
-
-// Errors
-var (
-	ErrTokenMissing  = errors.New("csrf token missing")
-	ErrTokenMismatch = errors.New("csrf token mismatch")
 )
 
 // Config holds CSRF middleware configuration

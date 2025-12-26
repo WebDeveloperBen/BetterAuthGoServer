@@ -21,7 +21,6 @@ import (
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
 )
 
@@ -101,7 +100,7 @@ func Setup(t *testing.T) *TestEnv {
 
 	// Create test server - mount auth handler at /auth
 	mux := http.NewServeMux()
-	mux.Handle("/auth/", http.StripPrefix("/auth", handlers.NewRouter(authInstance)))
+	mux.Handle("/auth/", http.StripPrefix("/auth", authInstance.Handler()))
 	server := httptest.NewServer(mux)
 
 	return &TestEnv{
@@ -177,7 +176,7 @@ func SetupWithRateLimiting(t *testing.T, authRateLimit int) *TestEnv {
 
 	// Create test server
 	mux := http.NewServeMux()
-	mux.Handle("/auth/", http.StripPrefix("/auth", handlers.NewRouter(authInstance)))
+	mux.Handle("/auth/", http.StripPrefix("/auth", authInstance.Handler()))
 	server := httptest.NewServer(mux)
 
 	return &TestEnv{
@@ -215,7 +214,10 @@ func (env *TestEnv) TruncateTables(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
 
-	tables := []string{"oauth_states", "verifications", "sessions", "accounts", "users"}
+	// Core tables that are always created by migrations.
+	// Note: oauth_states is created by the OAuth plugin when registered,
+	// so it's not included here. If OAuth tests are needed, register the plugin first.
+	tables := []string{"verifications", "sessions", "accounts", "users"}
 	for _, table := range tables {
 		_, err := env.DB.ExecContext(ctx, fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table))
 		if err != nil {

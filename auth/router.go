@@ -1,4 +1,4 @@
-package handlers
+package auth
 
 import (
 	"bytes"
@@ -6,70 +6,71 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
 
-// NewRouter creates an HTTP handler with all auth routes
-func NewRouter(a *auth.Auth) http.Handler {
+// Handler returns an HTTP handler with all auth routes.
+// This is the main entry point for mounting auth endpoints.
+//
+// Usage:
+//
+//	authService, _ := auth.New(store, config.WithSecret("..."))
+//	mux.Handle("/auth/", http.StripPrefix("/auth", authService.Handler()))
+func (a *Auth) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	// Public endpoints (no auth required)
-	// Note: /sign-up, /sign-in, /password/* are now provided by the password plugin
-	mux.HandleFunc("GET /email/verify", wrapHandler(a, "/email/verify", VerifyEmail(a)))
+	// Note: /sign-up, /sign-in, /password/* are provided by the password plugin
+	mux.HandleFunc("GET /email/verify", a.wrapHandler("/email/verify", a.handleVerifyEmail))
 
 	// Protected endpoints (require auth)
-	mux.Handle("POST /sign-out", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/sign-out", SignOut(a)))))
-	mux.Handle("GET /me", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/me", GetMe(a)))))
-	mux.Handle("POST /email/verify/send", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/email/verify/send", SendVerificationEmail(a)))))
-	mux.Handle("GET /sessions", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/sessions", ListSessions(a)))))
-	mux.Handle("DELETE /sessions", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/sessions", RevokeAllSessions(a)))))
+	mux.Handle("POST /sign-out", a.RequireAuth(http.HandlerFunc(a.wrapHandler("/sign-out", a.handleSignOut))))
+	mux.Handle("GET /me", a.RequireAuth(http.HandlerFunc(a.wrapHandler("/me", a.handleGetMe))))
+	mux.Handle("POST /email/verify/send", a.RequireAuth(http.HandlerFunc(a.wrapHandler("/email/verify/send", a.handleSendVerificationEmail))))
+	mux.Handle("GET /sessions", a.RequireAuth(http.HandlerFunc(a.wrapHandler("/sessions", a.handleListSessions))))
+	mux.Handle("DELETE /sessions", a.RequireAuth(http.HandlerFunc(a.wrapHandler("/sessions", a.handleRevokeAllSessions))))
 
 	// Session revocation with ID
-	revokeSession := RevokeSession(a)
-	mux.Handle("DELETE /sessions/", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/sessions/:id", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("DELETE /sessions/", a.RequireAuth(http.HandlerFunc(a.wrapHandler("/sessions/:id", func(w http.ResponseWriter, r *http.Request) {
 		sessionID := parseSessionID(r.URL.Path)
 		if sessionID == "" || strings.Contains(sessionID, "/") {
-			WriteError(w, http.StatusNotFound, auth.ErrSessionNotFound)
+			WriteError(w, http.StatusNotFound, models.ErrSessionNotFound)
 			return
 		}
-		revokeSession(w, r, sessionID)
+		a.handleRevokeSession(w, r, sessionID)
 	}))))
 
-	// Admin endpoints are now provided by the admin plugin
-
 	// Self-service profile endpoints
-	unlinkAccount := UnlinkAccount(a)
-	mux.Handle("GET /profile", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/profile", GetProfile(a)))))
-	mux.Handle("PATCH /profile", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/profile", UpdateProfile(a)))))
-	mux.Handle("DELETE /account", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/account", DeleteAccount(a)))))
-	mux.Handle("GET /accounts", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/accounts", ListLinkedAccounts(a)))))
-	mux.Handle("DELETE /accounts/", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/accounts/:provider", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /profile", a.RequireAuth(http.HandlerFunc(a.wrapHandler("/profile", a.handleGetProfile))))
+	mux.Handle("PATCH /profile", a.RequireAuth(http.HandlerFunc(a.wrapHandler("/profile", a.handleUpdateProfile))))
+	mux.Handle("DELETE /account", a.RequireAuth(http.HandlerFunc(a.wrapHandler("/account", a.handleDeleteAccount))))
+	mux.Handle("GET /accounts", a.RequireAuth(http.HandlerFunc(a.wrapHandler("/accounts", a.handleListLinkedAccounts))))
+	mux.Handle("DELETE /accounts/", a.RequireAuth(http.HandlerFunc(a.wrapHandler("/accounts/:provider", func(w http.ResponseWriter, r *http.Request) {
 		provider := parseAccountProvider(r.URL.Path)
 		if provider == "" {
-			WriteError(w, http.StatusNotFound, auth.ErrAccountNotFound)
+			WriteError(w, http.StatusNotFound, models.ErrAccountNotFound)
 			return
 		}
-		unlinkAccount(w, r, provider)
+		a.handleUnlinkAccount(w, r, provider)
 	}))))
 
 	// Mount plugin routes
-	mountPluginRoutes(mux, a)
+	a.mountPluginRoutes(mux)
 
 	// Apply middleware stack
-	return applyMiddleware(mux, a)
+	return a.applyMiddleware(mux)
 }
 
 // mountPluginRoutes registers all routes provided by plugins
-func mountPluginRoutes(mux *http.ServeMux, a *auth.Auth) {
+func (a *Auth) mountPluginRoutes(mux *http.ServeMux) {
 	routes := a.PluginRoutes()
 	if len(routes) == 0 {
 		return
 	}
 
 	for _, route := range routes {
-		handler := http.HandlerFunc(wrapHandler(a, route.Path, route.Handler))
+		handler := http.HandlerFunc(a.wrapHandler(route.Path, route.Handler))
 
 		// Apply route-specific middleware if any
 		var h http.Handler = handler
@@ -89,7 +90,7 @@ func mountPluginRoutes(mux *http.ServeMux, a *auth.Auth) {
 }
 
 // applyMiddleware applies the standard middleware stack
-func applyMiddleware(h http.Handler, a *auth.Auth) http.Handler {
+func (a *Auth) applyMiddleware(h http.Handler) http.Handler {
 	// Apply plugin middleware (sorted by priority)
 	// This includes rate limiting, CSRF, CORS (if enabled), and any other registered plugins
 	h = a.ChainPluginMiddleware(h)
@@ -112,7 +113,7 @@ func securityHeaders(next http.Handler) http.Handler {
 }
 
 // wrapHandler wraps an HTTP handler with middleware hooks
-func wrapHandler(a *auth.Auth, path string, handler http.HandlerFunc) http.HandlerFunc {
+func (a *Auth) wrapHandler(path string, handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := a.Config()
 
@@ -137,7 +138,7 @@ func wrapHandler(a *auth.Auth, path string, handler http.HandlerFunc) http.Handl
 		}
 
 		// Try to load session/user for context (optional auth)
-		if session, user := getOptionalSession(a, r); session != nil {
+		if session, user := a.getOptionalSession(r); session != nil {
 			ctx.Session = session
 			ctx.User = user
 		}
@@ -168,7 +169,7 @@ func wrapHandler(a *auth.Auth, path string, handler http.HandlerFunc) http.Handl
 }
 
 // getOptionalSession tries to get the current session without requiring auth
-func getOptionalSession(a *auth.Auth, r *http.Request) (*models.Session, *models.User) {
+func (a *Auth) getOptionalSession(r *http.Request) (*models.Session, *models.User) {
 	rawToken := a.GetSessionToken(r)
 	if rawToken == "" {
 		return nil, nil
@@ -185,4 +186,14 @@ func getOptionalSession(a *auth.Auth, r *http.Request) (*models.Session, *models
 	}
 
 	return session, user
+}
+
+// parseSessionID extracts the session ID from the path
+func parseSessionID(path string) string {
+	return strings.TrimPrefix(path, "/sessions/")
+}
+
+// parseAccountProvider extracts the provider from the path
+func parseAccountProvider(path string) string {
+	return strings.TrimPrefix(path, "/accounts/")
 }

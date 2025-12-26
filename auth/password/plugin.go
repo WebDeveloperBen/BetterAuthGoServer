@@ -15,9 +15,6 @@
 package password
 
 import (
-	"context"
-
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/otp"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
@@ -86,12 +83,13 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		opt(&config)
 	}
 
-	// Try to find OTP service for password reset
-	var otpSvc OTPService
+	// Try to find a PasswordResetTokenProvider (e.g., OTP plugin)
+	var tokenProvider PasswordResetTokenProvider
 	if registry, ok := ctx.Auth.(pluginRegistryGetter); ok {
-		if otpPlugin := registry.GetPlugin(otp.PluginName); otpPlugin != nil {
-			if op, ok := otpPlugin.(*otp.Plugin); ok && op.IsEnabled() {
-				otpSvc = &otpServiceAdapter{svc: op.Service()}
+		for _, p := range registry.GetPlugins() {
+			if provider, ok := p.(plugin.PasswordResetTokenProvider); ok {
+				tokenProvider = provider
+				break
 			}
 		}
 	}
@@ -100,7 +98,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.service = NewService(
 		ctx.DB,
 		auth,
-		otpSvc,
+		tokenProvider,
 		ctx.EventBus,
 		config,
 		ctx.Logger,
@@ -112,6 +110,9 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 
 // Close cleans up plugin resources.
 func (p *Plugin) Close() error {
+	if p.service != nil {
+		return p.service.Close()
+	}
 	return nil
 }
 
@@ -158,22 +159,5 @@ func (p *Plugin) IsEnabled() bool {
 
 // pluginRegistryGetter is an interface for getting plugins from the registry.
 type pluginRegistryGetter interface {
-	GetPlugin(name string) plugin.Plugin
-}
-
-// otpServiceAdapter adapts otp.Service to our OTPService interface.
-type otpServiceAdapter struct {
-	svc *otp.Service
-}
-
-func (a *otpServiceAdapter) CreateToken(ctx context.Context, userID string, tokenType string) (string, error) {
-	return a.svc.CreateToken(ctx, userID, otp.TokenType(tokenType))
-}
-
-func (a *otpServiceAdapter) ConsumeToken(ctx context.Context, rawToken string, tokenType string) (*OTPToken, error) {
-	tok, err := a.svc.ConsumeToken(ctx, rawToken, otp.TokenType(tokenType))
-	if err != nil {
-		return nil, err
-	}
-	return &OTPToken{UserID: tok.UserID}, nil
+	GetPlugins() []plugin.Plugin
 }

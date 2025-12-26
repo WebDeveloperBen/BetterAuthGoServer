@@ -25,7 +25,7 @@ func TestToUserResponse(t *testing.T) {
 		Image:         &image,
 	}
 
-	resp := toUserResponse(user)
+	resp := ToUserResponse(user)
 
 	if resp.ID != user.ID {
 		t.Errorf("ID = %s, want %s", resp.ID, user.ID)
@@ -53,7 +53,7 @@ func TestToUserResponse_NilImage(t *testing.T) {
 		Image:         nil,
 	}
 
-	resp := toUserResponse(user)
+	resp := ToUserResponse(user)
 
 	if resp.Image != nil {
 		t.Errorf("Image should be nil, got %v", resp.Image)
@@ -67,7 +67,7 @@ func TestToSessionResponse(t *testing.T) {
 		ExpiresAt: expiresAt,
 	}
 
-	resp := toSessionResponse(session)
+	resp := ToSessionResponse(session)
 
 	if resp.ID != session.ID {
 		t.Errorf("ID = %s, want %s", resp.ID, session.ID)
@@ -111,7 +111,7 @@ func TestWriteJSON(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			writeJSON(rec, tt.status, tt.data)
+			WriteJSON(rec, tt.status, tt.data)
 
 			if rec.Code != tt.wantStatus {
 				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
@@ -133,7 +133,7 @@ func TestWriteError(t *testing.T) {
 	rec := httptest.NewRecorder()
 	testErr := errors.New("something went wrong")
 
-	writeError(rec, http.StatusBadRequest, testErr)
+	WriteError(rec, http.StatusBadRequest, testErr)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
@@ -166,7 +166,7 @@ func TestWriteError_DifferentStatuses(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.wantError, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			writeError(rec, tt.status, errors.New("test error"))
+			WriteError(rec, tt.status, errors.New("test error"))
 
 			var errResp ErrorResponse
 			if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
@@ -395,7 +395,7 @@ func TestDecodeJSON(t *testing.T) {
 	req := httptest.NewRequest("POST", "/", strings.NewReader(body))
 
 	var result testBody
-	if err := decodeJSON(req, &result); err != nil {
+	if err := DecodeJSON(req, &result); err != nil {
 		t.Fatalf("decodeJSON failed: %v", err)
 	}
 
@@ -412,7 +412,7 @@ func TestDecodeJSON_InvalidJSON(t *testing.T) {
 	req := httptest.NewRequest("POST", "/", strings.NewReader(body))
 
 	var result map[string]any
-	err := decodeJSON(req, &result)
+	err := DecodeJSON(req, &result)
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}
@@ -422,7 +422,7 @@ func TestDecodeJSON_EmptyBody(t *testing.T) {
 	req := httptest.NewRequest("POST", "/", strings.NewReader(""))
 
 	var result map[string]any
-	err := decodeJSON(req, &result)
+	err := DecodeJSON(req, &result)
 	if err == nil {
 		t.Error("expected error for empty body")
 	}
@@ -437,7 +437,7 @@ func TestDecodeJSON_TypeMismatch(t *testing.T) {
 	req := httptest.NewRequest("POST", "/", strings.NewReader(body))
 
 	var result testBody
-	err := decodeJSON(req, &result)
+	err := DecodeJSON(req, &result)
 	if err == nil {
 		t.Error("expected error for type mismatch")
 	}
@@ -561,7 +561,7 @@ func TestDecodeJSON_LargeBody(t *testing.T) {
 	req := httptest.NewRequest("POST", "/", strings.NewReader(body))
 
 	var result testBody
-	if err := decodeJSON(req, &result); err != nil {
+	if err := DecodeJSON(req, &result); err != nil {
 		t.Fatalf("decodeJSON failed: %v", err)
 	}
 
@@ -581,7 +581,7 @@ func TestDecodeJSON_NestedObject(t *testing.T) {
 	req := httptest.NewRequest("POST", "/", strings.NewReader(body))
 
 	var result nested
-	if err := decodeJSON(req, &result); err != nil {
+	if err := DecodeJSON(req, &result); err != nil {
 		t.Fatalf("decodeJSON failed: %v", err)
 	}
 
@@ -595,7 +595,7 @@ func TestDecodeJSON_Array(t *testing.T) {
 	req := httptest.NewRequest("POST", "/", strings.NewReader(body))
 
 	var result []string
-	if err := decodeJSON(req, &result); err != nil {
+	if err := DecodeJSON(req, &result); err != nil {
 		t.Fatalf("decodeJSON failed: %v", err)
 	}
 
@@ -612,7 +612,7 @@ func TestDecodeJSON_ReaderError(t *testing.T) {
 	req := httptest.NewRequest("POST", "/", &errorReader{})
 
 	var result map[string]any
-	err := decodeJSON(req, &result)
+	err := DecodeJSON(req, &result)
 	if err == nil {
 		t.Error("expected error from reader")
 	}

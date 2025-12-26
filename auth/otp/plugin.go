@@ -14,6 +14,10 @@
 package otp
 
 import (
+	"context"
+	"errors"
+
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
@@ -32,8 +36,10 @@ type Plugin struct {
 
 // Compile-time interface checks
 var (
-	_ plugin.Plugin             = (*Plugin)(nil)
-	_ plugin.MigrationsProvider = (*Plugin)(nil)
+	_ plugin.Plugin                    = (*Plugin)(nil)
+	_ plugin.MigrationsProvider        = (*Plugin)(nil)
+	_ plugin.EmailVerificationProvider = (*Plugin)(nil)
+	_ plugin.PasswordResetTokenProvider = (*Plugin)(nil)
 )
 
 // NewPlugin creates a new OTP plugin with the given options.
@@ -89,4 +95,55 @@ func (p *Plugin) Service() *Service {
 // IsEnabled returns true if the plugin is properly initialized.
 func (p *Plugin) IsEnabled() bool {
 	return p.service != nil
+}
+
+// CreateEmailVerificationToken implements plugin.EmailVerificationProvider.
+func (p *Plugin) CreateEmailVerificationToken(ctx context.Context, userID string) (string, error) {
+	if p.service == nil {
+		return "", ErrPluginNotConfigured
+	}
+	return p.service.CreateToken(ctx, userID, TokenTypeEmailVerification)
+}
+
+// ConsumeEmailVerificationToken implements plugin.EmailVerificationProvider.
+func (p *Plugin) ConsumeEmailVerificationToken(ctx context.Context, rawToken string) (string, error) {
+	if p.service == nil {
+		return "", ErrPluginNotConfigured
+	}
+	tok, err := p.service.ConsumeToken(ctx, rawToken, TokenTypeEmailVerification)
+	if err != nil {
+		return "", p.mapError(err)
+	}
+	return tok.UserID, nil
+}
+
+// CreatePasswordResetToken implements plugin.PasswordResetTokenProvider.
+func (p *Plugin) CreatePasswordResetToken(ctx context.Context, userID string) (string, error) {
+	if p.service == nil {
+		return "", ErrPluginNotConfigured
+	}
+	return p.service.CreateToken(ctx, userID, TokenTypePasswordReset)
+}
+
+// ConsumePasswordResetToken implements plugin.PasswordResetTokenProvider.
+func (p *Plugin) ConsumePasswordResetToken(ctx context.Context, rawToken string) (string, error) {
+	if p.service == nil {
+		return "", ErrPluginNotConfigured
+	}
+	tok, err := p.service.ConsumeToken(ctx, rawToken, TokenTypePasswordReset)
+	if err != nil {
+		return "", p.mapError(err)
+	}
+	return tok.UserID, nil
+}
+
+// mapError maps OTP errors to standard verification errors.
+func (p *Plugin) mapError(err error) error {
+	if errors.Is(err, ErrTokenNotFound) {
+		return models.ErrVerificationNotFound
+	}
+	if errors.Is(err, ErrTokenExpired) {
+		return models.ErrVerificationExpired
+	}
+	return err
 }

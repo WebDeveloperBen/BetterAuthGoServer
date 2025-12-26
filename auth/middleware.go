@@ -2,6 +2,8 @@ package auth
 
 import (
 	"net/http"
+
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
 
 // RequireAuth is middleware that requires a valid session
@@ -9,26 +11,26 @@ func (a *Auth) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rawToken := a.GetSessionToken(r)
 		if rawToken == "" {
-			writeError(w, http.StatusUnauthorized, ErrSessionNotFound)
+			WriteError(w, http.StatusUnauthorized, models.ErrSessionNotFound)
 			return
 		}
 
 		session, err := a.ValidateSession(r.Context(), rawToken)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, err)
+			WriteError(w, http.StatusUnauthorized, err)
 			return
 		}
 
 		// Get user from session
 		user, err := a.store.GetUserByID(r.Context(), session.UserID)
 		if err != nil || user == nil {
-			writeError(w, http.StatusUnauthorized, ErrUserNotFound)
+			WriteError(w, http.StatusUnauthorized, models.ErrUserNotFound)
 			return
 		}
 
 		// Check if user is banned
 		if user.Banned {
-			writeError(w, http.StatusForbidden, ErrUserBanned)
+			WriteError(w, http.StatusForbidden, models.ErrUserBanned)
 			return
 		}
 
@@ -64,13 +66,13 @@ func (a *Auth) RequireAdmin(next http.Handler) http.Handler {
 	return a.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := GetUserFromContext(r.Context())
 		if user == nil {
-			writeError(w, http.StatusUnauthorized, ErrSessionNotFound)
+			WriteError(w, http.StatusUnauthorized, models.ErrSessionNotFound)
 			return
 		}
 
 		// Check if user has admin role
 		if user.Role != "admin" {
-			writeError(w, http.StatusForbidden, ErrForbidden)
+			WriteError(w, http.StatusForbidden, models.ErrForbidden)
 			return
 		}
 

@@ -53,13 +53,13 @@ func (a *Auth) ValidateSession(ctx context.Context, rawToken string) (*models.Se
 		return nil, err
 	}
 	if session == nil {
-		return nil, ErrSessionNotFound
+		return nil, models.ErrSessionNotFound
 	}
 
 	// Check expiration
 	if session.IsExpired() {
 		_ = a.store.DeleteSession(ctx, session.ID)
-		return nil, ErrSessionExpired
+		return nil, models.ErrSessionExpired
 	}
 
 	// Update last used timestamp
@@ -111,7 +111,7 @@ func (a *Auth) RefreshSession(ctx context.Context, sessionID string) (*models.Se
 		return nil, err
 	}
 	if session == nil {
-		return nil, ErrSessionNotFound
+		return nil, models.ErrSessionNotFound
 	}
 
 	// Update last used (which effectively refreshes the session)
@@ -130,6 +130,14 @@ func (a *Auth) CleanupExpiredSessions(ctx context.Context) error {
 
 // createSession creates a new session for a user
 func (a *Auth) createSession(ctx context.Context, userID string, r *http.Request) (*models.Session, error) {
+	// Enforce max sessions per user limit
+	if a.config.MaxSessionsPerUser > 0 {
+		if err := a.enforceMaxSessions(ctx, userID); err != nil {
+			a.config.Logger.Error("failed to enforce max sessions", "user_id", userID, "error", err)
+			// Continue anyway - don't block session creation due to cleanup issues
+		}
+	}
+
 	rawToken, err := token.Generate()
 	if err != nil {
 		return nil, err
@@ -167,6 +175,61 @@ func (a *Auth) createSession(ctx context.Context, userID string, r *http.Request
 	}
 
 	return session, nil
+}
+
+// enforceMaxSessions deletes the oldest sessions if the user has too many.
+// This ensures we have room for one new session.
+func (a *Auth) enforceMaxSessions(ctx context.Context, userID string) error {
+	sessions, err := a.store.ListSessionsByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	// Filter out expired sessions and get count
+	var activeSessions []*models.Session
+	for _, s := range sessions {
+		if s.IsExpired() {
+			// Clean up expired sessions
+			_ = a.store.DeleteSession(ctx, s.ID)
+		} else {
+			activeSessions = append(activeSessions, s)
+		}
+	}
+
+	// Need to leave room for the new session, so max allowed is MaxSessionsPerUser - 1
+	maxAllowed := a.config.MaxSessionsPerUser - 1
+	if len(activeSessions) <= maxAllowed {
+		return nil
+	}
+
+	// Sort by LastUsed (oldest first) - sessions are typically returned in creation order,
+	// but we want to delete the least recently used ones
+	sortSessionsByLastUsed(activeSessions)
+
+	// Delete oldest sessions to make room
+	toDelete := len(activeSessions) - maxAllowed
+	for i := 0; i < toDelete; i++ {
+		if err := a.store.DeleteSession(ctx, activeSessions[i].ID); err != nil {
+			a.config.Logger.Error("failed to delete old session",
+				"session_id", activeSessions[i].ID,
+				"error", err,
+			)
+		}
+	}
+
+	return nil
+}
+
+// sortSessionsByLastUsed sorts sessions by LastUsed time (oldest first)
+func sortSessionsByLastUsed(sessions []*models.Session) {
+	// Simple insertion sort - typically small number of sessions
+	for i := 1; i < len(sessions); i++ {
+		j := i
+		for j > 0 && sessions[j].LastUsed.Before(sessions[j-1].LastUsed) {
+			sessions[j], sessions[j-1] = sessions[j-1], sessions[j]
+			j--
+		}
+	}
 }
 
 // getIPAddress extracts the client IP from the request

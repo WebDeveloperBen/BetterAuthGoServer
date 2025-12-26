@@ -1,14 +1,5 @@
 package password
 
-import "errors"
-
-// Password validation errors.
-var (
-	ErrPasswordTooShort = errors.New("password too short")
-	ErrPasswordTooLong  = errors.New("password too long")
-	ErrPasswordTooWeak  = errors.New("password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character")
-)
-
 // ValidatePassword checks if a password meets the requirements.
 func ValidatePassword(password string, cfg Config) error {
 	if len(password) < cfg.MinLength {

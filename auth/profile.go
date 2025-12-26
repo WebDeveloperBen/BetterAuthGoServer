@@ -19,7 +19,7 @@ func (a *Auth) UpdateProfile(ctx context.Context, userID string, updates Profile
 		return nil, err
 	}
 	if user == nil {
-		return nil, ErrUserNotFound
+		return nil, models.ErrUserNotFound
 	}
 
 	// Apply updates
@@ -44,7 +44,7 @@ func (a *Auth) DeleteOwnAccount(ctx context.Context, userID string) error {
 		return err
 	}
 	if user == nil {
-		return ErrUserNotFound
+		return models.ErrUserNotFound
 	}
 
 	// Delete all user sessions
@@ -97,12 +97,12 @@ func (a *Auth) UnlinkAccount(ctx context.Context, userID string, provider string
 	}
 
 	if accountToRemove == nil {
-		return ErrAccountNotFound
+		return models.ErrAccountNotFound
 	}
 
 	// Check that we're not removing the only authentication method
 	if len(accounts) <= 1 {
-		return ErrCannotUnlinkLastAccount
+		return models.ErrCannotUnlinkLastAccount
 	}
 
 	// Delete the account

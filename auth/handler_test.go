@@ -1,4 +1,4 @@
-package handlers_test
+package auth_test
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/providers"
@@ -312,7 +311,7 @@ func TestOAuthProviders(t *testing.T) {
 		t.Fatalf("Failed to register OAuth plugin: %v", err)
 	}
 
-	router := handlers.NewRouter(a)
+	router := a.Handler()
 
 	req := httptest.NewRequest("GET", "/oauth/providers", nil)
 	rec := httptest.NewRecorder()
@@ -368,7 +367,7 @@ func TestProfileEndpointRequiresAuth(t *testing.T) {
 	a, _ := createTestAuth(t)
 	defer a.Close()
 
-	router := handlers.NewRouter(a)
+	router := a.Handler()
 
 	req := httptest.NewRequest("GET", "/profile", nil)
 	rec := httptest.NewRecorder()
