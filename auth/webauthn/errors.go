@@ -1,3 +1,4 @@
+// Package webauthn provides WebAuthn authentication support.
 package webauthn
 
 import "errors"

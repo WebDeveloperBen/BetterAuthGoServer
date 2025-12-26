@@ -18,7 +18,7 @@ func TestNew(t *testing.T) {
 		PubSub: NewInMemoryPubSub(),
 		Logger: slog.Default(),
 	})
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	if bus == nil {
 		t.Fatal("New returned nil")
@@ -27,7 +27,7 @@ func TestNew(t *testing.T) {
 
 func TestDefault(t *testing.T) {
 	bus := Default(slog.Default())
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	if bus == nil {
 		t.Fatal("Default returned nil")
@@ -36,7 +36,7 @@ func TestDefault(t *testing.T) {
 
 func TestEventBus_PublishSubscribe(t *testing.T) {
 	bus := Default(slog.Default())
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	ctx := context.Background()
 	called := make(chan struct{})
@@ -72,14 +72,14 @@ func TestEventBus_PublishSubscribe(t *testing.T) {
 
 func TestEventBus_MultipleHandlers(t *testing.T) {
 	bus := Default(slog.Default())
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	var count atomic.Int32
 	done := make(chan struct{})
 
 	// Add 3 handlers for the same event
 	for i := 0; i < 3; i++ {
-		bus.Subscribe(models.EventSignedIn, func(ctx context.Context, e models.Event) error {
+		_, _ = bus.Subscribe(models.EventSignedIn, func(ctx context.Context, e models.Event) error {
 			if count.Add(1) == 3 {
 				close(done)
 			}
@@ -91,7 +91,7 @@ func TestEventBus_MultipleHandlers(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	payload, _ := json.Marshal(models.SignedInPayload{})
-	bus.Publish(context.Background(), models.Event{
+	_ = bus.Publish(context.Background(), models.Event{
 		Type:    models.EventSignedIn,
 		Payload: payload,
 	})
@@ -108,7 +108,7 @@ func TestEventBus_MultipleHandlers(t *testing.T) {
 
 func TestEventBus_Unsubscribe(t *testing.T) {
 	bus := Default(slog.Default())
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	var count atomic.Int32
 
@@ -122,7 +122,7 @@ func TestEventBus_Unsubscribe(t *testing.T) {
 
 	// Publish first event
 	payload, _ := json.Marshal(models.SignedOutPayload{})
-	bus.Publish(context.Background(), models.Event{
+	_ = bus.Publish(context.Background(), models.Event{
 		Type:    models.EventSignedOut,
 		Payload: payload,
 	})
@@ -141,7 +141,7 @@ func TestEventBus_Unsubscribe(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Publish second event - should not be handled
-	bus.Publish(context.Background(), models.Event{
+	_ = bus.Publish(context.Background(), models.Event{
 		Type:    models.EventSignedOut,
 		Payload: payload,
 	})
@@ -155,12 +155,12 @@ func TestEventBus_Unsubscribe(t *testing.T) {
 
 func TestEventBus_HandlerError(t *testing.T) {
 	bus := Default(slog.Default())
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	errHandler := errors.New("handler error")
 	var called atomic.Bool
 
-	bus.Subscribe(models.EventPasswordChanged, func(ctx context.Context, e models.Event) error {
+	_, _ = bus.Subscribe(models.EventPasswordChanged, func(ctx context.Context, e models.Event) error {
 		called.Store(true)
 		return errHandler
 	})
@@ -187,12 +187,12 @@ func TestEventBus_HandlerError(t *testing.T) {
 
 func TestEventBus_ConcurrentPublish(t *testing.T) {
 	bus := Default(slog.Default())
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	var count atomic.Int32
 	numPublishes := 100
 
-	bus.Subscribe(models.EventEmailVerified, func(ctx context.Context, e models.Event) error {
+	_, _ = bus.Subscribe(models.EventEmailVerified, func(ctx context.Context, e models.Event) error {
 		count.Add(1)
 		return nil
 	})
@@ -205,7 +205,7 @@ func TestEventBus_ConcurrentPublish(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			payload, _ := json.Marshal(models.EmailVerifiedPayload{})
-			bus.Publish(context.Background(), models.Event{
+			_ = bus.Publish(context.Background(), models.Event{
 				Type:    models.EventEmailVerified,
 				Payload: payload,
 			})
@@ -222,17 +222,17 @@ func TestEventBus_ConcurrentPublish(t *testing.T) {
 
 func TestEventBus_DifferentEventTypes(t *testing.T) {
 	bus := Default(slog.Default())
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	userCreatedCalled := make(chan struct{})
 	signedInCalled := make(chan struct{})
 
-	bus.Subscribe(models.EventUserCreated, func(ctx context.Context, e models.Event) error {
+	_, _ = bus.Subscribe(models.EventUserCreated, func(ctx context.Context, e models.Event) error {
 		close(userCreatedCalled)
 		return nil
 	})
 
-	bus.Subscribe(models.EventSignedIn, func(ctx context.Context, e models.Event) error {
+	_, _ = bus.Subscribe(models.EventSignedIn, func(ctx context.Context, e models.Event) error {
 		close(signedInCalled)
 		return nil
 	})
@@ -241,7 +241,7 @@ func TestEventBus_DifferentEventTypes(t *testing.T) {
 
 	// Publish EventUserCreated
 	payload1, _ := json.Marshal(models.UserCreatedPayload{})
-	bus.Publish(context.Background(), models.Event{
+	_ = bus.Publish(context.Background(), models.Event{
 		Type:    models.EventUserCreated,
 		Payload: payload1,
 	})
@@ -263,7 +263,7 @@ func TestEventBus_DifferentEventTypes(t *testing.T) {
 
 	// Now publish EventSignedIn
 	payload2, _ := json.Marshal(models.SignedInPayload{})
-	bus.Publish(context.Background(), models.Event{
+	_ = bus.Publish(context.Background(), models.Event{
 		Type:    models.EventSignedIn,
 		Payload: payload2,
 	})
@@ -279,7 +279,7 @@ func TestEventBus_DifferentEventTypes(t *testing.T) {
 func TestEventBus_Close(t *testing.T) {
 	bus := Default(slog.Default())
 
-	bus.Subscribe(models.EventUserCreated, func(ctx context.Context, e models.Event) error {
+	_, _ = bus.Subscribe(models.EventUserCreated, func(ctx context.Context, e models.Event) error {
 		return nil
 	})
 
@@ -299,12 +299,12 @@ func TestEventBus_Close(t *testing.T) {
 
 func TestEventBus_PayloadUnmarshal(t *testing.T) {
 	bus := Default(slog.Default())
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	done := make(chan struct{})
 	var receivedUser *models.User
 
-	bus.Subscribe(models.EventUserCreated, func(ctx context.Context, e models.Event) error {
+	_, _ = bus.Subscribe(models.EventUserCreated, func(ctx context.Context, e models.Event) error {
 		var payload models.UserCreatedPayload
 		if err := e.UnmarshalPayload(&payload); err != nil {
 			t.Errorf("UnmarshalPayload failed: %v", err)
@@ -323,7 +323,7 @@ func TestEventBus_PayloadUnmarshal(t *testing.T) {
 		Name:  "Test User",
 	}
 	payload, _ := json.Marshal(models.UserCreatedPayload{User: user})
-	bus.Publish(context.Background(), models.Event{
+	_ = bus.Publish(context.Background(), models.Event{
 		Type:    models.EventUserCreated,
 		Payload: payload,
 	})
@@ -346,18 +346,18 @@ func TestEventBus_PayloadUnmarshal(t *testing.T) {
 
 func TestEventBus_HandlerPanicRecovery(t *testing.T) {
 	bus := Default(slog.Default())
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	var count atomic.Int32
 
 	// First handler panics
-	bus.Subscribe(models.EventPasswordResetRequested, func(ctx context.Context, e models.Event) error {
+	_, _ = bus.Subscribe(models.EventPasswordResetRequested, func(ctx context.Context, e models.Event) error {
 		count.Add(1)
 		panic("test panic")
 	})
 
 	// Second handler should still be called
-	bus.Subscribe(models.EventPasswordResetRequested, func(ctx context.Context, e models.Event) error {
+	_, _ = bus.Subscribe(models.EventPasswordResetRequested, func(ctx context.Context, e models.Event) error {
 		count.Add(1)
 		return nil
 	})
@@ -388,12 +388,12 @@ func TestEventBus_ConcurrencyLimit(t *testing.T) {
 		Logger:                slog.Default(),
 		MaxConcurrentHandlers: 2, // Only 2 concurrent handlers
 	})
-	defer bus.Close()
+	defer func() { _ = bus.Close() }()
 
 	var concurrent atomic.Int32
 	var maxConcurrent atomic.Int32
 
-	bus.Subscribe("test.event", func(ctx context.Context, e models.Event) error {
+	_, _ = bus.Subscribe("test.event", func(ctx context.Context, e models.Event) error {
 		current := concurrent.Add(1)
 		defer concurrent.Add(-1)
 
@@ -416,7 +416,7 @@ func TestEventBus_ConcurrencyLimit(t *testing.T) {
 
 	// Publish many events
 	for i := 0; i < 10; i++ {
-		bus.Publish(context.Background(), models.Event{
+		_ = bus.Publish(context.Background(), models.Event{
 			Type:    "test.event",
 			Payload: []byte(`{}`),
 		})

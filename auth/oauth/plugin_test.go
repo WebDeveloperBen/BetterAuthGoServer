@@ -1,36 +1,8 @@
 package oauth
 
 import (
-	"context"
-	"net/http"
 	"testing"
-
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
-
-// mockAuthCore implements plugin.AuthCore for testing
-type testAuthCore struct{}
-
-func (m *testAuthCore) BaseURL() string { return "http://localhost:8080" }
-func (m *testAuthCore) Secret() string  { return "test-secret" }
-func (m *testAuthCore) GetPluginUser(ctx context.Context, userID string) (*plugin.User, error) {
-	return nil, nil
-}
-func (m *testAuthCore) GetPluginUserByEmail(ctx context.Context, email string) (*plugin.User, error) {
-	return nil, nil
-}
-func (m *testAuthCore) CreatePluginUser(ctx context.Context, req plugin.CreateUserRequest) (*plugin.User, error) {
-	return nil, nil
-}
-func (m *testAuthCore) ValidateSessionToken(ctx context.Context, token string) (*plugin.Session, error) {
-	return nil, nil
-}
-func (m *testAuthCore) CreateSessionForUser(ctx context.Context, userID string, r *http.Request) (*plugin.Session, error) {
-	return nil, nil
-}
-func (m *testAuthCore) VerifyPassword(ctx context.Context, userID string, password string) (bool, error) {
-	return true, nil
-}
 
 func TestPlugin_Name(t *testing.T) {
 	plugin := &Plugin{}

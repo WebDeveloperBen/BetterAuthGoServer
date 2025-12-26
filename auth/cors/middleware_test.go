@@ -70,7 +70,7 @@ func TestCORS_Preflight(t *testing.T) {
 
 	handler := cors.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("should not see this"))
+		_, _ = w.Write([]byte("should not see this"))
 	}))
 
 	req := httptest.NewRequest(http.MethodOptions, "/test", nil)

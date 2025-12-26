@@ -9,7 +9,7 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/kv"
 )
 
-// Lockout error
+// ErrAccountLocked is returned when an account is temporarily locked due to too many failed login attempts.
 var ErrAccountLocked = errors.New("password: account is temporarily locked due to too many failed login attempts")
 
 // lockoutPrefix is the key prefix for lockout-related data
@@ -86,9 +86,7 @@ func (l *lockoutService) RecordFailure(ctx context.Context, email string) (bool,
 	// Set TTL on first attempt (so it auto-expires)
 	if count == 1 {
 		// Use the lockout duration as the window for counting attempts
-		if err := l.store.Expire(ctx, attemptsKey, l.duration); err != nil {
-			// Non-fatal, continue
-		}
+		_ = l.store.Expire(ctx, attemptsKey, l.duration)
 	}
 
 	// Check if we've exceeded the threshold

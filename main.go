@@ -70,7 +70,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
-	defer bunDB.Close()
+	defer func() { _ = bunDB.Close() }()
 
 	// Create store and run migrations
 	dbStore := store.New(bunDB)
@@ -303,7 +303,7 @@ func main() {
 	eventBus := authService.EventBus()
 
 	// User created - send welcome email
-	eventBus.Subscribe(models.EventUserCreated, func(ctx context.Context, e models.Event) error {
+	_, _ = eventBus.Subscribe(models.EventUserCreated, func(ctx context.Context, e models.Event) error {
 		var payload models.UserCreatedPayload
 		if err := e.UnmarshalPayload(&payload); err != nil {
 			return err
@@ -318,7 +318,7 @@ func main() {
 	})
 
 	// User signed in - audit log
-	eventBus.Subscribe(models.EventSignedIn, func(ctx context.Context, e models.Event) error {
+	_, _ = eventBus.Subscribe(models.EventSignedIn, func(ctx context.Context, e models.Event) error {
 		var payload models.SignedInPayload
 		if err := e.UnmarshalPayload(&payload); err != nil {
 			return err
@@ -332,7 +332,7 @@ func main() {
 	})
 
 	// User signed out
-	eventBus.Subscribe(models.EventSignedOut, func(ctx context.Context, e models.Event) error {
+	_, _ = eventBus.Subscribe(models.EventSignedOut, func(ctx context.Context, e models.Event) error {
 		var payload models.SignedOutPayload
 		if err := e.UnmarshalPayload(&payload); err != nil {
 			return err
@@ -345,7 +345,7 @@ func main() {
 	})
 
 	// Email verification sent - send the email
-	eventBus.Subscribe(models.EventEmailVerificationSent, func(ctx context.Context, e models.Event) error {
+	_, _ = eventBus.Subscribe(models.EventEmailVerificationSent, func(ctx context.Context, e models.Event) error {
 		var payload models.EmailVerificationSentPayload
 		if err := e.UnmarshalPayload(&payload); err != nil {
 			return err
@@ -361,7 +361,7 @@ func main() {
 	})
 
 	// Email verified
-	eventBus.Subscribe(models.EventEmailVerified, func(ctx context.Context, e models.Event) error {
+	_, _ = eventBus.Subscribe(models.EventEmailVerified, func(ctx context.Context, e models.Event) error {
 		var payload models.EmailVerifiedPayload
 		if err := e.UnmarshalPayload(&payload); err != nil {
 			return err
@@ -374,7 +374,7 @@ func main() {
 	})
 
 	// Password reset requested - send reset email
-	eventBus.Subscribe(models.EventPasswordResetRequested, func(ctx context.Context, e models.Event) error {
+	_, _ = eventBus.Subscribe(models.EventPasswordResetRequested, func(ctx context.Context, e models.Event) error {
 		var payload models.PasswordResetRequestedPayload
 		if err := e.UnmarshalPayload(&payload); err != nil {
 			return err
@@ -390,7 +390,7 @@ func main() {
 	})
 
 	// Password changed - notify user
-	eventBus.Subscribe(models.EventPasswordChanged, func(ctx context.Context, e models.Event) error {
+	_, _ = eventBus.Subscribe(models.EventPasswordChanged, func(ctx context.Context, e models.Event) error {
 		var payload models.PasswordChangedPayload
 		if err := e.UnmarshalPayload(&payload); err != nil {
 			return err
@@ -403,7 +403,7 @@ func main() {
 	})
 
 	// OAuth account linked
-	eventBus.Subscribe(models.EventOAuthAccountLinked, func(ctx context.Context, e models.Event) error {
+	_, _ = eventBus.Subscribe(models.EventOAuthAccountLinked, func(ctx context.Context, e models.Event) error {
 		var payload models.OAuthAccountLinkedPayload
 		if err := e.UnmarshalPayload(&payload); err != nil {
 			return err
@@ -426,7 +426,7 @@ func main() {
 	// Health check
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	// Protected API route example
@@ -444,7 +444,7 @@ func main() {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"id":"` + user.ID + `","email":"` + user.Email + `","name":"` + user.Name + `","role":"` + user.Role + `"}`))
+		_, _ = w.Write([]byte(`{"id":"` + user.ID + `","email":"` + user.Email + `","name":"` + user.Name + `","role":"` + user.Role + `"}`))
 	})))
 
 	// Optional auth route example
@@ -452,9 +452,9 @@ func main() {
 		session := auth.SessionFromContext(r.Context())
 		w.Header().Set("Content-Type", "application/json")
 		if session != nil {
-			w.Write([]byte(`{"authenticated":true,"user_id":"` + session.UserID + `"}`))
+			_, _ = w.Write([]byte(`{"authenticated":true,"user_id":"` + session.UserID + `"}`))
 		} else {
-			w.Write([]byte(`{"authenticated":false}`))
+			_, _ = w.Write([]byte(`{"authenticated":false}`))
 		}
 	})))
 

@@ -46,7 +46,7 @@ func setupTestDB(t *testing.T) *testDB {
 func (tdb *testDB) cleanup(t *testing.T) {
 	t.Helper()
 	if tdb.DB != nil {
-		tdb.DB.Close()
+		_ = tdb.DB.Close()
 	}
 }
 

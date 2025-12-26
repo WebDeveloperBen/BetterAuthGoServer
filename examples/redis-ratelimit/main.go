@@ -43,7 +43,7 @@ func main() {
 		log.Fatal(err)
 	}
 	bunDB := bun.NewDB(sqldb, sqlitedialect.New())
-	defer bunDB.Close()
+	defer func() { _ = bunDB.Close() }()
 
 	// 2. Create store and run migrations
 	dbStore := store.New(bunDB)
@@ -81,7 +81,7 @@ func main() {
 		log.Fatalf("Failed to connect to Redis at %s: %v", redisAddr, err)
 	}
 	log.Printf("Connected to Redis at %s", redisAddr)
-	defer redisClient.Close()
+	defer func() { _ = redisClient.Close() }()
 
 	// 5. Create Redis-backed rate limiter
 	redisStore := kvredis.NewStoreFromClient(redisClient)
@@ -123,7 +123,7 @@ func main() {
 	// Health check that also shows rate limit info
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"message":    "BetterAuth Redis Rate Limiting Example",
 			"redis":      redisAddr,
 			"rate_limit": "100 requests/minute (shared across all instances)",
@@ -150,7 +150,7 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"user_id":    session.UserID,
 		"session_id": session.ID,
 		"message":    "Hello from protected endpoint!",

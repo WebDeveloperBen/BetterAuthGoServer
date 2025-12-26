@@ -86,60 +86,6 @@ func (m *mockAuthCore) GetUserFromRequest(r *http.Request) (*plugin.User, error)
 	return nil, nil
 }
 
-type mockJWTService struct {
-	tokens map[string]*TokenPair
-}
-
-func newMockJWTService() *mockJWTService {
-	return &mockJWTService{
-		tokens: make(map[string]*TokenPair),
-	}
-}
-
-func (m *mockJWTService) GenerateTokenPair(user UserInfo, sessionID string) (*TokenPair, error) {
-	tokenID := "token-" + user.ID
-	pair := &TokenPair{
-		AccessToken:  "access-" + tokenID,
-		RefreshToken: "refresh-" + tokenID,
-		TokenType:    "Bearer",
-		ExpiresIn:    3600,
-	}
-	m.tokens[tokenID] = pair
-	return pair, nil
-}
-
-func (m *mockJWTService) RefreshTokens(ctx context.Context, refreshToken string, user UserInfo) (*TokenPair, error) {
-	return m.GenerateTokenPair(user, "refreshed-session")
-}
-
-func (m *mockJWTService) ValidateToken(ctx context.Context, tokenString string) (*Claims, error) {
-	if len(tokenString) > 6 && tokenString[:6] == "access-" {
-		userID := tokenString[7:]
-		return &Claims{
-			UserID: userID,
-		}, nil
-	}
-	return nil, ErrInvalidToken
-}
-
-func (m *mockJWTService) ValidateRefreshToken(ctx context.Context, tokenString string) (*Claims, error) {
-	if len(tokenString) > 8 && tokenString[:8] == "refresh-" {
-		userID := tokenString[9:]
-		return &Claims{
-			UserID: userID,
-		}, nil
-	}
-	return nil, ErrInvalidToken
-}
-
-func (m *mockJWTService) ValidateAccessToken(ctx context.Context, tokenString string) (*Claims, error) {
-	return m.ValidateToken(ctx, tokenString)
-}
-
-func (m *mockJWTService) RevokeToken(ctx context.Context, tokenString string) error {
-	return nil
-}
-
 func createTestPlugin(t *testing.T) *Plugin {
 	authCore := newMockAuthCore()
 
@@ -170,7 +116,7 @@ func createTestPlugin(t *testing.T) *Plugin {
 
 func TestTokenHandler_PasswordGrant(t *testing.T) {
 	plugin := createTestPlugin(t)
-	defer plugin.Close()
+	defer func() { _ = plugin.Close() }()
 
 	handler := plugin.TokenHandler()
 

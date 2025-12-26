@@ -30,13 +30,13 @@ func getTestStore(t *testing.T) *Store {
 
 func TestStore_GetSet(t *testing.T) {
 	store := getTestStore(t)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 	key := "test:getset:" + time.Now().Format(time.RFC3339Nano)
 
 	// Cleanup
-	defer store.Delete(ctx, key)
+	defer func() { _ = store.Delete(ctx, key) }()
 
 	// Test Set and Get
 	err := store.Set(ctx, key, []byte("value1"), 0)
@@ -61,7 +61,7 @@ func TestStore_GetSet(t *testing.T) {
 
 func TestStore_TTL(t *testing.T) {
 	store := getTestStore(t)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 	key := "test:ttl:" + time.Now().Format(time.RFC3339Nano)
@@ -102,13 +102,13 @@ func TestStore_TTL(t *testing.T) {
 
 func TestStore_Delete(t *testing.T) {
 	store := getTestStore(t)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 	key := "test:delete:" + time.Now().Format(time.RFC3339Nano)
 
 	// Set a key
-	store.Set(ctx, key, []byte("value"), 0)
+	_ = store.Set(ctx, key, []byte("value"), 0)
 
 	// Delete it
 	err := store.Delete(ctx, key)
@@ -125,13 +125,13 @@ func TestStore_Delete(t *testing.T) {
 
 func TestStore_Exists(t *testing.T) {
 	store := getTestStore(t)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 	key := "test:exists:" + time.Now().Format(time.RFC3339Nano)
 
 	// Cleanup
-	defer store.Delete(ctx, key)
+	defer func() { _ = store.Delete(ctx, key) }()
 
 	// Non-existent key
 	exists, err := store.Exists(ctx, key)
@@ -143,7 +143,7 @@ func TestStore_Exists(t *testing.T) {
 	}
 
 	// Set key
-	store.Set(ctx, key, []byte("value"), 0)
+	_ = store.Set(ctx, key, []byte("value"), 0)
 
 	// Should exist now
 	exists, err = store.Exists(ctx, key)
@@ -157,13 +157,13 @@ func TestStore_Exists(t *testing.T) {
 
 func TestStore_Increment(t *testing.T) {
 	store := getTestStore(t)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 	key := "test:increment:" + time.Now().Format(time.RFC3339Nano)
 
 	// Cleanup
-	defer store.Delete(ctx, key)
+	defer func() { _ = store.Delete(ctx, key) }()
 
 	// Increment non-existent key
 	val, err := store.Increment(ctx, key, 1)
@@ -195,13 +195,13 @@ func TestStore_Increment(t *testing.T) {
 
 func TestStore_SetNX(t *testing.T) {
 	store := getTestStore(t)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 	key := "test:setnx:" + time.Now().Format(time.RFC3339Nano)
 
 	// Cleanup
-	defer store.Delete(ctx, key)
+	defer func() { _ = store.Delete(ctx, key) }()
 
 	// SetNX on non-existent key should succeed
 	set, err := store.SetNX(ctx, key, []byte("value1"), 0)
@@ -231,13 +231,13 @@ func TestStore_SetNX(t *testing.T) {
 func TestRateLimiter_Basic(t *testing.T) {
 	store := getTestStore(t)
 	limiter := NewRateLimiter(store)
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	ctx := context.Background()
 	key := "test:ratelimit:" + time.Now().Format(time.RFC3339Nano)
 
 	// Cleanup
-	defer limiter.Reset(ctx, key)
+	defer func() { _ = limiter.Reset(ctx, key) }()
 
 	limit := 3
 	window := time.Minute
@@ -266,7 +266,7 @@ func TestRateLimiter_Basic(t *testing.T) {
 func TestRateLimiter_Reset(t *testing.T) {
 	store := getTestStore(t)
 	limiter := NewRateLimiter(store)
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	ctx := context.Background()
 	key := "test:ratelimit:reset:" + time.Now().Format(time.RFC3339Nano)
@@ -275,7 +275,7 @@ func TestRateLimiter_Reset(t *testing.T) {
 	window := time.Minute
 
 	// Use up the limit
-	limiter.Allow(ctx, key, limit, window, 2)
+	_, _ = limiter.Allow(ctx, key, limit, window, 2)
 
 	// Reset
 	err := limiter.Reset(ctx, key)

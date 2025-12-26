@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 
 	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
-		pgContainer.Terminate(ctx)
+		_ = pgContainer.Terminate(ctx)
 		fmt.Printf("Failed to get connection string: %v\n", err)
 		os.Exit(1)
 	}
@@ -49,7 +49,7 @@ func TestMain(m *testing.M) {
 
 	// Cleanup
 	if sharedContainer != nil {
-		sharedContainer.Terminate(ctx)
+		_ = sharedContainer.Terminate(ctx)
 	}
 
 	os.Exit(code)

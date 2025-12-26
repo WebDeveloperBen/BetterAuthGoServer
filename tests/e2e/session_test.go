@@ -19,7 +19,7 @@ func TestSessionFlow(t *testing.T) {
 		cookies := env.CreateUser(t, "session@example.com", "password123!", "Session User")
 
 		resp := env.Get(t, "/auth/me", cookies)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("GetMe status = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -37,7 +37,7 @@ func TestSessionFlow(t *testing.T) {
 		env.TruncateTables(t)
 
 		resp := env.Get(t, "/auth/me", nil)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("GetMe without cookie status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
@@ -55,15 +55,15 @@ func TestSessionFlow(t *testing.T) {
 		}
 		for i := 0; i < 3; i++ {
 			resp := env.Post(t, "/auth/sign-in", signInBody)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		resp := env.Post(t, "/auth/sign-in", signInBody)
 		cookies := resp.Cookies()
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		resp = env.Get(t, "/auth/sessions", cookies)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("ListSessions status = %d, want %d", resp.StatusCode, http.StatusOK)

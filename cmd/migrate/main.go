@@ -33,7 +33,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to connect to database: %v\n", err)
 		os.Exit(1)
 	}
-	defer bunDB.Close()
+	defer func() { _ = bunDB.Close() }()
 
 	s := store.New(bunDB)
 	ctx := context.Background()

@@ -53,7 +53,7 @@ func TestPlugin_Init(t *testing.T) {
 
 func TestPlugin_Close(t *testing.T) {
 	p := NewPlugin()
-	p.Init(plugin.Context{})
+	_ = p.Init(plugin.Context{})
 
 	err := p.Close()
 	if err != nil {
@@ -73,7 +73,7 @@ func TestPlugin_Close_NotInitialized(t *testing.T) {
 
 func TestPlugin_Middleware(t *testing.T) {
 	p := NewPlugin()
-	p.Init(plugin.Context{})
+	_ = p.Init(plugin.Context{})
 
 	mw := p.Middleware()
 	if len(mw) != 1 {
@@ -100,7 +100,7 @@ func TestPlugin_Middleware_NotInitialized(t *testing.T) {
 
 func TestPlugin_CSRF(t *testing.T) {
 	p := NewPlugin()
-	p.Init(plugin.Context{})
+	_ = p.Init(plugin.Context{})
 
 	csrf := p.CSRF()
 	if csrf == nil {
@@ -110,7 +110,7 @@ func TestPlugin_CSRF(t *testing.T) {
 
 func TestPlugin_HeaderName(t *testing.T) {
 	p := NewPlugin(WithHeaderName("X-Custom-Token"))
-	p.Init(plugin.Context{})
+	_ = p.Init(plugin.Context{})
 
 	if p.HeaderName() != "X-Custom-Token" {
 		t.Errorf("HeaderName() = %s, want X-Custom-Token", p.HeaderName())

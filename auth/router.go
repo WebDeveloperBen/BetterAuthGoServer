@@ -132,7 +132,7 @@ func (a *Auth) wrapHandler(path string, handler http.HandlerFunc) http.HandlerFu
 		if r.Body != nil {
 			body, err := io.ReadAll(r.Body)
 			if err == nil {
-				ctx.ParseBody()
+				_ = ctx.ParseBody()
 				r.Body = io.NopCloser(bytes.NewReader(body))
 			}
 		}

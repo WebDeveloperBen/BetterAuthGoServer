@@ -48,7 +48,7 @@ func TestMain(m *testing.M) {
 
 	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
-		pgContainer.Terminate(ctx)
+		_ = pgContainer.Terminate(ctx)
 		fmt.Printf("Failed to get connection string: %v\n", err)
 		os.Exit(1)
 	}
@@ -63,8 +63,8 @@ func TestMain(m *testing.M) {
 	// Run base store migrations
 	s := store.New(bunDB)
 	if err := s.Migrate(ctx); err != nil {
-		bunDB.Close()
-		pgContainer.Terminate(ctx)
+		_ = bunDB.Close()
+		_ = pgContainer.Terminate(ctx)
 		fmt.Printf("Failed to run migrations: %v\n", err)
 		os.Exit(1)
 	}
@@ -81,8 +81,8 @@ func TestMain(m *testing.M) {
 	for _, model := range orgModels {
 		_, err := bunDB.NewCreateTable().Model(model).IfNotExists().Exec(ctx)
 		if err != nil {
-			bunDB.Close()
-			pgContainer.Terminate(ctx)
+			_ = bunDB.Close()
+			_ = pgContainer.Terminate(ctx)
 			fmt.Printf("Failed to create organization tables: %v\n", err)
 			os.Exit(1)
 		}
@@ -94,20 +94,20 @@ func TestMain(m *testing.M) {
 		ALTER TABLE sessions ADD COLUMN IF NOT EXISTS active_team_id TEXT;
 	`)
 	if err != nil {
-		bunDB.Close()
-		pgContainer.Terminate(ctx)
+		_ = bunDB.Close()
+		_ = pgContainer.Terminate(ctx)
 		fmt.Printf("Failed to add session extension columns: %v\n", err)
 		os.Exit(1)
 	}
 
-	bunDB.Close()
+	_ = bunDB.Close()
 
 	// Run tests
 	code := m.Run()
 
 	// Cleanup
 	if sharedContainer != nil {
-		sharedContainer.Terminate(ctx)
+		_ = sharedContainer.Terminate(ctx)
 	}
 
 	os.Exit(code)

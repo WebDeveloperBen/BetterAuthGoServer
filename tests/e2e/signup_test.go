@@ -67,10 +67,10 @@ func TestSignUpFlow(t *testing.T) {
 		}
 
 		resp := env.Post(t, "/auth/sign-up", body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		resp = env.Post(t, "/auth/sign-up", body)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusConflict {
 			t.Errorf("Duplicate SignUp status = %d, want %d", resp.StatusCode, http.StatusConflict)
@@ -87,7 +87,7 @@ func TestSignUpFlow(t *testing.T) {
 		}
 
 		resp := env.Post(t, "/auth/sign-up", body)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("Weak password SignUp status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
@@ -102,7 +102,7 @@ func TestSignUpFlow(t *testing.T) {
 		}
 
 		resp := env.Post(t, "/auth/sign-up", body)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("Incomplete SignUp status = %d, want %d", resp.StatusCode, http.StatusBadRequest)

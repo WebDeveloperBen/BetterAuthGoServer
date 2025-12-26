@@ -10,7 +10,7 @@ import (
 
 func TestNew(t *testing.T) {
 	limiter := New()
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	if limiter == nil {
 		t.Fatal("New returned nil")
@@ -30,7 +30,7 @@ func TestNew_WithOptions(t *testing.T) {
 		WithWindow(5*time.Minute),
 		WithMaxRequests(50),
 	)
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	cfg := limiter.Config()
 	if cfg.Window != 5*time.Minute {
@@ -43,7 +43,7 @@ func TestNew_WithOptions(t *testing.T) {
 
 func TestWithLimit(t *testing.T) {
 	limiter := New(WithLimit(25, 2*time.Minute))
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	cfg := limiter.Config()
 	if cfg.Window != 2*time.Minute {
@@ -72,7 +72,7 @@ func TestDefaultConfig(t *testing.T) {
 func TestNew_DefaultKeyFunc(t *testing.T) {
 	// Without TrustedProxies, should use RemoteAddrKeyFunc
 	limiter := New()
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	if limiter.Config().KeyFunc == nil {
 		t.Error("KeyFunc should be set after New()")
@@ -81,7 +81,7 @@ func TestNew_DefaultKeyFunc(t *testing.T) {
 
 func TestLimiter_Allow(t *testing.T) {
 	limiter := New(WithLimit(5, time.Minute))
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	key := "test-key"
 
@@ -105,7 +105,7 @@ func TestLimiter_Allow(t *testing.T) {
 
 func TestLimiter_AllowN(t *testing.T) {
 	limiter := New(WithLimit(10, time.Minute))
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	key := "test-key"
 
@@ -127,7 +127,7 @@ func TestLimiter_AllowN(t *testing.T) {
 
 func TestLimiter_Remaining(t *testing.T) {
 	limiter := New(WithLimit(10, time.Minute))
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	key := "test-key"
 
@@ -159,7 +159,7 @@ func TestLimiter_Remaining(t *testing.T) {
 
 func TestLimiter_Reset(t *testing.T) {
 	limiter := New(WithLimit(10, time.Minute))
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	key := "test-key"
 
@@ -184,7 +184,7 @@ func TestLimiter_Reset(t *testing.T) {
 
 func TestLimiter_WindowExpiry(t *testing.T) {
 	limiter := New(WithLimit(2, 50*time.Millisecond))
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	key := "test-key"
 
@@ -206,7 +206,7 @@ func TestLimiter_WindowExpiry(t *testing.T) {
 
 func TestLimiter_Concurrent(t *testing.T) {
 	limiter := New(WithLimit(100, time.Minute))
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	key := "concurrent-key"
 
@@ -247,7 +247,7 @@ func TestLimiter_Concurrent(t *testing.T) {
 
 func TestLimiter_Middleware(t *testing.T) {
 	limiter := New(WithLimit(3, time.Minute))
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

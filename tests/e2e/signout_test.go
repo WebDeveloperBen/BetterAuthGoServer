@@ -19,7 +19,7 @@ func TestSignOutFlow(t *testing.T) {
 		cookies := env.CreateUser(t, "signout@example.com", "password123!", "Sign Out User")
 
 		resp := env.PostWithCookies(t, "/auth/sign-out", nil, cookies)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 			t.Errorf("SignOut status = %d, want %d or %d", resp.StatusCode, http.StatusNoContent, http.StatusOK)
@@ -35,7 +35,7 @@ func TestSignOutFlow(t *testing.T) {
 		}
 
 		resp = env.Get(t, "/auth/me", cookies)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("GetMe after SignOut status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)

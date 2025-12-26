@@ -19,7 +19,7 @@ func TestEmailVerificationFlow(t *testing.T) {
 		cookies := env.CreateUser(t, "verify@example.com", "password123!", "Verify User")
 
 		resp := env.PostWithCookies(t, "/auth/email/verify/send", nil, cookies)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 			t.Errorf("SendVerificationEmail status = %d, want %d or %d", resp.StatusCode, http.StatusNoContent, http.StatusOK)

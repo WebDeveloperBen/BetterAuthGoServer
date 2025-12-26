@@ -29,7 +29,7 @@ func main() {
 		log.Fatal(err)
 	}
 	bunDB := bun.NewDB(sqldb, sqlitedialect.New())
-	defer bunDB.Close()
+	defer func() { _ = bunDB.Close() }()
 
 	// 2. Create store and run migrations
 	dbStore := store.New(bunDB)
@@ -115,7 +115,7 @@ func main() {
 	// Home page with OAuth links
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"message": "BetterAuth OAuth Example",
 			"oauth": map[string]string{
 				"google":  "/auth/oauth/google",
@@ -149,7 +149,7 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"user_id": session.UserID,
 		"message": "Hello from protected endpoint!",
 	})

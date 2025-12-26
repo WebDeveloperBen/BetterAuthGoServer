@@ -18,7 +18,7 @@ func setupStateStoreTestDB(t *testing.T) *bun.DB {
 	}
 
 	db := bun.NewDB(sqldb, sqlitedialect.New())
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	return db
 }

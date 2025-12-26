@@ -111,8 +111,8 @@ func TestOrganizationOperations_OrganizationCRUD(t *testing.T) {
 		tdb.truncateTables(t)
 		user := tdb.createTestUser(t, "user-1", "user@example.com", "User")
 
-		ops.CreateOrganization(ctx, "Org 1", "org-1", user.ID, nil)
-		ops.CreateOrganization(ctx, "Org 2", "org-2", user.ID, nil)
+		_, _ = ops.CreateOrganization(ctx, "Org 1", "org-1", user.ID, nil)
+		_, _ = ops.CreateOrganization(ctx, "Org 2", "org-2", user.ID, nil)
 
 		orgs, err := ops.ListUserOrganizations(ctx, user.ID)
 		if err != nil {
@@ -155,7 +155,7 @@ func TestOrganizationOperations_Members(t *testing.T) {
 		member := tdb.createTestUser(t, "member-1", "member@example.com", "Member")
 
 		org, _ := ops.CreateOrganization(ctx, "Test Org", "test-org", owner.ID, nil)
-		ops.AddMember(ctx, org.ID, member.ID, "member")
+		_, _ = ops.AddMember(ctx, org.ID, member.ID, "member")
 
 		err := ops.RemoveMember(ctx, org.ID, member.ID)
 		if err != nil {
@@ -174,7 +174,7 @@ func TestOrganizationOperations_Members(t *testing.T) {
 		member := tdb.createTestUser(t, "member-1", "member@example.com", "Member")
 
 		org, _ := ops.CreateOrganization(ctx, "Test Org", "test-org", owner.ID, nil)
-		ops.AddMember(ctx, org.ID, member.ID, "member")
+		_, _ = ops.AddMember(ctx, org.ID, member.ID, "member")
 
 		updated, err := ops.UpdateMemberRole(ctx, org.ID, member.ID, "admin")
 		if err != nil {
@@ -192,7 +192,7 @@ func TestOrganizationOperations_Members(t *testing.T) {
 		member := tdb.createTestUser(t, "member-1", "member@example.com", "Member")
 
 		org, _ := ops.CreateOrganization(ctx, "Test Org", "test-org", owner.ID, nil)
-		ops.AddMember(ctx, org.ID, member.ID, "admin")
+		_, _ = ops.AddMember(ctx, org.ID, member.ID, "admin")
 
 		m, err := ops.GetMember(ctx, org.ID, member.ID)
 		if err != nil {
@@ -211,8 +211,8 @@ func TestOrganizationOperations_Members(t *testing.T) {
 		member2 := tdb.createTestUser(t, "member-2", "member2@example.com", "Member 2")
 
 		org, _ := ops.CreateOrganization(ctx, "Test Org", "test-org", owner.ID, nil)
-		ops.AddMember(ctx, org.ID, member1.ID, "member")
-		ops.AddMember(ctx, org.ID, member2.ID, "member")
+		_, _ = ops.AddMember(ctx, org.ID, member1.ID, "member")
+		_, _ = ops.AddMember(ctx, org.ID, member2.ID, "member")
 
 		members, err := ops.ListMembers(ctx, org.ID)
 		if err != nil {
@@ -228,7 +228,7 @@ func TestOrganizationOperations_Members(t *testing.T) {
 		tdb.truncateTables(t)
 		user := tdb.createTestUser(t, "user-1", "user@example.com", "User")
 
-		ops.CreateOrganization(ctx, "Test Org", "test-org", user.ID, nil)
+		_, _ = ops.CreateOrganization(ctx, "Test Org", "test-org", user.ID, nil)
 
 		member, err := ops.GetActiveMember(ctx, user.ID)
 		if err != nil {
@@ -324,8 +324,8 @@ func TestOrganizationOperations_Invitations(t *testing.T) {
 		owner := tdb.createTestUser(t, "owner-1", "owner@example.com", "Owner")
 
 		org, _ := ops.CreateOrganization(ctx, "Test Org", "test-org", owner.ID, nil)
-		ops.CreateInvitation(ctx, org.ID, "inv1@example.com", "member", owner.ID)
-		ops.CreateInvitation(ctx, org.ID, "inv2@example.com", "admin", owner.ID)
+		_, _ = ops.CreateInvitation(ctx, org.ID, "inv1@example.com", "member", owner.ID)
+		_, _ = ops.CreateInvitation(ctx, org.ID, "inv2@example.com", "admin", owner.ID)
 
 		invitations, err := ops.ListInvitations(ctx, org.ID)
 		if err != nil {
@@ -344,8 +344,8 @@ func TestOrganizationOperations_Invitations(t *testing.T) {
 		org1, _ := ops.CreateOrganization(ctx, "Org 1", "org-1", owner.ID, nil)
 		org2, _ := ops.CreateOrganization(ctx, "Org 2", "org-2", owner.ID, nil)
 
-		ops.CreateInvitation(ctx, org1.ID, "invitee@example.com", "member", owner.ID)
-		ops.CreateInvitation(ctx, org2.ID, "invitee@example.com", "admin", owner.ID)
+		_, _ = ops.CreateInvitation(ctx, org1.ID, "invitee@example.com", "member", owner.ID)
+		_, _ = ops.CreateInvitation(ctx, org2.ID, "invitee@example.com", "admin", owner.ID)
 
 		invitations, err := ops.ListUserInvitations(ctx, "invitee@example.com")
 		if err != nil {
@@ -455,8 +455,8 @@ func TestOrganizationOperations_Teams(t *testing.T) {
 		owner := tdb.createTestUser(t, "owner-1", "owner@example.com", "Owner")
 
 		org, _ := ops.CreateOrganization(ctx, "Test Org", "test-org", owner.ID, nil)
-		ops.CreateTeam(ctx, org.ID, "Engineering")
-		ops.CreateTeam(ctx, org.ID, "Marketing")
+		_, _ = ops.CreateTeam(ctx, org.ID, "Engineering")
+		_, _ = ops.CreateTeam(ctx, org.ID, "Marketing")
 
 		teams, err := ops.ListTeams(ctx, org.ID)
 		if err != nil {
@@ -474,7 +474,7 @@ func TestOrganizationOperations_Teams(t *testing.T) {
 		member := tdb.createTestUser(t, "member-1", "member@example.com", "Member")
 
 		org, _ := ops.CreateOrganization(ctx, "Test Org", "test-org", owner.ID, nil)
-		ops.AddMember(ctx, org.ID, member.ID, "member")
+		_, _ = ops.AddMember(ctx, org.ID, member.ID, "member")
 		team, _ := ops.CreateTeam(ctx, org.ID, "Engineering")
 
 		tm, err := ops.AddTeamMember(ctx, team.ID, member.ID)
@@ -493,9 +493,9 @@ func TestOrganizationOperations_Teams(t *testing.T) {
 		member := tdb.createTestUser(t, "member-1", "member@example.com", "Member")
 
 		org, _ := ops.CreateOrganization(ctx, "Test Org", "test-org", owner.ID, nil)
-		ops.AddMember(ctx, org.ID, member.ID, "member")
+		_, _ = ops.AddMember(ctx, org.ID, member.ID, "member")
 		team, _ := ops.CreateTeam(ctx, org.ID, "Engineering")
-		ops.AddTeamMember(ctx, team.ID, member.ID)
+		_, _ = ops.AddTeamMember(ctx, team.ID, member.ID)
 
 		err := ops.RemoveTeamMember(ctx, team.ID, member.ID)
 		if err != nil {
@@ -515,11 +515,11 @@ func TestOrganizationOperations_Teams(t *testing.T) {
 		member2 := tdb.createTestUser(t, "member-2", "member2@example.com", "Member 2")
 
 		org, _ := ops.CreateOrganization(ctx, "Test Org", "test-org", owner.ID, nil)
-		ops.AddMember(ctx, org.ID, member1.ID, "member")
-		ops.AddMember(ctx, org.ID, member2.ID, "member")
+		_, _ = ops.AddMember(ctx, org.ID, member1.ID, "member")
+		_, _ = ops.AddMember(ctx, org.ID, member2.ID, "member")
 		team, _ := ops.CreateTeam(ctx, org.ID, "Engineering")
-		ops.AddTeamMember(ctx, team.ID, member1.ID)
-		ops.AddTeamMember(ctx, team.ID, member2.ID)
+		_, _ = ops.AddTeamMember(ctx, team.ID, member1.ID)
+		_, _ = ops.AddTeamMember(ctx, team.ID, member2.ID)
 
 		members, err := ops.ListTeamMembers(ctx, team.ID)
 		if err != nil {
@@ -558,7 +558,7 @@ func TestOrganizationOperations_SessionManagement(t *testing.T) {
 		tdb.createTestSession(t, "session-1", user.ID)
 
 		org, _ := ops.CreateOrganization(ctx, "Test Org", "test-org", user.ID, nil)
-		ops.SetActiveOrganization(ctx, "session-1", &org.ID)
+		_ = ops.SetActiveOrganization(ctx, "session-1", &org.ID)
 
 		activeOrgID, err := ops.GetActiveOrganization(ctx, "session-1")
 		if err != nil {

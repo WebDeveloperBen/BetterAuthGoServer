@@ -62,7 +62,7 @@ func Setup(t *testing.T) *TestEnv {
 	// Create store and run migrations (idempotent)
 	dbStore := store.New(bunDB)
 	if err := dbStore.Migrate(ctx); err != nil {
-		bunDB.Close()
+		_ = bunDB.Close()
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
@@ -78,7 +78,7 @@ func Setup(t *testing.T) *TestEnv {
 		config.WithRateLimit(false, time.Minute, 1000),
 	)
 	if err != nil {
-		bunDB.Close()
+		_ = bunDB.Close()
 		t.Fatalf("Failed to create auth instance: %v", err)
 	}
 
@@ -121,7 +121,7 @@ func SetupIsolated(t *testing.T) *TestEnv {
 
 	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
-		pgContainer.Terminate(ctx)
+		_ = pgContainer.Terminate(ctx)
 		t.Fatalf("Failed to get connection string: %v", err)
 	}
 
@@ -129,14 +129,14 @@ func SetupIsolated(t *testing.T) *TestEnv {
 	bunDB := bun.NewDB(sqldb, pgdialect.New())
 
 	if err := bunDB.PingContext(ctx); err != nil {
-		pgContainer.Terminate(ctx)
+		_ = pgContainer.Terminate(ctx)
 		t.Fatalf("Failed to ping database: %v", err)
 	}
 
 	dbStore := store.New(bunDB)
 	if err := dbStore.Migrate(ctx); err != nil {
-		bunDB.Close()
-		pgContainer.Terminate(ctx)
+		_ = bunDB.Close()
+		_ = pgContainer.Terminate(ctx)
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
@@ -151,8 +151,8 @@ func SetupIsolated(t *testing.T) *TestEnv {
 		config.WithRateLimit(false, time.Minute, 1000),
 	)
 	if err != nil {
-		bunDB.Close()
-		pgContainer.Terminate(ctx)
+		_ = bunDB.Close()
+		_ = pgContainer.Terminate(ctx)
 		t.Fatalf("Failed to create auth instance: %v", err)
 	}
 
@@ -189,7 +189,7 @@ func SetupWithRateLimiting(t *testing.T, authRateLimit int) *TestEnv {
 
 	dbStore := store.New(bunDB)
 	if err := dbStore.Migrate(ctx); err != nil {
-		bunDB.Close()
+		_ = bunDB.Close()
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
@@ -205,7 +205,7 @@ func SetupWithRateLimiting(t *testing.T, authRateLimit int) *TestEnv {
 		config.WithAuthRateLimit(authRateLimit),
 	)
 	if err != nil {
-		bunDB.Close()
+		_ = bunDB.Close()
 		t.Fatalf("Failed to create auth instance: %v", err)
 	}
 
@@ -236,7 +236,7 @@ func (env *TestEnv) Cleanup(t *testing.T) {
 		env.Auth.Close()
 	}
 	if env.DB != nil {
-		env.DB.Close()
+		_ = env.DB.Close()
 	}
 	// Only terminate container if using isolated mode
 	if !env.useShared && env.Container != nil {
@@ -332,7 +332,7 @@ func (env *TestEnv) Get(t *testing.T, path string, cookies []*http.Cookie) *http
 // DecodeResponse decodes a JSON response body
 func DecodeResponse(t *testing.T, resp *http.Response, v any) {
 	t.Helper()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if err := json.NewDecoder(resp.Body).Decode(v); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
@@ -358,6 +358,6 @@ func (env *TestEnv) CreateUser(t *testing.T, email, password, name string) []*ht
 	}
 	resp := env.Post(t, "/auth/sign-up", body)
 	cookies := resp.Cookies()
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return cookies
 }

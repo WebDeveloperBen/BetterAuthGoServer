@@ -42,10 +42,6 @@ type impersonateUserRequest struct {
 	UserID string `json:"userId"`
 }
 
-type stopImpersonatingRequest struct {
-	// Empty - uses session from cookie
-}
-
 // Response types
 
 type errorResponse struct {
@@ -201,11 +197,7 @@ func (h *handlers) updateUser(w http.ResponseWriter, r *http.Request, userID str
 		return
 	}
 
-	user, err := h.service.UpdateUser(r.Context(), userID, AdminUserUpdates{
-		Name:  req.Name,
-		Email: req.Email,
-		Role:  req.Role,
-	})
+	user, err := h.service.UpdateUser(r.Context(), userID, AdminUserUpdates(req))
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
 			writeError(w, http.StatusNotFound, err)

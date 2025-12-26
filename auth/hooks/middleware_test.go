@@ -123,7 +123,7 @@ func TestCreateMiddleware(t *testing.T) {
 	}
 
 	middleware := CreateMiddleware(fn)
-	middleware(&Context{})
+	_ = middleware(&Context{})
 
 	if !called {
 		t.Error("Middleware function was not called")
@@ -147,7 +147,7 @@ func TestChainMiddleware(t *testing.T) {
 	}
 
 	chained := ChainMiddleware(m1, m2, m3)
-	chained(&Context{})
+	_ = chained(&Context{})
 
 	if len(order) != 3 || order[0] != 1 || order[1] != 2 || order[2] != 3 {
 		t.Errorf("Chain ran in wrong order: %v", order)
@@ -164,13 +164,13 @@ func TestSkipPaths(t *testing.T) {
 	skipped := SkipPaths(middleware, "/skip-me", "/also-skip")
 
 	// Should skip
-	skipped(&Context{Path: "/skip-me"})
+	_ = skipped(&Context{Path: "/skip-me"})
 	if called {
 		t.Error("Middleware should have been skipped")
 	}
 
 	// Should run
-	skipped(&Context{Path: "/run-me"})
+	_ = skipped(&Context{Path: "/run-me"})
 	if !called {
 		t.Error("Middleware should have been called")
 	}
@@ -186,13 +186,13 @@ func TestOnlyPaths(t *testing.T) {
 	only := OnlyPaths(middleware, "/only-me", "/also-only")
 
 	// Should skip
-	only(&Context{Path: "/skip-me"})
+	_ = only(&Context{Path: "/skip-me"})
 	if callCount != 0 {
 		t.Error("Middleware should not have been called")
 	}
 
 	// Should run
-	only(&Context{Path: "/only-me"})
+	_ = only(&Context{Path: "/only-me"})
 	if callCount != 1 {
 		t.Error("Middleware should have been called")
 	}
@@ -402,7 +402,7 @@ func TestMiddlewareHooks_AddMethods(t *testing.T) {
 		}
 
 		mh.PrependBefore(func(ctx *Context) error { order = append(order, 1); return nil })
-		mh.RunBefore(&Context{}, nil)
+		_ = mh.RunBefore(&Context{}, nil)
 
 		if len(order) != 2 || order[0] != 1 || order[1] != 2 {
 			t.Errorf("Prepend order = %v, want [1, 2]", order)

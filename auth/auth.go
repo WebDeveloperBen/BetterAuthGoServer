@@ -115,10 +115,10 @@ func (a *Auth) Close() {
 		close(a.stopCleanup)
 	}
 	if a.plugins != nil {
-		a.plugins.Close()
+		_ = a.plugins.Close()
 	}
 	if a.eventBus != nil {
-		a.eventBus.Close()
+		_ = a.eventBus.Close()
 	}
 }
 

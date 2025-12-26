@@ -1,3 +1,4 @@
+// Package config provides configuration options and utilities for the authentication system.
 package config
 
 import "errors"

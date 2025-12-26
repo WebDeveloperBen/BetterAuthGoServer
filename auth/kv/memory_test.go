@@ -18,7 +18,7 @@ func BytesToInt64(data []byte) int64 {
 
 func TestMemoryStore_GetSet(t *testing.T) {
 	store := NewMemoryStore()
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 
@@ -45,7 +45,7 @@ func TestMemoryStore_GetSet(t *testing.T) {
 
 func TestMemoryStore_TTL(t *testing.T) {
 	store := NewMemoryStore()
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 
@@ -85,12 +85,12 @@ func TestMemoryStore_TTL(t *testing.T) {
 
 func TestMemoryStore_Delete(t *testing.T) {
 	store := NewMemoryStore()
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 
 	// Set a key
-	store.Set(ctx, "to_delete", []byte("value"), 0)
+	_ = store.Set(ctx, "to_delete", []byte("value"), 0)
 
 	// Delete it
 	err := store.Delete(ctx, "to_delete")
@@ -113,7 +113,7 @@ func TestMemoryStore_Delete(t *testing.T) {
 
 func TestMemoryStore_Exists(t *testing.T) {
 	store := NewMemoryStore()
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 
@@ -127,7 +127,7 @@ func TestMemoryStore_Exists(t *testing.T) {
 	}
 
 	// Set key
-	store.Set(ctx, "key", []byte("value"), 0)
+	_ = store.Set(ctx, "key", []byte("value"), 0)
 
 	// Should exist now
 	exists, err = store.Exists(ctx, "key")
@@ -141,7 +141,7 @@ func TestMemoryStore_Exists(t *testing.T) {
 
 func TestMemoryStore_Increment(t *testing.T) {
 	store := NewMemoryStore()
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 
@@ -175,7 +175,7 @@ func TestMemoryStore_Increment(t *testing.T) {
 
 func TestMemoryStore_SetNX(t *testing.T) {
 	store := NewMemoryStore()
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 
@@ -206,12 +206,12 @@ func TestMemoryStore_SetNX(t *testing.T) {
 
 func TestMemoryStore_Expire(t *testing.T) {
 	store := NewMemoryStore()
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 
 	// Set key without expiration
-	store.Set(ctx, "key", []byte("value"), 0)
+	_ = store.Set(ctx, "key", []byte("value"), 0)
 
 	// Add expiration
 	err := store.Expire(ctx, "key", 100*time.Millisecond)
@@ -237,7 +237,7 @@ func TestMemoryStore_Expire(t *testing.T) {
 
 func TestMemoryStore_Concurrent(t *testing.T) {
 	store := NewMemoryStore()
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 	var wg sync.WaitGroup
@@ -247,7 +247,7 @@ func TestMemoryStore_Concurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			store.Increment(ctx, "concurrent", 1)
+			_, _ = store.Increment(ctx, "concurrent", 1)
 		}()
 	}
 
@@ -263,13 +263,13 @@ func TestMemoryStore_Concurrent(t *testing.T) {
 
 func TestMemoryStore_ValueIsolation(t *testing.T) {
 	store := NewMemoryStore()
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 
 	// Set a value
 	original := []byte("original")
-	store.Set(ctx, "key", original, 0)
+	_ = store.Set(ctx, "key", original, 0)
 
 	// Modify the original slice
 	original[0] = 'X'
@@ -292,7 +292,7 @@ func TestMemoryStore_ValueIsolation(t *testing.T) {
 
 func TestMemoryRateLimiter_Basic(t *testing.T) {
 	limiter := NewMemoryRateLimiter()
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	ctx := context.Background()
 	key := "test_user"
@@ -328,7 +328,7 @@ func TestMemoryRateLimiter_Basic(t *testing.T) {
 
 func TestMemoryRateLimiter_WindowExpiry(t *testing.T) {
 	limiter := NewMemoryRateLimiter()
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	ctx := context.Background()
 	key := "test_expiry"
@@ -336,7 +336,7 @@ func TestMemoryRateLimiter_WindowExpiry(t *testing.T) {
 	window := 100 * time.Millisecond
 
 	// Use up the limit
-	limiter.Allow(ctx, key, limit, window, 2)
+	_, _ = limiter.Allow(ctx, key, limit, window, 2)
 
 	// Should be denied
 	result, _ := limiter.Allow(ctx, key, limit, window, 1)
@@ -356,7 +356,7 @@ func TestMemoryRateLimiter_WindowExpiry(t *testing.T) {
 
 func TestMemoryRateLimiter_Reset(t *testing.T) {
 	limiter := NewMemoryRateLimiter()
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	ctx := context.Background()
 	key := "test_reset"
@@ -364,7 +364,7 @@ func TestMemoryRateLimiter_Reset(t *testing.T) {
 	window := time.Minute
 
 	// Use up the limit
-	limiter.Allow(ctx, key, limit, window, 2)
+	_, _ = limiter.Allow(ctx, key, limit, window, 2)
 
 	// Reset
 	err := limiter.Reset(ctx, key)
@@ -384,7 +384,7 @@ func TestMemoryRateLimiter_Reset(t *testing.T) {
 
 func TestMemoryRateLimiter_AllowN(t *testing.T) {
 	limiter := NewMemoryRateLimiter()
-	defer limiter.Close()
+	defer func() { _ = limiter.Close() }()
 
 	ctx := context.Background()
 	key := "test_allowN"

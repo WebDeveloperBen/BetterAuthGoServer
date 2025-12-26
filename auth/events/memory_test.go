@@ -18,7 +18,7 @@ func TestNewInMemoryPubSub(t *testing.T) {
 
 func TestInMemoryPubSub_PublishSubscribe(t *testing.T) {
 	ps := NewInMemoryPubSub()
-	defer ps.Close()
+	defer func() { _ = ps.Close() }()
 
 	ctx := context.Background()
 	topic := "test.event"
@@ -57,7 +57,7 @@ func TestInMemoryPubSub_PublishSubscribe(t *testing.T) {
 
 func TestInMemoryPubSub_MultipleSubscribers(t *testing.T) {
 	ps := NewInMemoryPubSub()
-	defer ps.Close()
+	defer func() { _ = ps.Close() }()
 
 	ctx := context.Background()
 	topic := "test.event"
@@ -77,7 +77,7 @@ func TestInMemoryPubSub_MultipleSubscribers(t *testing.T) {
 	msg := &models.Message{UUID: "multi-test"}
 
 	go func() {
-		ps.Publish(ctx, topic, msg)
+		_ = ps.Publish(ctx, topic, msg)
 	}()
 
 	// Both should receive the message
@@ -98,7 +98,7 @@ func TestInMemoryPubSub_MultipleSubscribers(t *testing.T) {
 
 func TestInMemoryPubSub_MultipleTopics(t *testing.T) {
 	ps := NewInMemoryPubSub()
-	defer ps.Close()
+	defer func() { _ = ps.Close() }()
 
 	ctx := context.Background()
 
@@ -107,7 +107,7 @@ func TestInMemoryPubSub_MultipleTopics(t *testing.T) {
 
 	// Publish to topic1 only
 	go func() {
-		ps.Publish(ctx, "topic1", &models.Message{UUID: "topic1-msg"})
+		_ = ps.Publish(ctx, "topic1", &models.Message{UUID: "topic1-msg"})
 	}()
 
 	// Only ch1 should receive
@@ -125,7 +125,7 @@ func TestInMemoryPubSub_MultipleTopics(t *testing.T) {
 
 func TestInMemoryPubSub_PublishNoSubscribers(t *testing.T) {
 	ps := NewInMemoryPubSub()
-	defer ps.Close()
+	defer func() { _ = ps.Close() }()
 
 	ctx := context.Background()
 
@@ -181,7 +181,7 @@ func TestInMemoryPubSub_Close(t *testing.T) {
 
 func TestInMemoryPubSub_ConcurrentPublish(t *testing.T) {
 	ps := NewInMemoryPubSub()
-	defer ps.Close()
+	defer func() { _ = ps.Close() }()
 
 	ctx := context.Background()
 	ch, _ := ps.Subscribe(ctx, "concurrent")
@@ -214,14 +214,14 @@ func TestInMemoryPubSub_ConcurrentPublish(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			for j := 0; j < messagesPerPublisher; j++ {
-				ps.Publish(ctx, "concurrent", &models.Message{UUID: "msg"})
+				_ = ps.Publish(ctx, "concurrent", &models.Message{UUID: "msg"})
 			}
 		}(i)
 	}
 
 	wg.Wait()
 	time.Sleep(100 * time.Millisecond)
-	ps.Close()
+	_ = ps.Close()
 
 	<-consumeDone
 
@@ -236,7 +236,7 @@ func TestInMemoryPubSub_ConcurrentPublish(t *testing.T) {
 
 func TestInMemoryPubSub_ConcurrentSubscribe(t *testing.T) {
 	ps := NewInMemoryPubSub()
-	defer ps.Close()
+	defer func() { _ = ps.Close() }()
 
 	ctx := context.Background()
 	numSubscribers := 50

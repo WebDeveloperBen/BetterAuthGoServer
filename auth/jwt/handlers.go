@@ -102,7 +102,7 @@ func (p *Plugin) handlePasswordGrant(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 
-	writeJSON(w, http.StatusOK, tokenResponse{
+	_ = writeJSON(w, http.StatusOK, tokenResponse{
 		AccessToken:  pair.AccessToken,
 		RefreshToken: pair.RefreshToken,
 		TokenType:    pair.TokenType,
@@ -144,7 +144,7 @@ func (p *Plugin) handleRefreshGrant(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, tokenResponse{
+	_ = writeJSON(w, http.StatusOK, tokenResponse{
 		AccessToken:  pair.AccessToken,
 		RefreshToken: pair.RefreshToken,
 		TokenType:    pair.TokenType,
@@ -194,7 +194,7 @@ func (p *Plugin) TokenRefreshHandler() http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, tokenResponse{
+		_ = writeJSON(w, http.StatusOK, tokenResponse{
 			AccessToken:  pair.AccessToken,
 			RefreshToken: pair.RefreshToken,
 			TokenType:    pair.TokenType,
@@ -236,14 +236,14 @@ func (p *Plugin) TokenIntrospectHandler() http.HandlerFunc {
 		}
 
 		if req.Token == "" {
-			writeJSON(w, http.StatusOK, map[string]any{"active": false})
+			_ = writeJSON(w, http.StatusOK, map[string]any{"active": false})
 			return
 		}
 
 		// Validate token and build introspection response
 		claims, err := p.service.ValidateToken(r.Context(), req.Token)
 		if err != nil {
-			writeJSON(w, http.StatusOK, map[string]any{"active": false})
+			_ = writeJSON(w, http.StatusOK, map[string]any{"active": false})
 			return
 		}
 
@@ -264,7 +264,7 @@ func (p *Plugin) TokenIntrospectHandler() http.HandlerFunc {
 			response["iat"] = claims.IssuedAt.Unix()
 		}
 
-		writeJSON(w, http.StatusOK, response)
+		_ = writeJSON(w, http.StatusOK, response)
 	}
 }
 
@@ -280,5 +280,5 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
-	writeJSON(w, status, map[string]string{"error": err.Error()})
+	_ = writeJSON(w, status, map[string]string{"error": err.Error()})
 }

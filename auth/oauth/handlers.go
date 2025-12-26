@@ -23,7 +23,7 @@ type oauthProvidersResponse struct {
 func (p *Plugin) ListOAuthProvidersHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		providers := p.service.ListProviders()
-		writeJSON(w, http.StatusOK, oauthProvidersResponse{
+		_ = writeJSON(w, http.StatusOK, oauthProvidersResponse{
 			Providers: providers,
 		})
 	}
@@ -93,7 +93,7 @@ func (p *Plugin) OAuthCallbackHandler() func(http.ResponseWriter, *http.Request,
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]any{
+		_ = writeJSON(w, http.StatusOK, map[string]any{
 			"user":    toUserResponse(user),
 			"session": toSessionResponse(session),
 		})
@@ -211,7 +211,7 @@ func (p *Plugin) completeOAuthUserCreation(ctx context.Context, provider string,
 	}
 
 	// Fire OAuth account linked hook (ignore errors - hook is for notifications/side effects)
-	p.auth.FireOAuthAccountLinked(ctx, user.ID, provider, userInfo.ID)
+	_ = p.auth.FireOAuthAccountLinked(ctx, user.ID, provider, userInfo.ID)
 
 	return user, nil
 }
@@ -224,7 +224,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
-	writeJSON(w, status, map[string]string{"error": err.Error()})
+	_ = writeJSON(w, status, map[string]string{"error": err.Error()})
 }
 
 // OAuthDynamicHandler handles dynamic OAuth routes (/oauth/:provider and /oauth/:provider/callback)

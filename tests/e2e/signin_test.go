@@ -63,7 +63,7 @@ func TestSignInFlow(t *testing.T) {
 		}
 
 		resp := env.Post(t, "/auth/sign-in", body)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("Wrong password SignIn status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
@@ -79,7 +79,7 @@ func TestSignInFlow(t *testing.T) {
 		}
 
 		resp := env.Post(t, "/auth/sign-in", body)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("Non-existent user SignIn status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)

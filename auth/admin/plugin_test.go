@@ -100,50 +100,6 @@ func TestPlugin_Init_WithoutUserProvider(t *testing.T) {
 	}
 }
 
-// mockPluginContext implements plugin.Context for testing
-type mockPluginContext struct {
-	logger    *slog.Logger
-	db        any // We don't need full DB interface
-	auth      any
-	baseURL   string
-	secret    string
-	hasher    any
-	encryptor any
-	eventBus  any
-}
-
-func (m *mockPluginContext) Logger() *slog.Logger {
-	return m.logger
-}
-
-func (m *mockPluginContext) DB() any {
-	return m.db
-}
-
-func (m *mockPluginContext) Auth() any {
-	return m.auth
-}
-
-func (m *mockPluginContext) BaseURL() string {
-	return m.baseURL
-}
-
-func (m *mockPluginContext) Secret() string {
-	return m.secret
-}
-
-func (m *mockPluginContext) Hasher() any {
-	return m.hasher
-}
-
-func (m *mockPluginContext) Encryptor() any {
-	return m.encryptor
-}
-
-func (m *mockPluginContext) EventBus() any {
-	return m.eventBus
-}
-
 // mockAuthWithoutUserProvider doesn't implement UserProvider but implements AuthCore
 type mockAuthWithoutUserProvider struct{}
 

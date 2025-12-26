@@ -22,7 +22,7 @@ func setupTestService(t *testing.T) *Service {
 		t.Fatalf("Failed to open test database: %v", err)
 	}
 	db := bun.NewDB(sqldb, sqlitedialect.New())
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	// Create tables
 	if err := createTestTables(db); err != nil {

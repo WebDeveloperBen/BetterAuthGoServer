@@ -230,7 +230,7 @@ func TestHandlers_CheckSlug(t *testing.T) {
 		}
 
 		var resp map[string]any
-		json.Unmarshal(w.Body.Bytes(), &resp)
+		_ = json.Unmarshal(w.Body.Bytes(), &resp)
 
 		if resp["available"] != true {
 			t.Errorf("available = %v, want true", resp["available"])
@@ -260,7 +260,7 @@ func TestHandlers_CheckSlug(t *testing.T) {
 		}
 
 		var resp map[string]any
-		json.Unmarshal(w.Body.Bytes(), &resp)
+		_ = json.Unmarshal(w.Body.Bytes(), &resp)
 
 		if resp["available"] != false {
 			t.Errorf("available = %v, want false", resp["available"])
@@ -313,13 +313,13 @@ func TestHandlers_ActiveOrganization(t *testing.T) {
 		createHandler(createW, createReq)
 
 		var createResp map[string]any
-		json.Unmarshal(createW.Body.Bytes(), &createResp)
+		_ = json.Unmarshal(createW.Body.Bytes(), &createResp)
 		orgID := createResp["id"].(string)
 
 		// Set active organization
 		setBody := map[string]any{"organizationId": orgID}
-		setJsonBody, _ := json.Marshal(setBody)
-		setReq := httptest.NewRequest("POST", "/organization/active", bytes.NewReader(setJsonBody))
+		setJSONBody, _ := json.Marshal(setBody)
+		setReq := httptest.NewRequest("POST", "/organization/active", bytes.NewReader(setJSONBody))
 		setReq.Header.Set("Content-Type", "application/json")
 		setW := httptest.NewRecorder()
 		setActiveHandler(setW, setReq)
@@ -338,7 +338,7 @@ func TestHandlers_ActiveOrganization(t *testing.T) {
 		}
 
 		var getResp map[string]any
-		json.Unmarshal(getW.Body.Bytes(), &getResp)
+		_ = json.Unmarshal(getW.Body.Bytes(), &getResp)
 
 		if getResp["id"] != orgID {
 			t.Errorf("Active org id = %v, want %v", getResp["id"], orgID)
@@ -359,13 +359,13 @@ func TestHandlers_ActiveOrganization(t *testing.T) {
 		createHandler(createW, createReq)
 
 		var createResp map[string]any
-		json.Unmarshal(createW.Body.Bytes(), &createResp)
+		_ = json.Unmarshal(createW.Body.Bytes(), &createResp)
 		orgID := createResp["id"].(string)
 
 		// Set active organization by slug
 		setBody := map[string]any{"organizationSlug": "test-org-slug"}
-		setJsonBody, _ := json.Marshal(setBody)
-		setReq := httptest.NewRequest("POST", "/organization/active", bytes.NewReader(setJsonBody))
+		setJSONBody, _ := json.Marshal(setBody)
+		setReq := httptest.NewRequest("POST", "/organization/active", bytes.NewReader(setJSONBody))
 		setReq.Header.Set("Content-Type", "application/json")
 		setW := httptest.NewRecorder()
 		setActiveHandler(setW, setReq)
@@ -375,7 +375,7 @@ func TestHandlers_ActiveOrganization(t *testing.T) {
 		}
 
 		var setResp map[string]any
-		json.Unmarshal(setW.Body.Bytes(), &setResp)
+		_ = json.Unmarshal(setW.Body.Bytes(), &setResp)
 
 		if setResp["id"] != orgID {
 			t.Errorf("Response org id = %v, want %v", setResp["id"], orgID)
@@ -429,7 +429,7 @@ func TestHandlers_Invitations(t *testing.T) {
 		createOrgHandler(orgW, orgReq)
 
 		var orgResp map[string]any
-		json.Unmarshal(orgW.Body.Bytes(), &orgResp)
+		_ = json.Unmarshal(orgW.Body.Bytes(), &orgResp)
 		orgID := orgResp["id"].(string)
 
 		// Create an invitation
@@ -438,8 +438,8 @@ func TestHandlers_Invitations(t *testing.T) {
 			"role":           "member",
 			"organizationId": orgID,
 		}
-		invJsonBody, _ := json.Marshal(invBody)
-		invReq := httptest.NewRequest("POST", "/organization/invitation", bytes.NewReader(invJsonBody))
+		invJSONBody, _ := json.Marshal(invBody)
+		invReq := httptest.NewRequest("POST", "/organization/invitation", bytes.NewReader(invJSONBody))
 		invReq.Header.Set("Content-Type", "application/json")
 		invW := httptest.NewRecorder()
 		createInvHandler(invW, invReq)
@@ -449,7 +449,7 @@ func TestHandlers_Invitations(t *testing.T) {
 		}
 
 		var invResp map[string]any
-		json.Unmarshal(invW.Body.Bytes(), &invResp)
+		_ = json.Unmarshal(invW.Body.Bytes(), &invResp)
 
 		if invResp["email"] != "invitee@example.com" {
 			t.Errorf("email = %v, want %v", invResp["email"], "invitee@example.com")
@@ -474,14 +474,14 @@ func TestHandlers_Invitations(t *testing.T) {
 		createOrgHandler(orgW, orgReq)
 
 		var orgResp map[string]any
-		json.Unmarshal(orgW.Body.Bytes(), &orgResp)
+		_ = json.Unmarshal(orgW.Body.Bytes(), &orgResp)
 		orgID := orgResp["id"].(string)
 
 		// Create invitations
 		for _, email := range []string{"inv1@example.com", "inv2@example.com"} {
 			invBody := map[string]any{"email": email, "role": "member", "organizationId": orgID}
-			invJsonBody, _ := json.Marshal(invBody)
-			invReq := httptest.NewRequest("POST", "/organization/invitation", bytes.NewReader(invJsonBody))
+			invJSONBody, _ := json.Marshal(invBody)
+			invReq := httptest.NewRequest("POST", "/organization/invitation", bytes.NewReader(invJSONBody))
 			invReq.Header.Set("Content-Type", "application/json")
 			createInvHandler(httptest.NewRecorder(), invReq)
 		}
@@ -496,7 +496,7 @@ func TestHandlers_Invitations(t *testing.T) {
 		}
 
 		var listResp map[string]any
-		json.Unmarshal(listW.Body.Bytes(), &listResp)
+		_ = json.Unmarshal(listW.Body.Bytes(), &listResp)
 
 		invitations, ok := listResp["invitations"].([]any)
 		if !ok {
@@ -541,13 +541,13 @@ func TestHandlers_Teams(t *testing.T) {
 		createOrgHandler(orgW, orgReq)
 
 		var orgResp map[string]any
-		json.Unmarshal(orgW.Body.Bytes(), &orgResp)
+		_ = json.Unmarshal(orgW.Body.Bytes(), &orgResp)
 		orgID := orgResp["id"].(string)
 
 		// Create a team
 		teamBody := map[string]any{"name": "Engineering", "organizationId": orgID}
-		teamJsonBody, _ := json.Marshal(teamBody)
-		teamReq := httptest.NewRequest("POST", "/organization/team", bytes.NewReader(teamJsonBody))
+		teamJSONBody, _ := json.Marshal(teamBody)
+		teamReq := httptest.NewRequest("POST", "/organization/team", bytes.NewReader(teamJSONBody))
 		teamReq.Header.Set("Content-Type", "application/json")
 		teamW := httptest.NewRecorder()
 		createTeamHandler(teamW, teamReq)
@@ -557,7 +557,7 @@ func TestHandlers_Teams(t *testing.T) {
 		}
 
 		var teamResp map[string]any
-		json.Unmarshal(teamW.Body.Bytes(), &teamResp)
+		_ = json.Unmarshal(teamW.Body.Bytes(), &teamResp)
 
 		if teamResp["name"] != "Engineering" {
 			t.Errorf("name = %v, want %v", teamResp["name"], "Engineering")
@@ -578,14 +578,14 @@ func TestHandlers_Teams(t *testing.T) {
 		createOrgHandler(orgW, orgReq)
 
 		var orgResp map[string]any
-		json.Unmarshal(orgW.Body.Bytes(), &orgResp)
+		_ = json.Unmarshal(orgW.Body.Bytes(), &orgResp)
 		orgID := orgResp["id"].(string)
 
 		// Create teams
 		for _, name := range []string{"Engineering", "Marketing"} {
 			teamBody := map[string]any{"name": name, "organizationId": orgID}
-			teamJsonBody, _ := json.Marshal(teamBody)
-			teamReq := httptest.NewRequest("POST", "/organization/team", bytes.NewReader(teamJsonBody))
+			teamJSONBody, _ := json.Marshal(teamBody)
+			teamReq := httptest.NewRequest("POST", "/organization/team", bytes.NewReader(teamJSONBody))
 			teamReq.Header.Set("Content-Type", "application/json")
 			createTeamHandler(httptest.NewRecorder(), teamReq)
 		}
@@ -600,7 +600,7 @@ func TestHandlers_Teams(t *testing.T) {
 		}
 
 		var listResp map[string]any
-		json.Unmarshal(listW.Body.Bytes(), &listResp)
+		_ = json.Unmarshal(listW.Body.Bytes(), &listResp)
 
 		teams, ok := listResp["teams"].([]any)
 		if !ok {
@@ -695,7 +695,7 @@ func TestHandlers_GetActiveMember(t *testing.T) {
 		}
 
 		var resp map[string]any
-		json.Unmarshal(w.Body.Bytes(), &resp)
+		_ = json.Unmarshal(w.Body.Bytes(), &resp)
 
 		if resp["userId"] != "test-user-id" {
 			t.Errorf("userId = %v, want %v", resp["userId"], "test-user-id")
@@ -802,13 +802,13 @@ func TestIntegration_FullOrganizationWorkflow(t *testing.T) {
 	}
 
 	var orgResp map[string]any
-	json.Unmarshal(w.Body.Bytes(), &orgResp)
+	_ = json.Unmarshal(w.Body.Bytes(), &orgResp)
 	orgID := orgResp["id"].(string)
 
 	// 2. Owner sends invitation to member
 	invBody := map[string]any{"email": member.Email, "role": "member", "organizationId": orgID}
-	invJson, _ := json.Marshal(invBody)
-	invReq := httptest.NewRequest("POST", "/organization/invitation", bytes.NewReader(invJson))
+	invJSON, _ := json.Marshal(invBody)
+	invReq := httptest.NewRequest("POST", "/organization/invitation", bytes.NewReader(invJSON))
 	invReq.Header.Set("Content-Type", "application/json")
 	invW := httptest.NewRecorder()
 	handlers["POST /organization/invitation"](invW, invReq)
@@ -818,7 +818,7 @@ func TestIntegration_FullOrganizationWorkflow(t *testing.T) {
 	}
 
 	var invResp map[string]any
-	json.Unmarshal(invW.Body.Bytes(), &invResp)
+	_ = json.Unmarshal(invW.Body.Bytes(), &invResp)
 	invID := invResp["id"].(string)
 
 	// 3. Member accepts invitation (using service directly since handler needs user context switch)
@@ -834,8 +834,8 @@ func TestIntegration_FullOrganizationWorkflow(t *testing.T) {
 
 	// 4. Owner creates a team
 	teamBody := map[string]any{"name": "Engineering", "organizationId": orgID}
-	teamJson, _ := json.Marshal(teamBody)
-	teamReq := httptest.NewRequest("POST", "/organization/team", bytes.NewReader(teamJson))
+	teamJSON, _ := json.Marshal(teamBody)
+	teamReq := httptest.NewRequest("POST", "/organization/team", bytes.NewReader(teamJSON))
 	teamReq.Header.Set("Content-Type", "application/json")
 	teamW := httptest.NewRecorder()
 	handlers["POST /organization/team"](teamW, teamReq)
@@ -845,7 +845,7 @@ func TestIntegration_FullOrganizationWorkflow(t *testing.T) {
 	}
 
 	var teamResp map[string]any
-	json.Unmarshal(teamW.Body.Bytes(), &teamResp)
+	_ = json.Unmarshal(teamW.Body.Bytes(), &teamResp)
 	teamID := teamResp["id"].(string)
 
 	// 5. Add member to team (using service)

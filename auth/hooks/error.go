@@ -99,7 +99,7 @@ var (
 func WriteAPIError(w http.ResponseWriter, err *APIError) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(err.HTTPStatus())
-	json.NewEncoder(w).Encode(err)
+	_ = json.NewEncoder(w).Encode(err)
 }
 
 // IsAPIError checks if an error is an APIError

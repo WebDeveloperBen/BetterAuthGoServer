@@ -22,7 +22,7 @@ func TestPasswordResetFlow(t *testing.T) {
 			"email": "reset@example.com",
 		}
 		resp := env.Post(t, "/auth/password/reset", resetBody)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 			t.Errorf("PasswordReset status = %d, want %d or %d", resp.StatusCode, http.StatusNoContent, http.StatusOK)
@@ -36,7 +36,7 @@ func TestPasswordResetFlow(t *testing.T) {
 			"email": "nonexistent@example.com",
 		}
 		resp := env.Post(t, "/auth/password/reset", resetBody)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 			t.Errorf("PasswordReset for non-existent user status = %d, want %d or %d", resp.StatusCode, http.StatusNoContent, http.StatusOK)
@@ -62,14 +62,14 @@ func TestPasswordChangeFlow(t *testing.T) {
 			"new_password": "newpassword456!",
 		}
 		resp := env.PostWithCookies(t, "/auth/password/change", changeBody, cookies)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 			t.Errorf("PasswordChange status = %d, want %d or %d", resp.StatusCode, http.StatusNoContent, http.StatusOK)
 		}
 
 		resp = env.Get(t, "/auth/me", cookies)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Error("Old session should be invalidated after password change")
 		}
@@ -79,7 +79,7 @@ func TestPasswordChangeFlow(t *testing.T) {
 			"password": "newpassword456!",
 		}
 		resp = env.Post(t, "/auth/sign-in", signInBody)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("SignIn with new password status = %d, want %d", resp.StatusCode, http.StatusOK)
@@ -96,7 +96,7 @@ func TestPasswordChangeFlow(t *testing.T) {
 			"new_password": "newpassword456!",
 		}
 		resp := env.PostWithCookies(t, "/auth/password/change", changeBody, cookies)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("PasswordChange with wrong old password status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)

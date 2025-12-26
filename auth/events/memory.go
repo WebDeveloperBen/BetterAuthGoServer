@@ -1,3 +1,4 @@
+// Package events provides an event bus for publishing and subscribing to authentication events.
 package events
 
 import (

@@ -62,8 +62,7 @@ type sessionResponse struct {
 
 // Handler errors.
 var (
-	errInvalidRequest = errors.New("invalid request")
-	errInvalidEmail   = errors.New("invalid email address")
+	errInvalidEmail = errors.New("invalid email address")
 )
 
 // emailRegex is a regex for email validation.

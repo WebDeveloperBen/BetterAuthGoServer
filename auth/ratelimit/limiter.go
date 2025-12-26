@@ -99,7 +99,7 @@ func (l *Limiter) Reset(key string) time.Time {
 // Close stops the rate limiter and releases resources
 func (l *Limiter) Close() error {
 	if l.limiter != nil {
-		l.limiter.Close()
+		_ = l.limiter.Close()
 	}
 	return nil
 }

@@ -80,7 +80,7 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user info: %w", err)
 	}
-	defer userResp.Body.Close()
+	defer func() { _ = userResp.Body.Close() }()
 
 	if userResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(userResp.Body)
@@ -124,7 +124,7 @@ func (p *GitHubProvider) getPrimaryEmail(ctx context.Context, client *http.Clien
 	if err != nil {
 		return "", false, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", false, fmt.Errorf("failed to get emails")

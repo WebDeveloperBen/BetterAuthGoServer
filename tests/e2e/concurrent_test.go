@@ -28,7 +28,7 @@ func TestConcurrentSignUps(t *testing.T) {
 			}
 			resp := env.Post(t, "/auth/sign-up", body)
 			results <- resp.StatusCode
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}(i)
 	}
 
@@ -70,7 +70,7 @@ func TestConcurrentSignIns(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		t.Fatalf("Failed to create user for concurrent sign-in test: status %d", resp.StatusCode)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	const numRequests = 10
 	results := make(chan int, numRequests)
@@ -83,7 +83,7 @@ func TestConcurrentSignIns(t *testing.T) {
 			}
 			resp := env.Post(t, "/auth/sign-in", body)
 			results <- resp.StatusCode
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}()
 	}
 

@@ -212,7 +212,7 @@ func TestRegistry_Close(t *testing.T) {
 	reg := NewRegistry(nil)
 	plugin := &mockPlugin{name: "test"}
 	reg.Register(plugin)
-	reg.Init(Context{})
+	_ = reg.Init(Context{})
 
 	err := reg.Close()
 	if err != nil {
@@ -236,7 +236,7 @@ func TestRegistry_Close_ReverseOrder(t *testing.T) {
 	reg.Register(plugin1)
 	reg.Register(plugin2)
 	reg.Register(plugin3)
-	reg.Init(Context{})
+	_ = reg.Init(Context{})
 
 	// We can't easily override Close on the mock, so just verify Close completes
 	err := reg.Close()
@@ -265,8 +265,8 @@ func TestRegistry_Close_ReverseOrder(t *testing.T) {
 	reg.Register(op1)
 	reg.Register(op2)
 	reg.Register(op3)
-	reg.Init(Context{})
-	reg.Close()
+	_ = reg.Init(Context{})
+	_ = reg.Close()
 
 	// We can't easily track order without modifying Close, but the code does reverse
 }
@@ -275,7 +275,7 @@ func TestRegistry_Close_Error(t *testing.T) {
 	reg := NewRegistry(nil)
 	plugin := &mockPlugin{name: "failing", closeErr: errors.New("close failed")}
 	reg.Register(plugin)
-	reg.Init(Context{})
+	_ = reg.Init(Context{})
 
 	err := reg.Close()
 	if err == nil {
@@ -291,9 +291,9 @@ func TestRegistry_Close_ContinuesOnError(t *testing.T) {
 
 	reg.Register(plugin2) // Register in reverse order since Close goes in reverse
 	reg.Register(plugin1)
-	reg.Init(Context{})
+	_ = reg.Init(Context{})
 
-	reg.Close()
+	_ = reg.Close()
 
 	// plugin2 should still be closed even though plugin1 failed
 	if !plugin2.closed {
@@ -326,7 +326,7 @@ func TestRegistry_Migrations(t *testing.T) {
 		models:     []any{Model1{}, Model2{}},
 	}
 	reg.Register(plugin)
-	reg.Init(Context{})
+	_ = reg.Init(Context{})
 
 	migrations := reg.Migrations()
 	if len(migrations) != 2 {
@@ -352,7 +352,7 @@ func TestRegistry_Migrations_MultiplePlugins(t *testing.T) {
 
 	reg.Register(plugin1)
 	reg.Register(plugin2)
-	reg.Init(Context{})
+	_ = reg.Init(Context{})
 
 	migrations := reg.Migrations()
 	if len(migrations) != 3 {
@@ -411,7 +411,7 @@ func TestRegistry_ValidateSignUp(t *testing.T) {
 		signUpErr:  nil,
 	}
 	reg.Register(plugin)
-	reg.Init(Context{})
+	_ = reg.Init(Context{})
 
 	err := reg.ValidateSignUp(context.Background(), "test@example.com", "password", "Test")
 	if err != nil {
@@ -428,7 +428,7 @@ func TestRegistry_ValidateSignUp_Error(t *testing.T) {
 		signUpErr:  expectedErr,
 	}
 	reg.Register(plugin)
-	reg.Init(Context{})
+	_ = reg.Init(Context{})
 
 	err := reg.ValidateSignUp(context.Background(), "test@blocked.com", "password", "Test")
 	if !errors.Is(err, expectedErr) {
@@ -452,7 +452,7 @@ func TestRegistry_ValidateSignUp_MultipleValidators(t *testing.T) {
 
 	reg.Register(plugin1)
 	reg.Register(plugin2)
-	reg.Init(Context{})
+	_ = reg.Init(Context{})
 
 	err := reg.ValidateSignUp(context.Background(), "test@example.com", "password", "Test")
 	if err == nil {
@@ -468,7 +468,7 @@ func TestRegistry_ValidateSignIn(t *testing.T) {
 		signInErr:  nil,
 	}
 	reg.Register(plugin)
-	reg.Init(Context{})
+	_ = reg.Init(Context{})
 
 	err := reg.ValidateSignIn(context.Background(), "test@example.com")
 	if err != nil {
@@ -485,7 +485,7 @@ func TestRegistry_ValidateSignIn_Error(t *testing.T) {
 		signInErr:  expectedErr,
 	}
 	reg.Register(plugin)
-	reg.Init(Context{})
+	_ = reg.Init(Context{})
 
 	err := reg.ValidateSignIn(context.Background(), "locked@example.com")
 	if !errors.Is(err, expectedErr) {

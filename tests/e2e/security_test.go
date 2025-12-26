@@ -32,7 +32,7 @@ func TestRateLimitingApplied(t *testing.T) {
 			if resp.StatusCode == http.StatusTooManyRequests {
 				rateLimitedCount++
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		if rateLimitedCount == 0 {
@@ -54,7 +54,7 @@ func TestRateLimitingApplied(t *testing.T) {
 			if resp.StatusCode == http.StatusTooManyRequests {
 				rateLimitedCount++
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		if rateLimitedCount == 0 {
@@ -88,7 +88,7 @@ func TestIPSpoofingPrevention(t *testing.T) {
 			if resp.StatusCode == http.StatusTooManyRequests {
 				rateLimitedCount++
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		if rateLimitedCount == 0 {
@@ -125,7 +125,7 @@ func TestEmailValidation(t *testing.T) {
 				"name":     "Test User",
 			}
 			resp := env.Post(t, "/auth/sign-up", body)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusBadRequest {
 				t.Errorf("Invalid email '%s' was accepted with status %d, want %d",
@@ -153,7 +153,7 @@ func TestAccountLockout(t *testing.T) {
 				"password": "wrongpassword",
 			}
 			resp := env.Post(t, "/auth/sign-in", body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		body := map[string]string{
@@ -161,7 +161,7 @@ func TestAccountLockout(t *testing.T) {
 			"password": "correctpassword!",
 		}
 		resp := env.Post(t, "/auth/sign-in", body)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode == http.StatusOK {
 			t.Error("Account was not locked after multiple failed login attempts - successful login was still allowed")
@@ -206,7 +206,7 @@ func TestInputSanitization(t *testing.T) {
 					}
 				}
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			env.TruncateTables(t)
 		}
 	})
@@ -229,7 +229,7 @@ func TestSessionCookieSecurity(t *testing.T) {
 			"name":     "Cookie User",
 		}
 		resp := env.Post(t, "/auth/sign-up", body)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		for _, cookie := range resp.Cookies() {
 			if cookie.Name == "session" {
@@ -264,7 +264,7 @@ func TestMaxSessionsPerUser(t *testing.T) {
 				"password": "password123!",
 			}
 			resp := env.Post(t, "/auth/sign-in", body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		body := map[string]string{
@@ -273,10 +273,10 @@ func TestMaxSessionsPerUser(t *testing.T) {
 		}
 		resp := env.Post(t, "/auth/sign-in", body)
 		cookies := resp.Cookies()
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		resp = env.Get(t, "/auth/sessions", cookies)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		var result map[string]any
 		DecodeResponse(t, resp, &result)
@@ -299,7 +299,7 @@ func TestSecurityHeaders(t *testing.T) {
 
 	t.Run("SecurityHeadersPresent", func(t *testing.T) {
 		resp := env.Get(t, "/auth/me", nil)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		requiredHeaders := map[string]string{
 			"X-Content-Type-Options": "nosniff",
@@ -343,7 +343,7 @@ func TestConcurrentRateLimiting(t *testing.T) {
 				}
 				resp := env.Post(t, "/auth/sign-in", body)
 				results <- resp.StatusCode
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}()
 		}
 

@@ -27,7 +27,7 @@ func main() {
 		log.Fatal(err)
 	}
 	bunDB := bun.NewDB(sqldb, sqlitedialect.New())
-	defer bunDB.Close()
+	defer func() { _ = bunDB.Close() }()
 
 	// 2. Create store and run migrations
 	dbStore := store.New(bunDB)
@@ -69,7 +69,7 @@ func main() {
 	// Public endpoint
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"message": "BetterAuth Basic Example",
 			"docs":    "/auth/ endpoints available",
 		})
@@ -93,7 +93,7 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"user_id":    session.UserID,
 		"session_id": session.ID,
 		"message":    "Hello from protected endpoint!",

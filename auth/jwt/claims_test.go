@@ -50,7 +50,7 @@ func TestNewAccessClaims(t *testing.T) {
 
 	// Check expiry is set correctly
 	expectedExpiry := time.Now().Add(ttl)
-	if claims.ExpiresAt == nil || claims.ExpiresAt.Time.After(expectedExpiry.Add(time.Minute)) {
+	if claims.ExpiresAt == nil || claims.ExpiresAt.After(expectedExpiry.Add(time.Minute)) {
 		t.Error("ExpiresAt not set correctly")
 	}
 }
@@ -157,7 +157,7 @@ func TestGenerateJTI(t *testing.T) {
 
 	// Should only contain hex characters
 	for _, char := range jti1 {
-		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f')) {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
 			t.Errorf("JTI contains non-hex character: %c", char)
 		}
 	}

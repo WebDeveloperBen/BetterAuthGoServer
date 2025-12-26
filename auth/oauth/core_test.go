@@ -63,8 +63,8 @@ type mockProvider struct {
 	requiresPKCE bool
 	config       *oauth2.Config
 	userInfo     *UserInfo
-	exchangeErr  error
-	userInfoErr  error
+
+	userInfoErr error
 }
 
 func (m *mockProvider) Name() string {

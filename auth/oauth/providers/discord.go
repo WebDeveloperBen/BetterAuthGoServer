@@ -74,7 +74,7 @@ func (p *DiscordProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user info: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
