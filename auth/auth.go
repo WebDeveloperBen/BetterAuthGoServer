@@ -38,6 +38,9 @@ type Auth struct {
 
 	// Cleanup control
 	stopCleanup chan struct{}
+
+	// initErr stores any error from post-construction operations like Use()
+	initErr error
 }
 
 // New creates a new Auth instance.
@@ -313,27 +316,52 @@ func (a *Auth) emailVerificationProvider() plugin.EmailVerificationProvider {
 // Ensure Auth implements plugin.AuthCore at compile time
 var _ plugin.AuthCore = (*Auth)(nil)
 
-// Use adds a plugin to the auth instance.
-// The plugin is immediately initialized and its routes/middleware/hooks are registered.
-// This can be called after New() to add optional plugins.
+// Use registers one or more plugins with the auth instance.
+// Returns *Auth for method chaining. Check Err() after chaining to detect errors.
 //
 // Example:
 //
 //	auth := betterauth.New(store, betterauth.WithSecret(secret))
-//	auth.Use(jwt.Plugin())
-//	auth.Use(oauth.Plugin(providers.Google(...)))
-func (a *Auth) Use(p plugin.Plugin) error {
+//	auth.
+//		Use(jwt.Plugin()).
+//		Use(oauth.Plugin(providers.Google(...))).
+//		Use(admin.Plugin(), ratelimit.Plugin())
+//
+//	if err := auth.Err(); err != nil {
+//		log.Fatal("Failed to register plugins:", err)
+//	}
+func (a *Auth) Use(plugins ...plugin.Plugin) *Auth {
+	// Short-circuit if we already have an error
+	if a.initErr != nil {
+		return a
+	}
+
 	// Ensure we have a plugin registry
 	if a.plugins == nil {
 		a.plugins = plugin.NewRegistry(a.config.Logger)
 		// Initialize the registry with context
 		pluginCtx := a.buildPluginContext()
 		if err := a.plugins.Init(pluginCtx); err != nil {
-			return err
+			a.initErr = err
+			return a
 		}
 	}
 
-	return a.plugins.AddPlugin(p)
+	// Register each plugin
+	for _, p := range plugins {
+		if err := a.plugins.AddPlugin(p); err != nil {
+			a.initErr = err
+			return a
+		}
+	}
+
+	return a
+}
+
+// Err returns any error that occurred during plugin registration.
+// Should be called after chaining Use() calls to check for errors.
+func (a *Auth) Err() error {
+	return a.initErr
 }
 
 // buildPluginContext creates a plugin.Context with access to auth internals

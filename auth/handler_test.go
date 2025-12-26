@@ -307,7 +307,8 @@ func TestOAuthProviders(t *testing.T) {
 	oauthPlugin := oauth.NewPlugin(
 		providers.NewGoogle("test-client-id", "test-client-secret", "http://localhost/oauth/google/callback"),
 	)
-	if err := a.Use(oauthPlugin); err != nil {
+	a.Use(oauthPlugin)
+	if err := a.Err(); err != nil {
 		t.Fatalf("Failed to register OAuth plugin: %v", err)
 	}
 

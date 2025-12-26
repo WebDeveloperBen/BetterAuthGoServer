@@ -144,151 +144,11 @@ func main() {
 	}
 
 	// ============================================================================
-	// REGISTER PLUGINS - Order matters for migrations
+	// REGISTER PLUGINS - Using builder pattern with chained Use() calls
+	// Order matters for migrations
 	// ============================================================================
 
-	// ----- OTP Plugin (Email/Password Reset Tokens) -----
-	// Provides token generation for email verification and password reset
-	if err := authService.Use(otp.NewPlugin(
-		otp.WithPasswordResetExpiry(1*time.Hour),
-		otp.WithEmailVerificationExpiry(24*time.Hour),
-		otp.WithEmailChangeExpiry(1*time.Hour),
-	)); err != nil {
-		log.Fatal("Failed to register OTP plugin:", err)
-	}
-
-	// ----- Password Plugin (Email/Password Authentication) -----
-	// Enhanced password auth with lockout protection
-	if err := authService.Use(password.NewPlugin(
-		password.WithMinLength(8),
-		password.WithMaxLength(128),
-		password.WithComplexity(true),              // Require complex passwords
-		password.WithResetExpiry(1*time.Hour),      // Reset token expiry
-		password.WithAutoSignIn(true),              // Auto sign-in after registration
-		password.WithLockoutThreshold(5),           // Lock after 5 failed attempts
-		password.WithLockoutDuration(15*time.Minute), // 15 minute lockout
-	)); err != nil {
-		log.Fatal("Failed to register password plugin:", err)
-	}
-
-	// ----- Rate Limiting Plugin -----
-	// Configurable rate limiting with custom key extraction
-	if err := authService.Use(ratelimit.NewPlugin(
-		ratelimit.WithLimit(100, 1*time.Minute),    // 100 requests per minute
-		ratelimit.WithKeyFunc(func(r *http.Request) string {
-			// Use X-Forwarded-For if behind proxy, otherwise RemoteAddr
-			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-				return strings.Split(xff, ",")[0]
-			}
-			return strings.Split(r.RemoteAddr, ":")[0]
-		}),
-		ratelimit.WithTrustedProxies([]string{"127.0.0.1", "::1"}),
-	)); err != nil {
-		log.Fatal("Failed to register rate limit plugin:", err)
-	}
-
-	// ----- Admin Plugin -----
-	// User management, roles, banning, impersonation
-	if err := authService.Use(admin.NewPlugin(
-		admin.WithDefaultRole("user"),
-		admin.WithAdminRoles([]string{"admin", "superadmin"}),
-		admin.WithAdminUserIDs([]string{}),                    // Bootstrap admin IDs
-		admin.WithImpersonationSessionDuration(1*time.Hour),
-		admin.WithDefaultBanReason("Violation of terms of service"),
-		admin.WithDefaultBanExpiresIn(0),                      // 0 = permanent
-		admin.WithBannedUserMessage("Your account has been suspended."),
-		admin.WithAllowImpersonatingAdmins(false),             // Safety: can't impersonate other admins
-	)); err != nil {
-		log.Fatal("Failed to register admin plugin:", err)
-	}
-
-	// ----- JWT Plugin -----
-	// JWT token generation and validation for API authentication
-	if err := authService.Use(jwt.NewPlugin(
-		jwt.WithAlgorithm(jwt.AlgorithmHS256),
-		jwt.WithAccessTTL(15*time.Minute),          // Short-lived access tokens
-		jwt.WithRefreshTTL(7*24*time.Hour),         // 7-day refresh tokens
-		jwt.WithIssuer(baseURL),
-		jwt.WithAudience(baseURL),
-	)); err != nil {
-		log.Fatal("Failed to register JWT plugin:", err)
-	}
-
-	// ----- WebAuthn Plugin (Passwordless/2FA) -----
-	// FIDO2/WebAuthn for passwordless login and second factor
-	if err := authService.Use(webauthn.NewPlugin(
-		webauthn.WithRPID(parsedURL.Hostname()),
-		webauthn.WithRPDisplayName("BetterAuth Demo"),
-		webauthn.WithRPOrigins([]string{baseURL, frontendURL}),
-		webauthn.WithTimeout(5*time.Minute),
-		webauthn.WithAllowResidentKey(true),        // Enable discoverable credentials
-		webauthn.WithAllowPasswordlessAccounts(true), // Allow WebAuthn-only accounts
-		webauthn.WithAllowSecondFactor(true),       // Allow as 2FA
-		webauthn.WithUserVerification("preferred"), // "required", "preferred", "discouraged"
-		webauthn.WithAttestationPreference("none"), // "none", "indirect", "direct"
-	)); err != nil {
-		log.Fatal("Failed to register WebAuthn plugin:", err)
-	}
-
-	// ----- Organization Plugin -----
-	// Multi-tenancy with organizations, teams, roles, and invitations
-	if err := authService.Use(organization.NewPlugin(
-		organization.WithCreatorRole("owner"),
-		organization.WithMembershipLimit(100),               // Max 100 members per org
-		organization.WithInvitationExpiresIn(48*time.Hour),  // 48h invitation expiry
-		organization.WithCancelPendingInvitationsOnReInvite(true),
-		organization.WithAllowUserToCreateOrganization(func(userID string) bool {
-			return true // Allow all users to create organizations
-		}),
-		organization.WithOrganizationLimit(func(userID string) int {
-			return 5 // Max 5 organizations per user
-		}),
-		organization.WithSendInvitationEmail(func(invitation *organization.Invitation, org *organization.Organization) error {
-			// In production, send actual email using invitation and org details
-			// The invitation ID is used as the token for accepting
-			logger.Info("Send invitation email",
-				"to", invitation.Email,
-				"org", org.Name,
-				"org_id", org.ID,
-				"invitation_id", invitation.ID,
-				"url", baseURL+"/auth/organization/invitation/accept?id="+invitation.ID,
-			)
-			return nil
-		}),
-		organization.WithTeams(organization.TeamsConfig{
-			Enabled:               true,
-			AllowRemovingAllTeams: false,
-			MaximumTeams: func(orgID string) int {
-				return 20 // Max 20 teams per organization
-			},
-			MaximumMembersPerTeam: func(teamID string) int {
-				return 50 // Max 50 members per team
-			},
-		}),
-		organization.WithOrganizationHooks(organization.OrganizationHooks{
-			AfterCreateOrganization: func(org *organization.Organization, member *organization.Member, userID string) error {
-				logger.Info("Organization created",
-					"org_id", org.ID,
-					"org_name", org.Name,
-					"creator_id", userID,
-				)
-				return nil
-			},
-			AfterAddMember: func(member *organization.Member, userID string) error {
-				logger.Info("Member added to organization",
-					"member_user_id", member.UserID,
-					"role", member.Role,
-					"added_by", userID,
-				)
-				return nil
-			},
-		}),
-	)); err != nil {
-		log.Fatal("Failed to register organization plugin:", err)
-	}
-
-	// ----- OAuth Providers -----
-	// Register OAuth providers dynamically based on environment
+	// Build OAuth providers dynamically based on environment
 	var oauthProviders []oauth.Provider
 
 	if clientID := os.Getenv("GOOGLE_CLIENT_ID"); clientID != "" {
@@ -315,10 +175,126 @@ func main() {
 		))
 	}
 
+	// Chain all plugins using builder pattern
+	authService.
+		// ----- OTP Plugin (Email/Password Reset Tokens) -----
+		Use(otp.NewPlugin(
+			otp.WithPasswordResetExpiry(1*time.Hour),
+			otp.WithEmailVerificationExpiry(24*time.Hour),
+			otp.WithEmailChangeExpiry(1*time.Hour),
+		)).
+		// ----- Password Plugin (Email/Password Authentication) -----
+		Use(password.NewPlugin(
+			password.WithMinLength(8),
+			password.WithMaxLength(128),
+			password.WithComplexity(true),
+			password.WithResetExpiry(1*time.Hour),
+			password.WithAutoSignIn(true),
+			password.WithLockoutThreshold(5),
+			password.WithLockoutDuration(15*time.Minute),
+		)).
+		// ----- Rate Limiting Plugin -----
+		Use(ratelimit.NewPlugin(
+			ratelimit.WithLimit(100, 1*time.Minute),
+			ratelimit.WithKeyFunc(func(r *http.Request) string {
+				if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+					return strings.Split(xff, ",")[0]
+				}
+				return strings.Split(r.RemoteAddr, ":")[0]
+			}),
+			ratelimit.WithTrustedProxies([]string{"127.0.0.1", "::1"}),
+		)).
+		// ----- Admin Plugin -----
+		Use(admin.NewPlugin(
+			admin.WithDefaultRole("user"),
+			admin.WithAdminRoles([]string{"admin", "superadmin"}),
+			admin.WithAdminUserIDs([]string{}),
+			admin.WithImpersonationSessionDuration(1*time.Hour),
+			admin.WithDefaultBanReason("Violation of terms of service"),
+			admin.WithDefaultBanExpiresIn(0),
+			admin.WithBannedUserMessage("Your account has been suspended."),
+			admin.WithAllowImpersonatingAdmins(false),
+		)).
+		// ----- JWT Plugin -----
+		Use(jwt.NewPlugin(
+			jwt.WithAlgorithm(jwt.AlgorithmHS256),
+			jwt.WithAccessTTL(15*time.Minute),
+			jwt.WithRefreshTTL(7*24*time.Hour),
+			jwt.WithIssuer(baseURL),
+			jwt.WithAudience(baseURL),
+		)).
+		// ----- WebAuthn Plugin (Passwordless/2FA) -----
+		Use(webauthn.NewPlugin(
+			webauthn.WithRPID(parsedURL.Hostname()),
+			webauthn.WithRPDisplayName("BetterAuth Demo"),
+			webauthn.WithRPOrigins([]string{baseURL, frontendURL}),
+			webauthn.WithTimeout(5*time.Minute),
+			webauthn.WithAllowResidentKey(true),
+			webauthn.WithAllowPasswordlessAccounts(true),
+			webauthn.WithAllowSecondFactor(true),
+			webauthn.WithUserVerification("preferred"),
+			webauthn.WithAttestationPreference("none"),
+		)).
+		// ----- Organization Plugin -----
+		Use(organization.NewPlugin(
+			organization.WithCreatorRole("owner"),
+			organization.WithMembershipLimit(100),
+			organization.WithInvitationExpiresIn(48*time.Hour),
+			organization.WithCancelPendingInvitationsOnReInvite(true),
+			organization.WithAllowUserToCreateOrganization(func(userID string) bool {
+				return true
+			}),
+			organization.WithOrganizationLimit(func(userID string) int {
+				return 5
+			}),
+			organization.WithSendInvitationEmail(func(invitation *organization.Invitation, org *organization.Organization) error {
+				logger.Info("Send invitation email",
+					"to", invitation.Email,
+					"org", org.Name,
+					"org_id", org.ID,
+					"invitation_id", invitation.ID,
+					"url", baseURL+"/auth/organization/invitation/accept?id="+invitation.ID,
+				)
+				return nil
+			}),
+			organization.WithTeams(organization.TeamsConfig{
+				Enabled:               true,
+				AllowRemovingAllTeams: false,
+				MaximumTeams: func(orgID string) int {
+					return 20
+				},
+				MaximumMembersPerTeam: func(teamID string) int {
+					return 50
+				},
+			}),
+			organization.WithOrganizationHooks(organization.OrganizationHooks{
+				AfterCreateOrganization: func(org *organization.Organization, member *organization.Member, userID string) error {
+					logger.Info("Organization created",
+						"org_id", org.ID,
+						"org_name", org.Name,
+						"creator_id", userID,
+					)
+					return nil
+				},
+				AfterAddMember: func(member *organization.Member, userID string) error {
+					logger.Info("Member added to organization",
+						"member_user_id", member.UserID,
+						"role", member.Role,
+						"added_by", userID,
+					)
+					return nil
+				},
+			}),
+		))
+
+	// Add OAuth plugin if any providers are configured
 	if len(oauthProviders) > 0 {
-		if err := authService.Use(oauth.NewPlugin(oauthProviders...)); err != nil {
-			log.Fatal("Failed to register OAuth plugin:", err)
-		}
+		authService.Use(oauth.NewPlugin(oauthProviders...))
+	}
+
+	// Check for any plugin registration errors
+	if err := authService.Err(); err != nil {
+		log.Fatal("Failed to register plugins:", err)
 	}
 
 	// ============================================================================

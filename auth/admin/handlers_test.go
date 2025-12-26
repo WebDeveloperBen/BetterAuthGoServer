@@ -107,21 +107,22 @@ func (m *mockService) SetUserRole(ctx context.Context, userID, role string) erro
 
 func TestParseUserPath(t *testing.T) {
 	tests := []struct {
+		name       string
 		path       string
 		wantUserID string
 		wantAction string
 	}{
-		{"/admin/users", "", ""},
-		{"/admin/users/", "", ""},
-		{"/admin/users/123", "123", ""},
-		{"/admin/users/123/ban", "123", "ban"},
-		{"/admin/users/123/role", "123", "role"},
-		{"/admin/users/abc-123-def", "abc-123-def", ""},
-		{"/admin/users/123/invalid/action", "123", "invalid"},
+		{"base path", "/admin/users", "", ""},
+		{"base path with trailing slash", "/admin/users/", "", ""},
+		{"with user id", "/admin/users/123", "123", ""},
+		{"with ban action", "/admin/users/123/ban", "123", "ban"},
+		{"with role action", "/admin/users/123/role", "123", "role"},
+		{"with uuid-style id", "/admin/users/abc-123-def", "abc-123-def", ""},
+		{"with extra path segments", "/admin/users/123/invalid/action", "123", "invalid"},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.path, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			gotUserID, gotAction := parseUserPath(tt.path)
 			if gotUserID != tt.wantUserID {
 				t.Errorf("parseUserPath(%q) userID = %q, want %q", tt.path, gotUserID, tt.wantUserID)

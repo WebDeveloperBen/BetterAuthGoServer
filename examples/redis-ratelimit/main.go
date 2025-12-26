@@ -99,7 +99,7 @@ func main() {
 	defer authService.Close()
 
 	// 7. Add rate limiting with Redis backend
-	err = authService.Use(ratelimit.NewPlugin(
+	authService.Use(ratelimit.NewPlugin(
 		ratelimit.WithLimit(100, time.Minute),      // 100 requests per minute
 		ratelimit.WithBackend(redisRateLimiter),    // Use Redis for distributed state
 		ratelimit.WithTrustedProxies([]string{      // Trust these proxies for X-Forwarded-For
@@ -107,7 +107,7 @@ func main() {
 			"10.0.0.0/8",
 		}),
 	))
-	if err != nil {
+	if err := authService.Err(); err != nil {
 		log.Fatal(err)
 	}
 
