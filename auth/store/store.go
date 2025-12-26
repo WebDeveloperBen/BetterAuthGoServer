@@ -1,54 +1,90 @@
 // Package store provides database implementations for the auth package using Bun ORM.
-// It supports PostgreSQL and SQLite with SQL-based migrations.
+// It supports PostgreSQL and SQLite with model-based migrations.
 package store
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/migrate"
-
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/store/migrations"
 )
 
 // Store implements auth.Store using Bun (supports PostgreSQL, SQLite, MySQL)
 type Store struct {
-	db       *bun.DB
-	migrator *migrate.Migrator
+	db *bun.DB
 }
 
 // New creates a new database store with Bun
 func New(db *bun.DB) *Store {
 	return &Store{
-		db:       db,
-		migrator: migrate.NewMigrator(db, migrations.Migrations),
+		db: db,
 	}
 }
 
-// Migrate runs all pending database migrations
+// Migrations returns the Bun models for creating database tables.
+// This follows the same pattern as plugin.MigrationsProvider.
+func (s *Store) Migrations() []any {
+	return []any{
+		&User{},
+		&Account{},
+		&Session{},
+		&Verification{},
+	}
+}
+
+// Migrate creates all required database tables if they don't exist.
+// This uses Bun's model-based table creation with IfNotExists().
 func (s *Store) Migrate(ctx context.Context) error {
-	// Initialize migration tables (bun_migrations, bun_migration_locks)
-	if err := s.migrator.Init(ctx); err != nil {
-		return err
+	models := s.Migrations()
+
+	for _, model := range models {
+		_, err := s.db.NewCreateTable().
+			Model(model).
+			IfNotExists().
+			Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create table for %T: %w", model, err)
+		}
 	}
 
-	// Run pending migrations
-	if _, err := s.migrator.Migrate(ctx); err != nil {
-		return err
+	// Create indexes
+	if err := s.createIndexes(ctx); err != nil {
+		return fmt.Errorf("failed to create indexes: %w", err)
 	}
 
 	return nil
 }
 
-// Rollback rolls back the last migration group
-func (s *Store) Rollback(ctx context.Context) error {
-	_, err := s.migrator.Rollback(ctx)
-	return err
-}
+// createIndexes creates database indexes for better query performance.
+// Uses raw SQL with IF NOT EXISTS for idempotency.
+func (s *Store) createIndexes(ctx context.Context) error {
+	indexes := []string{
+		// Users indexes
+		"CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+		"CREATE INDEX IF NOT EXISTS idx_users_banned ON users(banned)",
+		"CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)",
 
-// MigrationStatus returns the status of all migrations
-func (s *Store) MigrationStatus(ctx context.Context) (migrate.MigrationSlice, error) {
-	return s.migrator.MigrationsWithStatus(ctx)
+		// Accounts indexes
+		"CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts(user_id)",
+		"CREATE INDEX IF NOT EXISTS idx_accounts_provider ON accounts(provider, provider_account_id)",
+
+		// Sessions indexes
+		"CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
+		"CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)",
+		"CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)",
+
+		// Verifications indexes
+		"CREATE INDEX IF NOT EXISTS idx_verifications_token_hash ON verifications(token_hash)",
+		"CREATE INDEX IF NOT EXISTS idx_verifications_user_id_type ON verifications(user_id, type)",
+	}
+
+	for _, idx := range indexes {
+		if _, err := s.db.ExecContext(ctx, idx); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // DB returns the underlying bun.DB connection.

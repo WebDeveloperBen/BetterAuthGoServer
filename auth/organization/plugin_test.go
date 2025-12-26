@@ -136,9 +136,10 @@ func TestPlugin_Migrations_Basic(t *testing.T) {
 
 	migrations := p.Migrations()
 
-	// Should include: Organization, Member, Invitation, SessionExtension
+	// Should include: Organization, Member, Invitation
 	// Teams are disabled by default, so Team and TeamMember should not be included
-	expectedCount := 4
+	// Note: SessionExtension is added via ALTER TABLE in Init(), not here
+	expectedCount := 3
 
 	if len(migrations) != expectedCount {
 		t.Errorf("len(migrations) = %d, want %d", len(migrations), expectedCount)
@@ -152,8 +153,9 @@ func TestPlugin_Migrations_WithTeams(t *testing.T) {
 
 	migrations := p.Migrations()
 
-	// Should include: Organization, Member, Invitation, Team, TeamMember, SessionExtension
-	expectedCount := 6
+	// Should include: Organization, Member, Invitation, Team, TeamMember
+	// Note: SessionExtension is added via ALTER TABLE in Init(), not here
+	expectedCount := 5
 
 	if len(migrations) != expectedCount {
 		t.Errorf("len(migrations) = %d, want %d", len(migrations), expectedCount)

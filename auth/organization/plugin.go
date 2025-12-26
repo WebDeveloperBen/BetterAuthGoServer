@@ -1,11 +1,13 @@
 package organization
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
+	"github.com/uptrace/bun"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/organization/access"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
@@ -61,6 +63,12 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	if ctx.DB == nil {
 		p.logger.Warn("organization plugin: no database available, plugin disabled")
 		return nil
+	}
+
+	// Add session extension columns (these extend the existing sessions table)
+	// Using ALTER TABLE since the sessions table is created by the core store
+	if err := p.ensureSessionExtensionColumns(ctx.DB); err != nil {
+		return fmt.Errorf("failed to add session extension columns: %w", err)
 	}
 
 	// Initialize access control
@@ -264,7 +272,31 @@ func (p *Plugin) Middleware() []plugin.Middleware {
 	}
 }
 
+// ensureSessionExtensionColumns adds organization-specific columns to the sessions table.
+// This extends the core sessions table with active_organization_id and active_team_id.
+// Uses ALTER TABLE ADD COLUMN IF NOT EXISTS for idempotency.
+func (p *Plugin) ensureSessionExtensionColumns(db *bun.DB) error {
+	ctx := context.Background()
+
+	// PostgreSQL and SQLite both support ADD COLUMN IF NOT EXISTS
+	// (SQLite added support in version 3.35.0, 2021)
+	alterStatements := []string{
+		"ALTER TABLE sessions ADD COLUMN IF NOT EXISTS active_organization_id TEXT",
+		"ALTER TABLE sessions ADD COLUMN IF NOT EXISTS active_team_id TEXT",
+	}
+
+	for _, stmt := range alterStatements {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Migrations returns database migrations for organization tables.
+// Note: SessionExtension columns are added via ALTER TABLE in Init(),
+// not here, because they extend an existing table rather than creating a new one.
 func (p *Plugin) Migrations() []any {
 	migrations := []any{
 		(*Organization)(nil),
@@ -276,9 +308,6 @@ func (p *Plugin) Migrations() []any {
 	if p.config.Teams.Enabled {
 		migrations = append(migrations, (*Team)(nil), (*TeamMember)(nil))
 	}
-
-	// Add session extensions (nullable columns)
-	migrations = append(migrations, (*SessionExtension)(nil))
 
 	return migrations
 }

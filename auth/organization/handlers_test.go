@@ -714,9 +714,10 @@ func TestPlugin_Migrations(t *testing.T) {
 
 	migrations := p.Migrations()
 
-	// Should have: Organization, Member, Invitation, SessionExtension
+	// Should have: Organization, Member, Invitation
 	// Plus Team and TeamMember when teams enabled
-	expectedCount := 6 // 4 base + 2 team models
+	// Note: SessionExtension is added via ALTER TABLE in Init(), not here
+	expectedCount := 5 // 3 base + 2 team models
 
 	if len(migrations) != expectedCount {
 		t.Errorf("len(migrations) = %d, want %d", len(migrations), expectedCount)

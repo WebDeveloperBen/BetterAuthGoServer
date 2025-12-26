@@ -11,11 +11,10 @@ import (
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
 	"github.com/uptrace/bun/driver/pgdriver"
-	"github.com/uptrace/bun/migrate"
 
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/store/migrations"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
 )
 
 func main() {
@@ -36,87 +35,26 @@ func main() {
 	}
 	defer bunDB.Close()
 
-	migrator := migrate.NewMigrator(bunDB, migrations.Migrations)
+	s := store.New(bunDB)
 	ctx := context.Background()
-
-	// Initialize migration tables
-	if err := migrator.Init(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to init migrator: %v\n", err)
-		os.Exit(1)
-	}
 
 	cmd := os.Args[1]
 	switch cmd {
 	case "up", "migrate":
-		group, err := migrator.Migrate(ctx)
-		if err != nil {
+		if err := s.Migrate(ctx); err != nil {
 			fmt.Fprintf(os.Stderr, "Migration failed: %v\n", err)
 			os.Exit(1)
 		}
-		if group.IsZero() {
-			fmt.Println("No new migrations to run")
-		} else {
-			fmt.Printf("Migrated: %s\n", group)
-		}
-
-	case "down", "rollback":
-		group, err := migrator.Rollback(ctx)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Rollback failed: %v\n", err)
-			os.Exit(1)
-		}
-		if group.IsZero() {
-			fmt.Println("No migrations to rollback")
-		} else {
-			fmt.Printf("Rolled back: %s\n", group)
-		}
+		fmt.Println("Migrations applied successfully")
 
 	case "status":
-		ms, err := migrator.MigrationsWithStatus(ctx)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to get status: %v\n", err)
-			os.Exit(1)
+		// List tables that would be created
+		migrations := s.Migrations()
+		fmt.Println("Models to migrate:")
+		fmt.Println("------------------")
+		for _, m := range migrations {
+			fmt.Printf("  %T\n", m)
 		}
-		fmt.Println("Migration Status:")
-		fmt.Println("-----------------")
-		for _, m := range ms {
-			status := "pending"
-			if !m.IsApplied() {
-				status = "pending"
-			} else {
-				status = "applied"
-			}
-			fmt.Printf("  %s: %s\n", m.Name, status)
-		}
-
-	case "create":
-		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "Usage: migrate create <name>")
-			os.Exit(1)
-		}
-		name := os.Args[2]
-		files, err := migrator.CreateSQLMigrations(ctx, name)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to create migration: %v\n", err)
-			os.Exit(1)
-		}
-		for _, f := range files {
-			fmt.Printf("Created: %s\n", f.Path)
-		}
-
-	case "lock":
-		if err := migrator.Lock(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to acquire lock: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println("Lock acquired")
-
-	case "unlock":
-		if err := migrator.Unlock(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to release lock: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println("Lock released")
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
@@ -126,21 +64,21 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println(`Usage: migrate <command> [args]
+	fmt.Println(`Usage: migrate <command>
 
 Commands:
-  up, migrate     Run pending migrations
-  down, rollback  Rollback last migration group
-  status          Show migration status
-  create <name>   Create new migration files
-  lock            Acquire migration lock
-  unlock          Release migration lock
+  up, migrate     Create tables if they don't exist
+  status          Show models that will be migrated
 
 Environment:
   DATABASE_URL    Database connection string (default: sqlite://auth.db)
                   Examples:
                     sqlite://auth.db
-                    postgres://user:pass@localhost:5432/dbname?sslmode=disable`)
+                    postgres://user:pass@localhost:5432/dbname?sslmode=disable
+
+Note: This tool creates tables using Bun's model-based migrations.
+      Tables are created with IfNotExists() so it's safe to run multiple times.
+      Plugin tables are created automatically when plugins are initialized.`)
 }
 
 func connectDB(dbURL string) (*bun.DB, error) {
