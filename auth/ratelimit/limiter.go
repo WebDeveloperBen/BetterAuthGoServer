@@ -3,6 +3,7 @@ package ratelimit
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,52 +12,15 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/kv"
 )
 
-// Config holds rate limiter configuration
-type Config struct {
-	// Window is the time window for rate limiting
-	Window time.Duration
-
-	// MaxRequests is the maximum requests allowed per window
-	MaxRequests int
-
-	// KeyFunc extracts the rate limit key from a request.
-	// If nil, defaults to IPKeyFunc (or TrustedIPKeyFunc if TrustedProxies is set).
-	KeyFunc func(r *http.Request) string
-
-	// Backend is the rate limiter backend (e.g., Redis).
-	// If nil, uses in-memory storage.
-	Backend kv.RateLimiter
-
-	// TrustedProxies is a list of IP addresses that are trusted to set
-	// X-Forwarded-For and X-Real-IP headers. If empty, these headers are
-	// always trusted (legacy behavior). If set, headers from untrusted
-	// sources are ignored to prevent IP spoofing.
-	TrustedProxies []string
-}
-
-// DefaultConfig returns default rate limit configuration
-func DefaultConfig() Config {
-	return Config{
-		Window:      time.Minute,
-		MaxRequests: 100,
-		// KeyFunc is nil by default; New() will set RemoteAddrKeyFunc
-		// unless TrustedProxies is configured
-	}
-}
-
-// Limiter wraps a kv.RateLimiter with HTTP middleware support
+// Limiter wraps a kv.RateLimiter with HTTP middleware support.
 type Limiter struct {
 	config  Config
 	limiter kv.RateLimiter
+	logger  *slog.Logger
 }
 
-// New creates a new rate limiter
-func New(opts ...Option) *Limiter {
-	cfg := DefaultConfig()
-	for _, opt := range opts {
-		opt(&cfg)
-	}
-
+// NewLimiter creates a new rate limiter with the given config.
+func NewLimiter(cfg Config, logger *slog.Logger) *Limiter {
 	var backend kv.RateLimiter
 	if cfg.Backend != nil {
 		backend = cfg.Backend
@@ -78,69 +42,35 @@ func New(opts ...Option) *Limiter {
 	return &Limiter{
 		config:  cfg,
 		limiter: backend,
+		logger:  logger,
 	}
 }
 
-// Option is a functional option for configuring the rate limiter
-type Option func(*Config)
-
-// WithWindow sets the time window for rate limiting
-func WithWindow(d time.Duration) Option {
-	return func(c *Config) {
-		c.Window = d
+// New creates a new rate limiter with options.
+// Deprecated: Use NewPlugin() for plugin usage or NewLimiter() for direct usage.
+func New(opts ...Option) *Limiter {
+	cfg := DefaultConfig()
+	for _, opt := range opts {
+		opt(&cfg)
 	}
+	return NewLimiter(cfg, slog.Default())
 }
 
-// WithMaxRequests sets the maximum requests per window
-func WithMaxRequests(max int) Option {
-	return func(c *Config) {
-		c.MaxRequests = max
-	}
-}
-
-// WithLimit sets both window and max requests
-func WithLimit(max int, window time.Duration) Option {
-	return func(c *Config) {
-		c.MaxRequests = max
-		c.Window = window
-	}
-}
-
-// WithKeyFunc sets the key extraction function
-func WithKeyFunc(fn func(r *http.Request) string) Option {
-	return func(c *Config) {
-		c.KeyFunc = fn
-	}
-}
-
-// WithBackend sets a custom rate limiter backend (e.g., Redis)
-func WithBackend(backend kv.RateLimiter) Option {
-	return func(c *Config) {
-		c.Backend = backend
-	}
-}
-
-// WithTrustedProxies sets the trusted proxies for X-Forwarded-For/X-Real-IP.
-// When set, only requests from these IPs will have their proxy headers trusted.
-// This prevents IP spoofing attacks where clients send fake X-Forwarded-For.
-func WithTrustedProxies(proxies []string) Option {
-	return func(c *Config) {
-		c.TrustedProxies = proxies
-	}
-}
-
-// Allow checks if a request is allowed for the given key
-// Returns true if allowed, false if rate limit exceeded
+// Allow checks if a request is allowed for the given key.
+// Returns true if allowed, false if rate limit exceeded.
 func (l *Limiter) Allow(key string) bool {
 	return l.AllowN(key, 1)
 }
 
-// AllowN checks if n requests are allowed for the given key
+// AllowN checks if n requests are allowed for the given key.
 func (l *Limiter) AllowN(key string, n int) bool {
 	ctx := context.Background()
 	result, err := l.limiter.Allow(ctx, key, l.config.MaxRequests, l.config.Window, n)
 	if err != nil {
-		// On error, allow the request (fail open)
+		// On error, allow the request (fail open) but log the error
+		if l.logger != nil {
+			l.logger.Error("rate limiter backend error", "error", err, "key", key)
+		}
 		return true
 	}
 	return result.Allowed

@@ -36,6 +36,21 @@ cd minimal
 go run main.go
 ```
 
+### redis-ratelimit/
+
+Demonstrates distributed rate limiting with Redis. Essential for clustered deployments where multiple instances need to share rate limit state.
+
+```bash
+# Start Redis
+docker run -d -p 6379:6379 redis:alpine
+
+# Run the example
+cd redis-ratelimit
+go run main.go
+```
+
+Without a shared backend like Redis, each instance tracks limits independently, allowing users to bypass limits by hitting different instances.
+
 ## Running Examples
 
 Each example:
