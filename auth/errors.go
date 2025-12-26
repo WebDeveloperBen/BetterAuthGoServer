@@ -51,10 +51,11 @@ var (
 	ErrInvalidRequest   = errors.New("invalid request")
 
 	// Configuration errors
-	ErrMissingSecret  = errors.New("secret is required")
-	ErrSecretTooShort = errors.New("secret must be at least 32 bytes")
-	ErrMissingBaseURL = errors.New("base url is required")
-	ErrMissingStore   = errors.New("store is required")
+	ErrMissingSecret         = errors.New("secret is required")
+	ErrSecretTooShort        = errors.New("secret must be at least 32 bytes")
+	ErrMissingBaseURL        = errors.New("base url is required")
+	ErrMissingStore          = errors.New("store is required")
+	ErrOTPPluginNotConfigured = errors.New("otp plugin not configured")
 
 	// Admin errors
 	ErrAdminNotSupported = errors.New("admin operations not supported by store")

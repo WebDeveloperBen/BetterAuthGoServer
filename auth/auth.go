@@ -6,6 +6,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/defaults"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/events"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/otp"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
@@ -370,34 +372,17 @@ func (a *Auth) RequestPasswordReset(ctx context.Context, email string) error {
 		return nil
 	}
 
-	// Delete any existing password reset tokens
-	_ = a.store.DeleteVerificationsByUserIDAndType(ctx, user.ID, models.VerificationTypePasswordReset)
+	otpSvc := a.otpService()
+	if otpSvc == nil {
+		return ErrOTPPluginNotConfigured
+	}
 
-	// Create new token
-	rawToken, err := token.Generate()
+	rawToken, err := otpSvc.CreateToken(ctx, user.ID, otp.TokenTypePasswordReset)
 	if err != nil {
 		return err
 	}
 
-	tokenHash := a.tokenHasher.Hash(rawToken)
-	now := time.Now()
-
-	v := &models.Verification{
-		ID:        uuid.New().String(),
-		UserID:    user.ID,
-		TokenHash: tokenHash,
-		Type:      models.VerificationTypePasswordReset,
-		ExpiresAt: now.Add(a.config.PasswordResetExpiry),
-		CreatedAt: now,
-	}
-
-	if err := a.store.CreateVerification(ctx, v); err != nil {
-		return err
-	}
-
-	// Publish password reset requested event (includes raw token for sending email)
 	a.publishEvent(ctx, models.EventPasswordResetRequested, models.PasswordResetRequestedPayload{User: user, Token: rawToken})
-
 	return nil
 }
 
@@ -407,53 +392,24 @@ func (a *Auth) ConfirmPasswordReset(ctx context.Context, rawToken, newPassword s
 		return err
 	}
 
-	tokenHash := a.tokenHasher.Hash(rawToken)
+	otpSvc := a.otpService()
+	if otpSvc == nil {
+		return ErrOTPPluginNotConfigured
+	}
 
-	verification, err := a.store.GetVerificationByTokenHash(ctx, tokenHash)
+	tok, err := otpSvc.ConsumeToken(ctx, rawToken, otp.TokenTypePasswordReset)
 	if err != nil {
-		return err
-	}
-	if verification == nil {
-		return ErrVerificationNotFound
-	}
-	if verification.Type != models.VerificationTypePasswordReset {
-		return ErrVerificationNotFound
-	}
-	if verification.IsExpired() {
-		_ = a.store.DeleteVerification(ctx, verification.ID)
-		return ErrVerificationExpired
+		return a.mapOTPError(err)
 	}
 
-	// Get email account
-	account, err := a.store.GetAccountByUserIDAndProvider(ctx, verification.UserID, models.ProviderEmail)
-	if err != nil {
+	if err := a.updatePassword(ctx, tok.UserID, newPassword); err != nil {
 		return err
 	}
-	if account == nil {
-		return ErrAccountNotFound
-	}
-
-	// Hash new password
-	passwordHash, err := a.hasher.Hash(newPassword)
-	if err != nil {
-		return err
-	}
-
-	// Update password
-	account.PasswordHash = &passwordHash
-	account.UpdatedAt = time.Now()
-	if err := a.store.UpdateAccount(ctx, account); err != nil {
-		return err
-	}
-
-	// Delete the verification token
-	_ = a.store.DeleteVerification(ctx, verification.ID)
 
 	// Invalidate all sessions for security
-	_ = a.store.DeleteSessionsByUserID(ctx, verification.UserID)
+	_ = a.store.DeleteSessionsByUserID(ctx, tok.UserID)
 
-	// Publish password changed event
-	user, _ := a.store.GetUserByID(ctx, verification.UserID)
+	user, _ := a.store.GetUserByID(ctx, tok.UserID)
 	if user != nil {
 		a.publishEvent(ctx, models.EventPasswordChanged, models.PasswordChangedPayload{User: user})
 	}
@@ -467,7 +423,7 @@ func (a *Auth) ChangePassword(ctx context.Context, userID, oldPassword, newPassw
 		return err
 	}
 
-	// Get email account
+	// Get email account and verify old password
 	account, err := a.store.GetAccountByUserIDAndProvider(ctx, userID, models.ProviderEmail)
 	if err != nil {
 		return err
@@ -475,29 +431,17 @@ func (a *Auth) ChangePassword(ctx context.Context, userID, oldPassword, newPassw
 	if account == nil || account.PasswordHash == nil {
 		return ErrAccountNotFound
 	}
-
-	// Verify old password
 	if !a.hasher.Verify(oldPassword, *account.PasswordHash) {
 		return ErrInvalidCredentials
 	}
 
-	// Hash new password
-	passwordHash, err := a.hasher.Hash(newPassword)
-	if err != nil {
-		return err
-	}
-
-	// Update password
-	account.PasswordHash = &passwordHash
-	account.UpdatedAt = time.Now()
-	if err := a.store.UpdateAccount(ctx, account); err != nil {
+	if err := a.updatePassword(ctx, userID, newPassword); err != nil {
 		return err
 	}
 
 	// Invalidate all sessions for security
 	_ = a.store.DeleteSessionsByUserID(ctx, userID)
 
-	// Publish password changed event
 	user, _ := a.store.GetUserByID(ctx, userID)
 	if user != nil {
 		a.publishEvent(ctx, models.EventPasswordChanged, models.PasswordChangedPayload{User: user})
@@ -519,65 +463,37 @@ func (a *Auth) SendVerificationEmail(ctx context.Context, userID string) error {
 		return ErrEmailAlreadyVerified
 	}
 
-	// Delete any existing email verification tokens
-	_ = a.store.DeleteVerificationsByUserIDAndType(ctx, userID, models.VerificationTypeEmail)
+	otpSvc := a.otpService()
+	if otpSvc == nil {
+		return ErrOTPPluginNotConfigured
+	}
 
-	// Create new token
-	rawToken, err := token.Generate()
+	rawToken, err := otpSvc.CreateToken(ctx, userID, otp.TokenTypeEmailVerification)
 	if err != nil {
 		return err
 	}
 
-	tokenHash := a.tokenHasher.Hash(rawToken)
-	now := time.Now()
-
-	v := &models.Verification{
-		ID:        uuid.New().String(),
-		UserID:    userID,
-		TokenHash: tokenHash,
-		Type:      models.VerificationTypeEmail,
-		ExpiresAt: now.Add(a.config.EmailVerificationExpiry),
-		CreatedAt: now,
-	}
-
-	if err := a.store.CreateVerification(ctx, v); err != nil {
-		return err
-	}
-
-	// Publish email verification sent event (includes raw token for sending email)
 	a.publishEvent(ctx, models.EventEmailVerificationSent, models.EmailVerificationSentPayload{User: user, Token: rawToken})
-
 	return nil
 }
 
 // VerifyEmail verifies a user's email with the provided token
 func (a *Auth) VerifyEmail(ctx context.Context, rawToken string) error {
-	tokenHash := a.tokenHasher.Hash(rawToken)
+	otpSvc := a.otpService()
+	if otpSvc == nil {
+		return ErrOTPPluginNotConfigured
+	}
 
-	verification, err := a.store.GetVerificationByTokenHash(ctx, tokenHash)
+	tok, err := otpSvc.ConsumeToken(ctx, rawToken, otp.TokenTypeEmailVerification)
 	if err != nil {
-		return err
-	}
-	if verification == nil {
-		return ErrVerificationNotFound
-	}
-	if verification.Type != models.VerificationTypeEmail {
-		return ErrVerificationNotFound
-	}
-	if verification.IsExpired() {
-		_ = a.store.DeleteVerification(ctx, verification.ID)
-		return ErrVerificationExpired
+		return a.mapOTPError(err)
 	}
 
-	if err := a.store.SetEmailVerified(ctx, verification.UserID, true); err != nil {
+	if err := a.store.SetEmailVerified(ctx, tok.UserID, true); err != nil {
 		return err
 	}
 
-	// Delete the verification token
-	_ = a.store.DeleteVerification(ctx, verification.ID)
-
-	// Publish email verified event
-	user, _ := a.store.GetUserByID(ctx, verification.UserID)
+	user, _ := a.store.GetUserByID(ctx, tok.UserID)
 	if user != nil {
 		a.publishEvent(ctx, models.EventEmailVerified, models.EmailVerifiedPayload{User: user})
 	}
@@ -594,6 +510,37 @@ func (a *Auth) validatePassword(password string) error {
 	})
 }
 
+// updatePassword updates a user's password hash in their email account.
+func (a *Auth) updatePassword(ctx context.Context, userID, newPassword string) error {
+	account, err := a.store.GetAccountByUserIDAndProvider(ctx, userID, models.ProviderEmail)
+	if err != nil {
+		return err
+	}
+	if account == nil {
+		return ErrAccountNotFound
+	}
+
+	passwordHash, err := a.hasher.Hash(newPassword)
+	if err != nil {
+		return err
+	}
+
+	account.PasswordHash = &passwordHash
+	account.UpdatedAt = time.Now()
+	return a.store.UpdateAccount(ctx, account)
+}
+
+// mapOTPError maps OTP package errors to auth package errors.
+func (a *Auth) mapOTPError(err error) error {
+	if errors.Is(err, otp.ErrTokenNotFound) {
+		return ErrVerificationNotFound
+	}
+	if errors.Is(err, otp.ErrTokenExpired) {
+		return ErrVerificationExpired
+	}
+	return err
+}
+
 // Config returns the auth configuration (read-only access)
 func (a *Auth) Config() *config.Config {
 	return a.config
@@ -602,6 +549,22 @@ func (a *Auth) Config() *config.Config {
 // Store returns the store interface
 func (a *Auth) Store() models.Store {
 	return a.store
+}
+
+// otpService returns the OTP service from the plugin registry.
+// Returns nil if the OTP plugin is not registered.
+func (a *Auth) otpService() *otp.Service {
+	if a.plugins == nil {
+		return nil
+	}
+	p := a.plugins.Get(otp.PluginName)
+	if p == nil {
+		return nil
+	}
+	if otpPlugin, ok := p.(*otp.Plugin); ok {
+		return otpPlugin.Service()
+	}
+	return nil
 }
 
 // =============================================================================
