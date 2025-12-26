@@ -22,13 +22,13 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
-	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
 )
 
 // TestEnv holds the test environment
 type TestEnv struct {
 	Auth      *auth.Auth
-	Store     *db.Store
+	Store     *store.Store
 	DB        *bun.DB
 	Container testcontainers.Container
 	Server    *httptest.Server
@@ -71,8 +71,8 @@ func Setup(t *testing.T) *TestEnv {
 	}
 
 	// Create store and run migrations
-	store := db.New(bunDB)
-	if err := store.Migrate(ctx); err != nil {
+	dbStore := store.New(bunDB)
+	if err := dbStore.Migrate(ctx); err != nil {
 		bunDB.Close()
 		pgContainer.Terminate(ctx)
 		t.Fatalf("Failed to run migrations: %v", err)
@@ -83,7 +83,7 @@ func Setup(t *testing.T) *TestEnv {
 	// 1. Rate limit tests each create their own env with fresh rate limiters
 	// 2. Other tests (like max sessions) need to make many auth requests
 	// Rate limiting is tested separately with RateLimitEnabled=true
-	authInstance, err := auth.New(store,
+	authInstance, err := auth.New(dbStore,
 		config.WithSecret("test-secret-key-32-characters!!!"), // Exactly 32 bytes
 		config.WithBaseURL("http://localhost:3000"),
 		config.WithSessionDuration(24*time.Hour),
@@ -106,7 +106,7 @@ func Setup(t *testing.T) *TestEnv {
 
 	return &TestEnv{
 		Auth:      authInstance,
-		Store:     store,
+		Store:     dbStore,
 		DB:        bunDB,
 		Container: pgContainer,
 		Server:    server,
@@ -151,15 +151,15 @@ func SetupWithRateLimiting(t *testing.T, authRateLimit int) *TestEnv {
 	}
 
 	// Create store and run migrations
-	store := db.New(bunDB)
-	if err := store.Migrate(ctx); err != nil {
+	dbStore := store.New(bunDB)
+	if err := dbStore.Migrate(ctx); err != nil {
 		bunDB.Close()
 		pgContainer.Terminate(ctx)
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	// Create auth instance with rate limiting
-	authInstance, err := auth.New(store,
+	authInstance, err := auth.New(dbStore,
 		config.WithSecret("test-secret-key-32-characters!!!"),
 		config.WithBaseURL("http://localhost:3000"),
 		config.WithSessionDuration(24*time.Hour),
@@ -182,7 +182,7 @@ func SetupWithRateLimiting(t *testing.T, authRateLimit int) *TestEnv {
 
 	return &TestEnv{
 		Auth:      authInstance,
-		Store:     store,
+		Store:     dbStore,
 		DB:        bunDB,
 		Container: pgContainer,
 		Server:    server,

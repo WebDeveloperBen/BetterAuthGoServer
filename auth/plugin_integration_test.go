@@ -1,8 +1,6 @@
 package auth
 
 import (
-	"context"
-	"errors"
 	"net/http"
 	"testing"
 
@@ -95,76 +93,22 @@ func TestPluginIntegration_Middleware(t *testing.T) {
 	t.Skip("Plugin middleware is tested via handlers package and e2e tests")
 }
 
-// validatorPlugin implements ValidatorProvider
-type validatorPlugin struct {
-	testPlugin
-	signUpError error
-	signInError error
-}
-
-func (p *validatorPlugin) ValidateSignUp(ctx context.Context, email, password, name string) error {
-	return p.signUpError
-}
-
-func (p *validatorPlugin) ValidateSignIn(ctx context.Context, email string) error {
-	return p.signInError
-}
+// Note: ValidatorProvider tests have been removed since SignUp/SignIn are now
+// provided by the password plugin. Validator integration is tested via e2e tests
+// that exercise the password plugin's HTTP endpoints.
 
 func TestPluginIntegration_ValidateSignUp(t *testing.T) {
-	store := newMockStoreForMiddleware()
-	registry := plugin.NewRegistry(nil)
-
-	expectedErr := errors.New("signup blocked by plugin")
-	vp := &validatorPlugin{signUpError: expectedErr}
-	registry.Register(vp)
-
-	a, err := New(store,
-		config.WithSecret("super-secret-key-that-is-long-enough-for-testing"),
-		config.WithBaseURL("http://localhost:8080"),
-		config.WithPlugins(registry),
-		config.WithRateLimit(false, 0, 0),
-		config.WithPasswordComplexity(false),
-	)
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
-	defer a.Close()
-
-	_, _, err = a.SignUp(context.Background(), SignUpRequest{
-		Email:    "test@example.com",
-		Password: "password123",
-		Name:     "Test",
-	}, nil)
-
-	if err != expectedErr {
-		t.Errorf("Expected error %v, got %v", expectedErr, err)
-	}
+	// SignUp is now handled by the password plugin, not core auth.
+	// Validator integration is tested via e2e tests that exercise
+	// the password plugin's HTTP endpoints.
+	t.Skip("SignUp moved to password plugin - validator integration tested via e2e")
 }
 
 func TestPluginIntegration_ValidateSignIn(t *testing.T) {
-	store := newMockStoreForMiddleware()
-	registry := plugin.NewRegistry(nil)
-
-	expectedErr := errors.New("signin blocked by plugin")
-	vp := &validatorPlugin{signInError: expectedErr}
-	registry.Register(vp)
-
-	a, err := New(store,
-		config.WithSecret("super-secret-key-that-is-long-enough-for-testing"),
-		config.WithBaseURL("http://localhost:8080"),
-		config.WithPlugins(registry),
-		config.WithRateLimit(false, 0, 0),
-	)
-	if err != nil {
-		t.Fatalf("New() error: %v", err)
-	}
-	defer a.Close()
-
-	_, _, err = a.SignIn(context.Background(), "test@example.com", "password", nil)
-
-	if err != expectedErr {
-		t.Errorf("Expected error %v, got %v", expectedErr, err)
-	}
+	// SignIn is now handled by the password plugin, not core auth.
+	// Validator integration is tested via e2e tests that exercise
+	// the password plugin's HTTP endpoints.
+	t.Skip("SignIn moved to password plugin - validator integration tested via e2e")
 }
 
 func TestWithPlugins(t *testing.T) {

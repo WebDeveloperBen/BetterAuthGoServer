@@ -40,5 +40,4 @@ Thumbs.db
 debug
 *.log
 auth.db
-migrate
 docs/

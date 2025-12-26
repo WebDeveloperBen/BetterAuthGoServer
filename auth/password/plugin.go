@@ -1,0 +1,179 @@
+// Package password provides email/password authentication as a plugin.
+//
+// This plugin handles:
+//   - User sign-up with email/password
+//   - User sign-in with email/password
+//   - Password change (authenticated)
+//   - Password reset flow (via OTP tokens)
+//
+// Usage:
+//
+//	authService.Use(password.NewPlugin(
+//	    password.WithMinLength(10),
+//	    password.WithComplexity(true),
+//	))
+package password
+
+import (
+	"context"
+
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/otp"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
+)
+
+const (
+	// PluginName is the unique identifier for this plugin.
+	PluginName = "password"
+)
+
+// Plugin implements password authentication as a plugin.
+type Plugin struct {
+	ctx           plugin.Context
+	service       *Service
+	auth          AuthProvider
+	sessionCookie SessionCookieSetter
+	sessionGetter SessionGetter
+	opts          []Option
+}
+
+// Compile-time interface checks.
+var (
+	_ plugin.Plugin         = (*Plugin)(nil)
+	_ plugin.RoutesProvider = (*Plugin)(nil)
+)
+
+// NewPlugin creates a new password authentication plugin with the given options.
+func NewPlugin(opts ...Option) *Plugin {
+	return &Plugin{opts: opts}
+}
+
+// Name returns the plugin identifier.
+func (p *Plugin) Name() string {
+	return PluginName
+}
+
+// Init initializes the plugin with the auth context.
+func (p *Plugin) Init(ctx plugin.Context) error {
+	p.ctx = ctx
+
+	// Require database access
+	if ctx.DB == nil {
+		ctx.Logger.Warn("password plugin: no database available, plugin disabled")
+		return nil
+	}
+
+	// Type-assert to get AuthProvider
+	auth, ok := ctx.Auth.(AuthProvider)
+	if !ok {
+		ctx.Logger.Warn("password plugin: auth doesn't support required interface, plugin disabled")
+		return nil
+	}
+	p.auth = auth
+
+	// Try to get SessionCookieSetter (optional)
+	if setter, ok := ctx.Auth.(SessionCookieSetter); ok {
+		p.sessionCookie = setter
+	}
+
+	// Try to get SessionGetter (optional, required for password change)
+	if getter, ok := ctx.Auth.(SessionGetter); ok {
+		p.sessionGetter = getter
+	}
+
+	// Build config from options
+	config := DefaultConfig()
+	for _, opt := range p.opts {
+		opt(&config)
+	}
+
+	// Try to find OTP service for password reset
+	var otpSvc OTPService
+	if registry, ok := ctx.Auth.(pluginRegistryGetter); ok {
+		if otpPlugin := registry.GetPlugin(otp.PluginName); otpPlugin != nil {
+			if op, ok := otpPlugin.(*otp.Plugin); ok && op.IsEnabled() {
+				otpSvc = &otpServiceAdapter{svc: op.Service()}
+			}
+		}
+	}
+
+	// Create the service
+	p.service = NewService(
+		ctx.DB,
+		auth,
+		otpSvc,
+		ctx.EventBus,
+		config,
+		ctx.Logger,
+	)
+
+	ctx.Logger.Info("password plugin initialized")
+	return nil
+}
+
+// Close cleans up plugin resources.
+func (p *Plugin) Close() error {
+	return nil
+}
+
+// Routes returns the password authentication routes.
+func (p *Plugin) Routes() []plugin.Route {
+	if p.service == nil {
+		return nil
+	}
+
+	return []plugin.Route{
+		{
+			Method:  "POST",
+			Path:    "/sign-up",
+			Handler: p.handleSignUp(),
+		},
+		{
+			Method:  "POST",
+			Path:    "/sign-in",
+			Handler: p.handleSignIn(),
+		},
+		{
+			Method:  "POST",
+			Path:    "/password/reset",
+			Handler: p.handlePasswordReset(),
+		},
+		{
+			Method:  "POST",
+			Path:    "/password/confirm",
+			Handler: p.handlePasswordConfirm(),
+		},
+		{
+			Method:      "POST",
+			Path:        "/password/change",
+			Handler:     p.handlePasswordChange(),
+			RequireAuth: true,
+		},
+	}
+}
+
+// IsEnabled returns true if the plugin is properly initialized.
+func (p *Plugin) IsEnabled() bool {
+	return p.service != nil
+}
+
+// pluginRegistryGetter is an interface for getting plugins from the registry.
+type pluginRegistryGetter interface {
+	GetPlugin(name string) plugin.Plugin
+}
+
+// otpServiceAdapter adapts otp.Service to our OTPService interface.
+type otpServiceAdapter struct {
+	svc *otp.Service
+}
+
+func (a *otpServiceAdapter) CreateToken(ctx context.Context, userID string, tokenType string) (string, error) {
+	return a.svc.CreateToken(ctx, userID, otp.TokenType(tokenType))
+}
+
+func (a *otpServiceAdapter) ConsumeToken(ctx context.Context, rawToken string, tokenType string) (*OTPToken, error) {
+	tok, err := a.svc.ConsumeToken(ctx, rawToken, otp.TokenType(tokenType))
+	if err != nil {
+		return nil, err
+	}
+	return &OTPToken{UserID: tok.UserID}, nil
+}

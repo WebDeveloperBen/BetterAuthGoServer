@@ -7,6 +7,7 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/csrf"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/otp"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/password"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/ratelimit"
 )
@@ -16,6 +17,7 @@ import (
 //
 // Default plugins include:
 //   - OTP (always enabled - required for password reset and email verification)
+//   - Password authentication (if PasswordAuthEnabled)
 //   - Rate limiting (if RateLimitEnabled)
 //   - CSRF protection (if CSRFEnabled)
 //
@@ -28,6 +30,17 @@ func Plugins(cfg *config.Config) []plugin.Plugin {
 		otp.WithPasswordResetExpiry(cfg.PasswordResetExpiry),
 		otp.WithEmailVerificationExpiry(cfg.EmailVerificationExpiry),
 	))
+
+	// Password authentication plugin
+	if cfg.PasswordAuthEnabled {
+		plugins = append(plugins, password.NewPlugin(
+			password.WithMinLength(cfg.PasswordMinLength),
+			password.WithMaxLength(cfg.PasswordMaxLength),
+			password.WithComplexity(cfg.RequirePasswordComplexity),
+			password.WithResetExpiry(cfg.PasswordResetExpiry),
+			password.WithAutoSignIn(cfg.AutoSignIn),
+		))
+	}
 
 	// Rate limiting plugin
 	if cfg.RateLimitEnabled {

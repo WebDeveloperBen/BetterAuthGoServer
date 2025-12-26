@@ -61,6 +61,15 @@ func WithSessionCookie(name string) Option {
 	}
 }
 
+// WithPasswordAuth enables or disables the password authentication plugin.
+// When disabled, only OAuth or other authentication methods will be available.
+// Default: enabled.
+func WithPasswordAuth(enabled bool) Option {
+	return func(c *Config) {
+		c.PasswordAuthEnabled = enabled
+	}
+}
+
 // WithPasswordPolicy sets the min and max password lengths
 func WithPasswordPolicy(min, max int) Option {
 	return func(c *Config) {

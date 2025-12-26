@@ -177,134 +177,6 @@ func (a *Auth) runCleanup() {
 	}
 }
 
-// SignUpRequest contains the data needed to sign up a new user
-type SignUpRequest struct {
-	Email    string
-	Password string
-	Name     string
-}
-
-// SignUp creates a new user with email/password authentication
-func (a *Auth) SignUp(ctx context.Context, req SignUpRequest, r *http.Request) (*models.User, *models.Session, error) {
-	// Validate password
-	if err := a.validatePassword(req.Password); err != nil {
-		return nil, nil, err
-	}
-
-	// Run plugin validators
-	if a.plugins != nil {
-		if err := a.plugins.ValidateSignUp(ctx, req.Email, req.Password, req.Name); err != nil {
-			return nil, nil, err
-		}
-	}
-
-	// Check if user already exists
-	existing, err := a.store.GetUserByEmail(ctx, req.Email)
-	if err != nil {
-		return nil, nil, err
-	}
-	if existing != nil {
-		return nil, nil, ErrUserAlreadyExists
-	}
-
-	// Hash password
-	passwordHash, err := a.hasher.Hash(req.Password)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	now := time.Now()
-
-	// Create user
-	user := &models.User{
-		ID:            uuid.New().String(),
-		Email:         req.Email,
-		Name:          req.Name,
-		EmailVerified: false,
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	}
-	if err := a.store.CreateUser(ctx, user); err != nil {
-		return nil, nil, err
-	}
-
-	// Create email account
-	account := &models.Account{
-		ID:           uuid.New().String(),
-		UserID:       user.ID,
-		Provider:     models.ProviderEmail,
-		PasswordHash: &passwordHash,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
-	if err := a.store.CreateAccount(ctx, account); err != nil {
-		// Rollback user creation
-		_ = a.store.DeleteUser(ctx, user.ID)
-		return nil, nil, err
-	}
-
-	// Publish user created event
-	a.publishEvent(ctx, models.EventUserCreated, models.UserCreatedPayload{User: user})
-
-	// Auto sign-in if enabled
-	var session *models.Session
-	if a.config.AutoSignIn {
-		session, err = a.createSession(ctx, user.ID, r)
-		if err != nil {
-			return nil, nil, err
-		}
-		a.publishEvent(ctx, models.EventSignedIn, models.SignedInPayload{User: user, Session: session})
-	}
-
-	return user, session, nil
-}
-
-// SignIn authenticates a user with email/password
-func (a *Auth) SignIn(ctx context.Context, email, password string, r *http.Request) (*models.User, *models.Session, error) {
-	// Run plugin validators before sign in
-	if a.plugins != nil {
-		if err := a.plugins.ValidateSignIn(ctx, email); err != nil {
-			return nil, nil, err
-		}
-	}
-
-	// Get user
-	user, err := a.store.GetUserByEmail(ctx, email)
-	if err != nil {
-		return nil, nil, err
-	}
-	if user == nil {
-		// Prevent user enumeration - still hash the password
-		_, _ = a.hasher.Hash(password)
-		return nil, nil, ErrInvalidCredentials
-	}
-
-	// Get email account
-	account, err := a.store.GetAccountByUserIDAndProvider(ctx, user.ID, models.ProviderEmail)
-	if err != nil {
-		return nil, nil, err
-	}
-	if account == nil || account.PasswordHash == nil {
-		return nil, nil, ErrInvalidCredentials
-	}
-
-	// Verify password
-	if !a.hasher.Verify(password, *account.PasswordHash) {
-		return nil, nil, ErrInvalidCredentials
-	}
-
-	// Create session
-	session, err := a.createSession(ctx, user.ID, r)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Publish signed in event
-	a.publishEvent(ctx, models.EventSignedIn, models.SignedInPayload{User: user, Session: session})
-
-	return user, session, nil
-}
-
 // SignOut signs out the current session
 func (a *Auth) SignOut(ctx context.Context, sessionID string) error {
 	session, err := a.store.GetSessionByID(ctx, sessionID)
@@ -361,95 +233,6 @@ func (a *Auth) GetUserByEmail(ctx context.Context, email string) (*models.User, 
 	return user, nil
 }
 
-// RequestPasswordReset initiates a password reset flow
-func (a *Auth) RequestPasswordReset(ctx context.Context, email string) error {
-	user, err := a.store.GetUserByEmail(ctx, email)
-	if err != nil {
-		return err
-	}
-	if user == nil {
-		// Don't reveal if user exists
-		return nil
-	}
-
-	otpSvc := a.otpService()
-	if otpSvc == nil {
-		return ErrOTPPluginNotConfigured
-	}
-
-	rawToken, err := otpSvc.CreateToken(ctx, user.ID, otp.TokenTypePasswordReset)
-	if err != nil {
-		return err
-	}
-
-	a.publishEvent(ctx, models.EventPasswordResetRequested, models.PasswordResetRequestedPayload{User: user, Token: rawToken})
-	return nil
-}
-
-// ConfirmPasswordReset completes a password reset
-func (a *Auth) ConfirmPasswordReset(ctx context.Context, rawToken, newPassword string) error {
-	if err := a.validatePassword(newPassword); err != nil {
-		return err
-	}
-
-	otpSvc := a.otpService()
-	if otpSvc == nil {
-		return ErrOTPPluginNotConfigured
-	}
-
-	tok, err := otpSvc.ConsumeToken(ctx, rawToken, otp.TokenTypePasswordReset)
-	if err != nil {
-		return a.mapOTPError(err)
-	}
-
-	if err := a.updatePassword(ctx, tok.UserID, newPassword); err != nil {
-		return err
-	}
-
-	// Invalidate all sessions for security
-	_ = a.store.DeleteSessionsByUserID(ctx, tok.UserID)
-
-	user, _ := a.store.GetUserByID(ctx, tok.UserID)
-	if user != nil {
-		a.publishEvent(ctx, models.EventPasswordChanged, models.PasswordChangedPayload{User: user})
-	}
-
-	return nil
-}
-
-// ChangePassword changes a user's password (requires current password)
-func (a *Auth) ChangePassword(ctx context.Context, userID, oldPassword, newPassword string) error {
-	if err := a.validatePassword(newPassword); err != nil {
-		return err
-	}
-
-	// Get email account and verify old password
-	account, err := a.store.GetAccountByUserIDAndProvider(ctx, userID, models.ProviderEmail)
-	if err != nil {
-		return err
-	}
-	if account == nil || account.PasswordHash == nil {
-		return ErrAccountNotFound
-	}
-	if !a.hasher.Verify(oldPassword, *account.PasswordHash) {
-		return ErrInvalidCredentials
-	}
-
-	if err := a.updatePassword(ctx, userID, newPassword); err != nil {
-		return err
-	}
-
-	// Invalidate all sessions for security
-	_ = a.store.DeleteSessionsByUserID(ctx, userID)
-
-	user, _ := a.store.GetUserByID(ctx, userID)
-	if user != nil {
-		a.publishEvent(ctx, models.EventPasswordChanged, models.PasswordChangedPayload{User: user})
-	}
-
-	return nil
-}
-
 // SendVerificationEmail sends an email verification token
 func (a *Auth) SendVerificationEmail(ctx context.Context, userID string) error {
 	user, err := a.store.GetUserByID(ctx, userID)
@@ -499,35 +282,6 @@ func (a *Auth) VerifyEmail(ctx context.Context, rawToken string) error {
 	}
 
 	return nil
-}
-
-// validatePassword checks if a password meets the requirements
-func (a *Auth) validatePassword(password string) error {
-	return ValidatePassword(password, PasswordValidationConfig{
-		MinLength:         a.config.PasswordMinLength,
-		MaxLength:         a.config.PasswordMaxLength,
-		RequireComplexity: a.config.RequirePasswordComplexity,
-	})
-}
-
-// updatePassword updates a user's password hash in their email account.
-func (a *Auth) updatePassword(ctx context.Context, userID, newPassword string) error {
-	account, err := a.store.GetAccountByUserIDAndProvider(ctx, userID, models.ProviderEmail)
-	if err != nil {
-		return err
-	}
-	if account == nil {
-		return ErrAccountNotFound
-	}
-
-	passwordHash, err := a.hasher.Hash(newPassword)
-	if err != nil {
-		return err
-	}
-
-	account.PasswordHash = &passwordHash
-	account.UpdatedAt = time.Now()
-	return a.store.UpdateAccount(ctx, account)
 }
 
 // mapOTPError maps OTP package errors to auth package errors.
@@ -660,6 +414,28 @@ func (a *Auth) GetUserFromRequest(r *http.Request) (*plugin.User, error) {
 		return nil, ErrForbidden
 	}
 	return toPluginUser(user), nil
+}
+
+// GetSessionFromRequest retrieves the session from the request context.
+// Implements password.SessionGetter.
+func (a *Auth) GetSessionFromRequest(r *http.Request) *plugin.SessionInfo {
+	session := SessionFromContext(r.Context())
+	if session == nil {
+		return nil
+	}
+	return &plugin.SessionInfo{
+		ID:     session.ID,
+		UserID: session.UserID,
+	}
+}
+
+// GetPlugin returns a plugin by name from the registry.
+// Implements password.pluginRegistryGetter.
+func (a *Auth) GetPlugin(name string) plugin.Plugin {
+	if a.plugins == nil {
+		return nil
+	}
+	return a.plugins.Get(name)
 }
 
 // GetPluginUser retrieves a user by ID and converts to plugin.User.

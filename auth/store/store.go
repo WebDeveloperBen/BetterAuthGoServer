@@ -1,6 +1,6 @@
-// Package db provides database implementations for the auth package using Bun ORM.
+// Package store provides database implementations for the auth package using Bun ORM.
 // It supports PostgreSQL and SQLite with SQL-based migrations.
-package db
+package store
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/migrate"
 
-	"github.com/webdeveloperben/BetterAuthGoServer/db/migrations"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/store/migrations"
 )
 
 // Store implements auth.Store using Bun (supports PostgreSQL, SQLite, MySQL)

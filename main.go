@@ -22,7 +22,7 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/providers"
-	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
 )
 
 func main() {
@@ -40,13 +40,13 @@ func main() {
 	defer bunDB.Close()
 
 	// Create store and run migrations
-	store := db.New(bunDB)
-	if err := store.Migrate(context.Background()); err != nil {
+	dbStore := store.New(bunDB)
+	if err := dbStore.Migrate(context.Background()); err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
 	// Create auth instance
-	authService, err := auth.New(store,
+	authService, err := auth.New(dbStore,
 		config.WithSecret(secret),
 		config.WithBaseURL(baseURL),
 		config.WithTrustedOrigins(baseURL, "http://localhost:3000"),

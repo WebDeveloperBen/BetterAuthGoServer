@@ -26,6 +26,7 @@ type Config struct {
 	SessionCookie   string
 
 	// Password
+	PasswordAuthEnabled       bool // Enable password authentication plugin (default: true)
 	PasswordMinLength         int
 	PasswordMaxLength         int
 	RequirePasswordComplexity bool // Require uppercase, lowercase, digit, and special char
@@ -91,6 +92,7 @@ func NewConfig(opts ...Option) *Config {
 		SessionCookie:   "session",
 
 		// Password
+		PasswordAuthEnabled:       true,
 		PasswordMinLength:         8,
 		PasswordMaxLength:         128,
 		RequirePasswordComplexity: true,

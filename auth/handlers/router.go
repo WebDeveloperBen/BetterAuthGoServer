@@ -16,16 +16,12 @@ func NewRouter(a *auth.Auth) http.Handler {
 	mux := http.NewServeMux()
 
 	// Public endpoints (no auth required)
-	mux.HandleFunc("POST /sign-up", wrapHandler(a, "/sign-up", SignUp(a)))
-	mux.HandleFunc("POST /sign-in", wrapHandler(a, "/sign-in", SignIn(a)))
-	mux.HandleFunc("POST /password/reset", wrapHandler(a, "/password/reset", RequestPasswordReset(a)))
-	mux.HandleFunc("POST /password/confirm", wrapHandler(a, "/password/confirm", ConfirmPasswordReset(a)))
+	// Note: /sign-up, /sign-in, /password/* are now provided by the password plugin
 	mux.HandleFunc("GET /email/verify", wrapHandler(a, "/email/verify", VerifyEmail(a)))
 
 	// Protected endpoints (require auth)
 	mux.Handle("POST /sign-out", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/sign-out", SignOut(a)))))
 	mux.Handle("GET /me", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/me", GetMe(a)))))
-	mux.Handle("POST /password/change", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/password/change", ChangePassword(a)))))
 	mux.Handle("POST /email/verify/send", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/email/verify/send", SendVerificationEmail(a)))))
 	mux.Handle("GET /sessions", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/sessions", ListSessions(a)))))
 	mux.Handle("DELETE /sessions", a.RequireAuth(http.HandlerFunc(wrapHandler(a, "/sessions", RevokeAllSessions(a)))))

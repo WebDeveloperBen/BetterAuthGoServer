@@ -1,4 +1,4 @@
-package db_test
+package store_test
 
 import (
 	"context"
@@ -14,13 +14,13 @@ import (
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
 
-	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
 )
 
 // testDB holds the test database connection and cleanup function
 type testDB struct {
 	DB        *bun.DB
-	Store     *db.Store
+	Store     *store.Store
 	Container testcontainers.Container
 }
 
@@ -63,8 +63,8 @@ func setupTestDB(t *testing.T) *testDB {
 	}
 
 	// Create store and run migrations
-	store := db.New(bunDB)
-	if err := store.Migrate(ctx); err != nil {
+	s := store.New(bunDB)
+	if err := s.Migrate(ctx); err != nil {
 		bunDB.Close()
 		pgContainer.Terminate(ctx)
 		t.Fatalf("Failed to run migrations: %v", err)
@@ -72,7 +72,7 @@ func setupTestDB(t *testing.T) *testDB {
 
 	return &testDB{
 		DB:        bunDB,
-		Store:     store,
+		Store:     s,
 		Container: pgContainer,
 	}
 }
@@ -97,7 +97,7 @@ func (tdb *testDB) truncateTables(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
 
-	tables := []string{"oauth_states", "verifications", "sessions", "accounts", "users"}
+	tables := []string{"verifications", "sessions", "accounts", "users"}
 	for _, table := range tables {
 		_, err := tdb.DB.ExecContext(ctx, fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table))
 		if err != nil {

@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -8,7 +9,7 @@ import (
 )
 
 const (
-	// PluginName is the identifier for the admin plugin
+	// PluginName is the identifier for the admin plugin.
 	PluginName = "admin"
 )
 
@@ -16,6 +17,7 @@ const (
 // It adds routes for user management operations and admin middleware.
 type Plugin struct {
 	ctx          plugin.Context
+	logger       *slog.Logger
 	service      *Service
 	handlers     *handlers
 	userProvider UserProvider
@@ -42,20 +44,30 @@ func (p *Plugin) Name() string {
 func (p *Plugin) Init(ctx plugin.Context) error {
 	p.ctx = ctx
 
+	// Use provided logger or default
+	if ctx.Logger != nil {
+		p.logger = ctx.Logger
+	} else {
+		p.logger = slog.Default()
+	}
+
 	if ctx.DB == nil {
-		// No database - admin plugin won't work
+		p.logger.Warn("admin plugin: no database available, plugin disabled")
 		return nil
 	}
 
 	// Type-assert to get UserProvider for middleware
 	userProvider, ok := ctx.Auth.(UserProvider)
 	if !ok {
-		return nil // Auth doesn't support user provider operations
+		p.logger.Warn("admin plugin: auth doesn't support UserProvider, plugin disabled")
+		return nil
 	}
 	p.userProvider = userProvider
 
-	p.service = NewService(ctx.DB)
+	p.service = NewService(ctx.DB, p.logger)
 	p.handlers = newHandlers(p.service, ctx.Auth)
+
+	p.logger.Info("admin plugin initialized")
 	return nil
 }
 
@@ -72,20 +84,22 @@ func (p *Plugin) Routes() []plugin.Route {
 		return nil
 	}
 
+	adminMw := requireAdmin(p.userProvider, p.logger)
+
 	return []plugin.Route{
 		{
 			Method:      "GET",
 			Path:        "/admin/users",
 			Handler:     p.handlers.listUsers,
 			RequireAuth: true,
-			Middleware:  []func(http.Handler) http.Handler{requireAdmin(p.userProvider)},
+			Middleware:  []func(http.Handler) http.Handler{adminMw},
 		},
 		{
 			Method:      "GET",
 			Path:        "/admin/users/",
 			Handler:     p.handleUserRoutes,
 			RequireAuth: true,
-			Middleware:  []func(http.Handler) http.Handler{requireAdmin(p.userProvider)},
+			Middleware:  []func(http.Handler) http.Handler{adminMw},
 		},
 	}
 }
@@ -139,8 +153,11 @@ func (p *Plugin) handleUserRoutes(w http.ResponseWriter, r *http.Request) {
 
 // RequireAdmin returns middleware that requires admin role.
 // This can be used by other packages to protect routes.
-func RequireAdmin(auth UserProvider) func(http.Handler) http.Handler {
-	return requireAdmin(auth)
+func RequireAdmin(auth UserProvider, logger *slog.Logger) func(http.Handler) http.Handler {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return requireAdmin(auth, logger)
 }
 
 // parseUserPath extracts the user ID and optional action from the path

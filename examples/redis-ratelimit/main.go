@@ -32,7 +32,7 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
 	kvredis "github.com/webdeveloperben/BetterAuthGoServer/auth/kv/redis"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/ratelimit"
-	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -47,8 +47,8 @@ func main() {
 	defer bunDB.Close()
 
 	// 2. Create store and run migrations
-	store := db.New(bunDB)
-	if err := store.Migrate(context.Background()); err != nil {
+	dbStore := store.New(bunDB)
+	if err := dbStore.Migrate(context.Background()); err != nil {
 		log.Fatal(err)
 	}
 
@@ -89,7 +89,7 @@ func main() {
 	redisRateLimiter := kvredis.NewRateLimiter(redisStore)
 
 	// 6. Create auth instance WITHOUT default plugins (we'll add our own)
-	authService, err := auth.New(store,
+	authService, err := auth.New(dbStore,
 		config.WithSecret(secret),
 		config.WithBaseURL(baseURL),
 		config.WithoutDefaults(), // Disable default in-memory rate limiter

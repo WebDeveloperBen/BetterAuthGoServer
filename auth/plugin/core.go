@@ -60,6 +60,13 @@ type Session struct {
 	ExpiresAt time.Time
 }
 
+// SessionInfo is a minimal session info for plugins that only need ID and UserID.
+// This is used by password plugin's SessionGetter interface.
+type SessionInfo struct {
+	ID     string
+	UserID string
+}
+
 // IsExpired returns true if the session has expired
 func (s *Session) IsExpired() bool {
 	return time.Now().After(s.ExpiresAt)

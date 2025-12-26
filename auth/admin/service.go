@@ -2,28 +2,22 @@ package admin
 
 import (
 	"context"
-	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/uptrace/bun"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
 
-// Common errors
-var (
-	ErrUserNotFound       = errors.New("user not found")
-	ErrInvalidRequest     = errors.New("invalid request")
-	ErrAdminNotSupported  = errors.New("admin operations not supported by store")
-)
-
 // Service provides admin operations using the database directly.
 type Service struct {
-	db *bun.DB
+	db     *bun.DB
+	logger *slog.Logger
 }
 
 // NewService creates a new admin service.
-func NewService(db *bun.DB) *Service {
-	return &Service{db: db}
+func NewService(db *bun.DB, logger *slog.Logger) *Service {
+	return &Service{db: db, logger: logger}
 }
 
 // ListUsers returns a paginated list of users.
@@ -116,13 +110,13 @@ func (s *Service) UpdateUser(ctx context.Context, userID string, updates AdminUs
 // DeleteUser deletes a user and all associated data.
 func (s *Service) DeleteUser(ctx context.Context, userID string) error {
 	// Check user exists
-	_, err := s.GetUser(ctx, userID)
+	user, err := s.GetUser(ctx, userID)
 	if err != nil {
 		return err
 	}
 
 	// Delete in transaction
-	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+	err = s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		// Delete sessions
 		_, err := tx.NewDelete().
 			Model((*models.Session)(nil)).
@@ -148,17 +142,23 @@ func (s *Service) DeleteUser(ctx context.Context, userID string) error {
 			Exec(ctx)
 		return err
 	})
+
+	if err == nil {
+		s.logger.Info("user deleted by admin", "user_id", userID, "email", user.Email)
+	}
+
+	return err
 }
 
 // BanUser bans a user and revokes all their sessions.
 func (s *Service) BanUser(ctx context.Context, userID, reason string) error {
 	// Check user exists
-	_, err := s.GetUser(ctx, userID)
+	user, err := s.GetUser(ctx, userID)
 	if err != nil {
 		return err
 	}
 
-	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+	err = s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		// Update user ban status
 		var banReason *string
 		if reason != "" {
@@ -183,12 +183,18 @@ func (s *Service) BanUser(ctx context.Context, userID, reason string) error {
 			Exec(ctx)
 		return err
 	})
+
+	if err == nil {
+		s.logger.Info("user banned by admin", "user_id", userID, "email", user.Email, "reason", reason)
+	}
+
+	return err
 }
 
 // UnbanUser removes a ban from a user.
 func (s *Service) UnbanUser(ctx context.Context, userID string) error {
 	// Check user exists
-	_, err := s.GetUser(ctx, userID)
+	user, err := s.GetUser(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -200,6 +206,11 @@ func (s *Service) UnbanUser(ctx context.Context, userID string) error {
 		Set("updated_at = ?", time.Now()).
 		Where("id = ?", userID).
 		Exec(ctx)
+
+	if err == nil {
+		s.logger.Info("user unbanned by admin", "user_id", userID, "email", user.Email)
+	}
+
 	return err
 }
 
@@ -210,10 +221,12 @@ func (s *Service) SetUserRole(ctx context.Context, userID, role string) error {
 	}
 
 	// Check user exists
-	_, err := s.GetUser(ctx, userID)
+	user, err := s.GetUser(ctx, userID)
 	if err != nil {
 		return err
 	}
+
+	oldRole := user.Role
 
 	_, err = s.db.NewUpdate().
 		Model((*models.User)(nil)).
@@ -221,5 +234,10 @@ func (s *Service) SetUserRole(ctx context.Context, userID, role string) error {
 		Set("updated_at = ?", time.Now()).
 		Where("id = ?", userID).
 		Exec(ctx)
+
+	if err == nil {
+		s.logger.Info("user role changed by admin", "user_id", userID, "email", user.Email, "old_role", oldRole, "new_role", role)
+	}
+
 	return err
 }

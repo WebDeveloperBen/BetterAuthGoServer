@@ -40,7 +40,7 @@ import (
     "github.com/webdeveloperben/BetterAuthGoServer/auth"
     "github.com/webdeveloperben/BetterAuthGoServer/auth/config"
     "github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
-    "github.com/webdeveloperben/BetterAuthGoServer/db"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/store"
 )
 
 func main() {
@@ -48,11 +48,11 @@ func main() {
     bunDB := connectToDatabase() // your database connection
 
     // 2. Create store and run migrations
-    store := db.New(bunDB)
-    store.Migrate(context.Background())
+    dbStore := store.New(bunDB)
+    dbStore.Migrate(context.Background())
 
     // 3. Create auth instance with config options
-    authService, err := auth.New(store,
+    authService, err := auth.New(dbStore,
         config.WithSecret("your-secret-key-minimum-32-characters!"),
         config.WithBaseURL("http://localhost:8080"),
     )
@@ -451,9 +451,9 @@ auth/                  # Main package - public API
 ├── admin/             # Admin functionality plugin
 ├── token/             # Token generation and verification
 ├── kv/                # Key-value stores (memory, Redis)
-└── otel/              # OpenTelemetry observability
-db/                    # Database store implementation (Bun ORM)
-├── migrations/        # SQL migrations
+├── otel/              # OpenTelemetry observability
+└── store/             # Database store implementation (Bun ORM)
+    └── migrations/    # SQL migrations
 tests/e2e/             # End-to-end tests
 ```
 

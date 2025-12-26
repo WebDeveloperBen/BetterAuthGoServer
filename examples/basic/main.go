@@ -16,7 +16,7 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
-	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -31,8 +31,8 @@ func main() {
 	defer bunDB.Close()
 
 	// 2. Create store and run migrations
-	store := db.New(bunDB)
-	if err := store.Migrate(context.Background()); err != nil {
+	dbStore := store.New(bunDB)
+	if err := dbStore.Migrate(context.Background()); err != nil {
 		log.Fatal(err)
 	}
 
@@ -49,7 +49,7 @@ func main() {
 	}
 
 	// 4. Create auth instance with default plugins (rate limiting, CSRF)
-	authService, err := auth.New(store,
+	authService, err := auth.New(dbStore,
 		config.WithSecret(secret),
 		config.WithBaseURL(baseURL),
 	)
