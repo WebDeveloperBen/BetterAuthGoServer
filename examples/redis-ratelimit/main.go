@@ -87,11 +87,11 @@ func main() {
 	redisStore := kvredis.NewStoreFromClient(redisClient)
 	redisRateLimiter := kvredis.NewRateLimiter(redisStore)
 
-	// 6. Create auth instance WITHOUT default plugins (we'll add our own)
+	// 6. Create auth instance
+	// By default, no plugins are registered - we'll add our own with Redis backend
 	authService, err := auth.New(dbStore,
 		config.WithSecret(secret),
 		config.WithBaseURL(baseURL),
-		config.WithoutDefaults(), // Disable default in-memory rate limiter
 	)
 	if err != nil {
 		log.Fatal(err)

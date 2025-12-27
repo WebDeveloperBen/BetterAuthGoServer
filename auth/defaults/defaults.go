@@ -1,5 +1,5 @@
 // Package defaults provides the default plugin bundle for the auth library.
-// When Auth.New() is called without WithoutDefaults(), these plugins are
+// When Auth.New() is called with WithDefaults(), these plugins are
 // automatically registered to provide core functionality.
 package defaults
 
@@ -13,7 +13,7 @@ import (
 )
 
 // Plugins returns the default plugin set based on configuration.
-// Called by Auth.New() unless SkipDefaults is true.
+// Called by Auth.New() when UseDefaults is true (via config.WithDefaults()).
 //
 // Default plugins include:
 //   - OTP (always enabled - required for password reset and email verification)
@@ -21,7 +21,8 @@ import (
 //   - Rate limiting (if RateLimitEnabled)
 //   - CSRF protection (if CSRFEnabled)
 //
-// Use config.WithoutDefaults() to disable these and build your own plugin set.
+// By default, no plugins are registered. Use config.WithDefaults() to enable
+// this bundle, or use Use() to register individual plugins.
 func Plugins(cfg *config.Config) []plugin.Plugin {
 	var plugins []plugin.Plugin
 

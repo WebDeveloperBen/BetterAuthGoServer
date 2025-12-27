@@ -17,10 +17,11 @@ type Config struct {
 	Secret  string
 	BaseURL string
 
-	// SkipDefaults disables automatic registration of default plugins
-	// (rate limiting, CSRF, admin). Use this for minimal setups where
-	// you want full control over which features are enabled.
-	SkipDefaults bool
+	// UseDefaults enables automatic registration of default plugins
+	// (OTP, password, rate limiting, CSRF). Disabled by default so users
+	// have full control over which features are enabled.
+	// Use config.WithDefaults() to enable the default plugin bundle.
+	UseDefaults bool
 
 	// Session
 	SessionDuration time.Duration

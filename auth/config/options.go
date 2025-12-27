@@ -25,26 +25,33 @@ func WithBaseURL(url string) Option {
 	}
 }
 
-// WithoutDefaults disables automatic registration of default plugins.
-// When enabled, you must explicitly Use() any plugins you want.
-// This is useful for minimal setups or when you want full control.
+// WithDefaults enables automatic registration of default plugins.
+// By default, no plugins are registered - you must explicitly Use() any plugins you want.
+// Call WithDefaults() to get a standard set of plugins configured from your options.
 //
-// Default plugins that are skipped:
-//   - Rate limiting
-//   - CSRF protection
-//   - Admin endpoints
+// Default plugins that are enabled:
+//   - OTP (for password reset and email verification)
+//   - Password authentication (if PasswordAuthEnabled)
+//   - Rate limiting (if RateLimitEnabled)
+//   - CSRF protection (if CSRFEnabled)
 //   - Session cleanup
 //
 // Example:
 //
 //	auth := auth.New(store,
 //	    config.WithSecret(secret),
-//	    config.WithoutDefaults(),
+//	    config.WithDefaults(),  // Enable default plugin bundle
+//	)
+//
+// Or for a minimal setup:
+//
+//	auth := auth.New(store,
+//	    config.WithSecret(secret),
 //	)
 //	auth.Use(jwt.Plugin()) // Only JWT, nothing else
-func WithoutDefaults() Option {
+func WithDefaults() Option {
 	return func(c *Config) {
-		c.SkipDefaults = true
+		c.UseDefaults = true
 	}
 }
 

@@ -25,7 +25,9 @@ import (
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/admin"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/apikey"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/csrf"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/jwt"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
@@ -204,6 +206,11 @@ func main() {
 			}),
 			ratelimit.WithTrustedProxies([]string{"127.0.0.1", "::1"}),
 		)).
+		// ----- CSRF Plugin -----
+		Use(csrf.NewPlugin(
+			csrf.WithCookieName("csrf_token"),
+			csrf.WithHeaderName("X-CSRF-Token"),
+		)).
 		// ----- Admin Plugin -----
 		Use(admin.NewPlugin(
 			admin.WithDefaultRole("user"),
@@ -284,6 +291,33 @@ func main() {
 					)
 					return nil
 				},
+			}),
+		)).
+		// ----- API Key Plugin -----
+		Use(apikey.NewPlugin(
+			apikey.WithDefaultPrefix("ba"),                      // Keys prefixed with "ba_"
+			apikey.WithRateLimitEnabled(true),                   // Enable rate limiting per key
+			apikey.WithRateLimitTimeWindow(24*time.Hour),        // 24 hour window
+			apikey.WithRateLimitMax(1000),                       // 1000 requests per window
+			apikey.WithSessionForAPIKeys(true),                  // API keys create synthetic sessions
+			apikey.WithAPIKeyHeaders("x-api-key", "Authorization"), // Check these headers
+			apikey.WithDefaultPermissions(apikey.Permissions{
+				"api": {"read"}, // Default permissions for new keys
+			}),
+			apikey.WithMetadataEnabled(true), // Allow metadata on keys
+			apikey.WithOnAPIKeyCreated(func(key *apikey.APIKey) {
+				logger.Info("API key created",
+					"key_id", key.ID,
+					"user_id", key.UserID,
+					"name", key.Name,
+				)
+			}),
+			apikey.WithOnAPIKeyVerified(func(key *apikey.APIKey, r *http.Request) {
+				logger.Debug("API key verified",
+					"key_id", key.ID,
+					"user_id", key.UserID,
+					"path", r.URL.Path,
+				)
 			}),
 		))
 
@@ -465,7 +499,7 @@ func main() {
 		"port", port,
 		"base_url", baseURL,
 		"database", maskDSN(dbURL),
-		"plugins", []string{"otp", "password", "ratelimit", "admin", "jwt", "webauthn", "organization", "oauth"},
+		"plugins", []string{"otp", "password", "ratelimit", "csrf", "admin", "jwt", "webauthn", "organization", "apikey", "oauth"},
 	)
 
 	if err := http.ListenAndServe(":"+port, mux); err != nil {

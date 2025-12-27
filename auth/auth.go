@@ -45,13 +45,15 @@ type Auth struct {
 
 // New creates a new Auth instance.
 //
-// By default, Auth includes:
-//   - Rate limiting (via plugin)
+// By default, no plugins are registered. Use config.WithDefaults() to enable
+// the standard plugin bundle which includes (based on your config):
+//   - OTP (for password reset and email verification)
+//   - Password authentication
+//   - Rate limiting
 //   - CSRF protection
 //   - Session cleanup
-//   - Admin endpoints
 //
-// Use config.WithoutDefaults() to disable default features and manually Use() plugins.
+// Or use Use() to register individual plugins for fine-grained control.
 func New(store models.Store, opts ...config.Option) (*Auth, error) {
 	cfg := config.NewConfig(opts...)
 
@@ -86,8 +88,8 @@ func New(store models.Store, opts ...config.Option) (*Auth, error) {
 		a.plugins = plugin.NewRegistry(cfg.Logger)
 	}
 
-	// Register default plugins if not skipping defaults
-	if !cfg.SkipDefaults {
+	// Register default plugins if explicitly enabled
+	if cfg.UseDefaults {
 		for _, p := range defaults.Plugins(cfg) {
 			a.plugins.Register(p)
 		}
@@ -99,8 +101,8 @@ func New(store models.Store, opts ...config.Option) (*Auth, error) {
 		return nil, err
 	}
 
-	// Start background cleanup if interval is configured and not skipping defaults
-	if cfg.SessionCleanupInterval > 0 && !cfg.SkipDefaults {
+	// Start background cleanup if interval is configured and defaults are enabled
+	if cfg.SessionCleanupInterval > 0 && cfg.UseDefaults {
 		a.stopCleanup = make(chan struct{})
 		go a.runCleanup()
 	}
@@ -598,7 +600,7 @@ func (a *Auth) ChainPluginMiddleware(h http.Handler) http.Handler {
 	return a.plugins.ChainMiddleware(h)
 }
 
-// SkipDefaults returns whether default features are disabled.
-func (a *Auth) SkipDefaults() bool {
-	return a.config.SkipDefaults
+// UseDefaults returns whether default features are enabled.
+func (a *Auth) UseDefaults() bool {
+	return a.config.UseDefaults
 }

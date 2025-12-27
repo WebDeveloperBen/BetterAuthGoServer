@@ -1,6 +1,6 @@
 // Package main demonstrates minimal BetterAuth setup.
-// This example uses WithoutDefaults() to disable rate limiting and CSRF,
-// providing only core session-based authentication.
+// By default, no plugins are registered, providing only core session-based
+// authentication. Add plugins as needed using Use().
 package main
 
 import (
@@ -47,19 +47,19 @@ func main() {
 	}
 
 	// 4. Create MINIMAL auth instance
-	// WithoutDefaults() disables:
-	// - Rate limiting
-	// - CSRF protection
-	// - Admin plugin
-	//
-	// Use this when:
+	// By default, no plugins are registered. This is ideal when:
 	// - You're building an API-only service (no CSRF needed)
 	// - You have your own rate limiting (e.g., at load balancer)
 	// - You want maximum control over what's enabled
+	//
+	// Use config.WithDefaults() if you want the standard plugin bundle:
+	// - OTP (for password reset/email verification)
+	// - Password authentication
+	// - Rate limiting
+	// - CSRF protection
 	authService, err := auth.New(dbStore,
 		config.WithSecret(secret),
 		config.WithBaseURL(baseURL),
-		config.WithoutDefaults(), // <-- No default plugins
 	)
 	if err != nil {
 		log.Fatal(err)
