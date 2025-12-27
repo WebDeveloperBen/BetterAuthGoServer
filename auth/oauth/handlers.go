@@ -77,7 +77,7 @@ func (p *Plugin) OAuthCallbackHandler() func(http.ResponseWriter, *http.Request,
 		}
 
 		// WriteAuthResponse handles both cookie and JWT modes
-		if err := p.ctx.Sessions.WriteAuthResponse(w, session, user); err != nil {
+		if err := p.ctx.Sessions.WriteAuthResponse(r.Context(), w, session, user); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}

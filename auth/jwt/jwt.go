@@ -2,6 +2,8 @@ package jwt
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"time"
 
@@ -21,6 +23,7 @@ const (
 	AlgorithmES256 Algorithm = "ES256"
 	AlgorithmES384 Algorithm = "ES384"
 	AlgorithmES512 Algorithm = "ES512"
+	AlgorithmEdDSA Algorithm = "EdDSA"
 )
 
 // Config holds JWT service configuration
@@ -31,11 +34,20 @@ type Config struct {
 	// Secret is the secret key for HMAC algorithms (HS256, HS384, HS512)
 	Secret string
 
-	// PrivateKey is the private key for RSA/ECDSA algorithms (PEM encoded)
+	// PrivateKey is the private key for RSA/ECDSA/EdDSA algorithms (PEM encoded)
+	// Used when KeySource is KeySourceConfig
 	PrivateKey []byte
 
-	// PublicKey is the public key for RSA/ECDSA algorithms (PEM encoded)
+	// PublicKey is the public key for RSA/ECDSA/EdDSA algorithms (PEM encoded)
+	// Used when KeySource is KeySourceConfig
 	PublicKey []byte
+
+	// KeySource specifies where asymmetric keys come from (config or database)
+	// Default is KeySourceConfig for backward compatibility
+	KeySource KeySource
+
+	// KeyManager handles database-backed keys (set automatically when KeySource is KeySourceDatabase)
+	KeyManager *KeyManager
 
 	// AccessTokenTTL is the lifetime of access tokens (default: 15 minutes)
 	AccessTokenTTL time.Duration
@@ -51,6 +63,16 @@ type Config struct {
 
 	// TokenBlocklist is used to check if tokens are revoked (optional)
 	TokenBlocklist TokenBlocklist
+
+	// KeyRotationGracePeriod is how long rotated keys remain valid for verification.
+	// Only used when KeySource is KeySourceDatabase.
+	// Default is 24 hours.
+	KeyRotationGracePeriod time.Duration
+
+	// KeySize is the RSA key size for database-backed keys.
+	// Only applies to RSA algorithms (RS256/384/512).
+	// Default is 2048.
+	KeySize int
 }
 
 // TokenBlocklist is an interface for checking if tokens are revoked
@@ -77,6 +99,7 @@ type Service struct {
 	signingKey any
 	verifyKey  any
 	method     jwt.SigningMethod
+	keyManager *KeyManager
 }
 
 // NewService creates a new JWT service
@@ -119,17 +142,156 @@ func NewService(cfg Config) (*Service, error) {
 		s.signingKey = []byte(cfg.Secret)
 		s.verifyKey = []byte(cfg.Secret)
 
-	case AlgorithmRS256, AlgorithmRS384, AlgorithmRS512:
-		return nil, errors.New("RSA algorithms not yet implemented")
+	case AlgorithmRS256:
+		s.method = jwt.SigningMethodRS256
+		if err := s.configureAsymmetricKeys(cfg); err != nil {
+			return nil, err
+		}
 
-	case AlgorithmES256, AlgorithmES384, AlgorithmES512:
-		return nil, errors.New("ECDSA algorithms not yet implemented")
+	case AlgorithmRS384:
+		s.method = jwt.SigningMethodRS384
+		if err := s.configureAsymmetricKeys(cfg); err != nil {
+			return nil, err
+		}
+
+	case AlgorithmRS512:
+		s.method = jwt.SigningMethodRS512
+		if err := s.configureAsymmetricKeys(cfg); err != nil {
+			return nil, err
+		}
+
+	case AlgorithmES256:
+		s.method = jwt.SigningMethodES256
+		if err := s.configureAsymmetricKeys(cfg); err != nil {
+			return nil, err
+		}
+
+	case AlgorithmES384:
+		s.method = jwt.SigningMethodES384
+		if err := s.configureAsymmetricKeys(cfg); err != nil {
+			return nil, err
+		}
+
+	case AlgorithmES512:
+		s.method = jwt.SigningMethodES512
+		if err := s.configureAsymmetricKeys(cfg); err != nil {
+			return nil, err
+		}
+
+	case AlgorithmEdDSA:
+		s.method = jwt.SigningMethodEdDSA
+		if err := s.configureAsymmetricKeys(cfg); err != nil {
+			return nil, err
+		}
 
 	default:
 		return nil, ErrUnsupportedAlgorithm
 	}
 
 	return s, nil
+}
+
+// configureAsymmetricKeys sets up signing/verification keys for asymmetric algorithms.
+// Supports both config-provided keys and database-backed keys with KeyManager.
+func (s *Service) configureAsymmetricKeys(cfg Config) error {
+	// If using database-backed keys, just store the KeyManager reference
+	if cfg.KeySource == KeySourceDatabase {
+		if cfg.KeyManager == nil {
+			return ErrDatabaseRequired
+		}
+		s.keyManager = cfg.KeyManager
+		// Keys will be loaded on-demand during signing/verification
+		return nil
+	}
+
+	// Using config-provided keys (KeySourceConfig or default)
+	if len(cfg.PrivateKey) == 0 || len(cfg.PublicKey) == 0 {
+		return ErrInvalidSigningKey
+	}
+
+	// Parse private key
+	privateKey, err := parsePrivateKeyPEM(cfg.PrivateKey, cfg.Algorithm)
+	if err != nil {
+		return err
+	}
+	s.signingKey = privateKey
+
+	// Parse public key
+	publicKey, err := parsePublicKeyPEM(cfg.PublicKey, cfg.Algorithm)
+	if err != nil {
+		return err
+	}
+	s.verifyKey = publicKey
+
+	return nil
+}
+
+// parsePrivateKeyPEM parses a PEM-encoded private key for the given algorithm.
+func parsePrivateKeyPEM(pemData []byte, alg Algorithm) (any, error) {
+	block, _ := pem.Decode(pemData)
+	if block == nil {
+		return nil, ErrInvalidSigningKey
+	}
+
+	switch alg {
+	case AlgorithmRS256, AlgorithmRS384, AlgorithmRS512:
+		// Try PKCS1 first, then PKCS8
+		key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+		if err != nil {
+			// Try PKCS8
+			pkcs8Key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+			if err != nil {
+				return nil, ErrInvalidSigningKey
+			}
+			return pkcs8Key, nil
+		}
+		return key, nil
+
+	case AlgorithmES256, AlgorithmES384, AlgorithmES512:
+		key, err := x509.ParseECPrivateKey(block.Bytes)
+		if err != nil {
+			// Try PKCS8
+			pkcs8Key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+			if err != nil {
+				return nil, ErrInvalidSigningKey
+			}
+			return pkcs8Key, nil
+		}
+		return key, nil
+
+	case AlgorithmEdDSA:
+		key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, ErrInvalidSigningKey
+		}
+		return key, nil
+
+	default:
+		return nil, ErrUnsupportedAlgorithm
+	}
+}
+
+// parsePublicKeyPEM parses a PEM-encoded public key for the given algorithm.
+func parsePublicKeyPEM(pemData []byte, alg Algorithm) (any, error) {
+	block, _ := pem.Decode(pemData)
+	if block == nil {
+		return nil, ErrInvalidSigningKey
+	}
+
+	// Try PKIX format (most common for public keys)
+	key, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		// For RSA, try parsing as PKCS1
+		if alg == AlgorithmRS256 || alg == AlgorithmRS384 || alg == AlgorithmRS512 {
+			rsaKey, rsaErr := x509.ParsePKCS1PublicKey(block.Bytes)
+			if rsaErr != nil {
+				return nil, ErrInvalidSigningKey
+			}
+			return rsaKey, nil
+		}
+		return nil, ErrInvalidSigningKey
+	}
+	return key, nil
 }
 
 // TokenPair contains an access token and refresh token
@@ -151,14 +313,15 @@ type UserInfo struct {
 	ActorID *string
 }
 
-// GenerateTokenPair generates a new access/refresh token pair
-func (s *Service) GenerateTokenPair(user UserInfo, sessionID string) (*TokenPair, error) {
-	accessToken, err := s.generateAccessToken(user, sessionID)
+// GenerateTokenPair generates a new access/refresh token pair.
+// Context is required for database-backed key operations.
+func (s *Service) GenerateTokenPair(ctx context.Context, user UserInfo, sessionID string) (*TokenPair, error) {
+	accessToken, err := s.generateAccessToken(ctx, user, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	refreshToken, err := s.generateRefreshToken(user, sessionID)
+	refreshToken, err := s.generateRefreshToken(ctx, user, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +335,7 @@ func (s *Service) GenerateTokenPair(user UserInfo, sessionID string) (*TokenPair
 }
 
 // generateAccessToken generates a new access token
-func (s *Service) generateAccessToken(user UserInfo, sessionID string) (string, error) {
+func (s *Service) generateAccessToken(ctx context.Context, user UserInfo, sessionID string) (string, error) {
 	claims := NewAccessClaims(
 		user.ID,
 		sessionID,
@@ -186,11 +349,22 @@ func (s *Service) generateAccessToken(user UserInfo, sessionID string) (string, 
 	)
 
 	token := jwt.NewWithClaims(s.method, claims)
+
+	// If using KeyManager, get active key and add kid header
+	if s.keyManager != nil {
+		key, err := s.keyManager.GetActiveKey(ctx)
+		if err != nil {
+			return "", err
+		}
+		token.Header["kid"] = key.ID
+		return token.SignedString(key.PrivateKey)
+	}
+
 	return token.SignedString(s.signingKey)
 }
 
 // generateRefreshToken generates a new refresh token
-func (s *Service) generateRefreshToken(user UserInfo, sessionID string) (string, error) {
+func (s *Service) generateRefreshToken(ctx context.Context, user UserInfo, sessionID string) (string, error) {
 	claims := NewRefreshClaims(
 		user.ID,
 		sessionID,
@@ -201,6 +375,17 @@ func (s *Service) generateRefreshToken(user UserInfo, sessionID string) (string,
 	)
 
 	token := jwt.NewWithClaims(s.method, claims)
+
+	// If using KeyManager, get active key and add kid header
+	if s.keyManager != nil {
+		key, err := s.keyManager.GetActiveKey(ctx)
+		if err != nil {
+			return "", err
+		}
+		token.Header["kid"] = key.ID
+		return token.SignedString(key.PrivateKey)
+	}
+
 	return token.SignedString(s.signingKey)
 }
 
@@ -211,6 +396,20 @@ func (s *Service) ValidateToken(ctx context.Context, tokenString string) (*Claim
 		if token.Method.Alg() != string(s.config.Algorithm) {
 			return nil, ErrUnsupportedAlgorithm
 		}
+
+		// If using KeyManager, lookup key by kid
+		if s.keyManager != nil {
+			kid, ok := token.Header["kid"].(string)
+			if !ok || kid == "" {
+				return nil, ErrKeyNotFound
+			}
+			key, err := s.keyManager.GetKeyForVerification(ctx, kid)
+			if err != nil {
+				return nil, err
+			}
+			return key.PublicKey, nil
+		}
+
 		return s.verifyKey, nil
 	})
 	if err != nil {
@@ -287,7 +486,7 @@ func (s *Service) RefreshTokens(ctx context.Context, refreshToken string, user U
 	}
 
 	// Generate new token pair
-	return s.GenerateTokenPair(user, claims.SessionID)
+	return s.GenerateTokenPair(ctx, user, claims.SessionID)
 }
 
 // RevokeToken revokes a token by its JTI
@@ -315,4 +514,9 @@ func (s *Service) RevokeToken(ctx context.Context, tokenString string) error {
 // Config returns the service configuration
 func (s *Service) Config() Config {
 	return s.config
+}
+
+// KeyManager returns the key manager (nil if not using database-backed keys)
+func (s *Service) KeyManager() *KeyManager {
+	return s.keyManager
 }

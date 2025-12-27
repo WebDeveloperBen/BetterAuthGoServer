@@ -111,7 +111,8 @@ type SessionManager interface {
 	// WriteAuthResponse writes authentication credentials to the response.
 	// If JWT plugin is registered, returns JWT tokens in response body.
 	// Otherwise, sets a session cookie.
-	WriteAuthResponse(w http.ResponseWriter, session *Session, user *User) error
+	// Context is required for database-backed JWT key operations.
+	WriteAuthResponse(ctx context.Context, w http.ResponseWriter, session *Session, user *User) error
 
 	// ClearAuthResponse clears authentication credentials.
 	// Clears the session cookie. For JWT, clients discard tokens themselves.
@@ -138,5 +139,6 @@ type TokenPair struct {
 // The JWT plugin implements this interface.
 type JWTTokenGenerator interface {
 	// GenerateTokensForSession generates JWT tokens for a session.
-	GenerateTokensForSession(session *Session, user *User) (*TokenPair, error)
+	// Context is required for database-backed key operations.
+	GenerateTokensForSession(ctx context.Context, session *Session, user *User) (*TokenPair, error)
 }

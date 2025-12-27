@@ -357,12 +357,12 @@ func (sm *sessionManager) Delete(ctx context.Context, sessionID string) error {
 
 // WriteAuthResponse writes authentication credentials to the response.
 // If JWT plugin is registered, returns JWT tokens. Otherwise, sets session cookie.
-func (sm *sessionManager) WriteAuthResponse(w http.ResponseWriter, session *plugin.Session, user *plugin.User) error {
+func (sm *sessionManager) WriteAuthResponse(ctx context.Context, w http.ResponseWriter, session *plugin.Session, user *plugin.User) error {
 	// Check if JWT plugin is registered
 	if sm.auth.plugins != nil {
 		if jwtPlugin := sm.auth.plugins.Get("jwt"); jwtPlugin != nil {
 			if tokenGen, ok := jwtPlugin.(plugin.JWTTokenGenerator); ok {
-				tokens, err := tokenGen.GenerateTokensForSession(session, user)
+				tokens, err := tokenGen.GenerateTokensForSession(ctx, session, user)
 				if err != nil {
 					return err
 				}

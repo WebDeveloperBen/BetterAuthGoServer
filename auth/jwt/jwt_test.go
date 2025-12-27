@@ -91,7 +91,8 @@ func TestService_GenerateTokenPair(t *testing.T) {
 		EmailVerified: true,
 	}
 
-	pair, err := svc.GenerateTokenPair(user, "session-456")
+	ctx := context.Background()
+	pair, err := svc.GenerateTokenPair(ctx, user, "session-456")
 	if err != nil {
 		t.Fatalf("GenerateTokenPair() error: %v", err)
 	}
@@ -130,12 +131,11 @@ func TestService_ValidateAccessToken(t *testing.T) {
 		EmailVerified: true,
 	}
 
-	pair, err := svc.GenerateTokenPair(user, "session-456")
+	ctx := context.Background()
+	pair, err := svc.GenerateTokenPair(ctx, user, "session-456")
 	if err != nil {
 		t.Fatalf("GenerateTokenPair() error: %v", err)
 	}
-
-	ctx := context.Background()
 
 	t.Run("valid access token", func(t *testing.T) {
 		claims, err := svc.ValidateAccessToken(ctx, pair.AccessToken)
@@ -191,12 +191,11 @@ func TestService_ValidateRefreshToken(t *testing.T) {
 		EmailVerified: true,
 	}
 
-	pair, err := svc.GenerateTokenPair(user, "session-456")
+	ctx := context.Background()
+	pair, err := svc.GenerateTokenPair(ctx, user, "session-456")
 	if err != nil {
 		t.Fatalf("GenerateTokenPair() error: %v", err)
 	}
-
-	ctx := context.Background()
 
 	t.Run("valid refresh token", func(t *testing.T) {
 		claims, err := svc.ValidateRefreshToken(ctx, pair.RefreshToken)
@@ -239,12 +238,11 @@ func TestService_RefreshTokens(t *testing.T) {
 		EmailVerified: true,
 	}
 
-	pair, err := svc.GenerateTokenPair(user, "session-456")
+	ctx := context.Background()
+	pair, err := svc.GenerateTokenPair(ctx, user, "session-456")
 	if err != nil {
 		t.Fatalf("GenerateTokenPair() error: %v", err)
 	}
-
-	ctx := context.Background()
 
 	newPair, err := svc.RefreshTokens(ctx, pair.RefreshToken, user)
 	if err != nil {
@@ -285,12 +283,12 @@ func TestService_ExpiredToken(t *testing.T) {
 		Email: "test@example.com",
 	}
 
-	pair, err := svc.GenerateTokenPair(user, "session-456")
+	ctx := context.Background()
+	pair, err := svc.GenerateTokenPair(ctx, user, "session-456")
 	if err != nil {
 		t.Fatalf("GenerateTokenPair() error: %v", err)
 	}
 
-	ctx := context.Background()
 	_, err = svc.ValidateAccessToken(ctx, pair.AccessToken)
 	if err != ErrExpiredToken {
 		t.Errorf("Expected ErrExpiredToken, got: %v", err)
@@ -333,12 +331,11 @@ func TestService_TokenBlocklist(t *testing.T) {
 		Email: "test@example.com",
 	}
 
-	pair, err := svc.GenerateTokenPair(user, "session-456")
+	ctx := context.Background()
+	pair, err := svc.GenerateTokenPair(ctx, user, "session-456")
 	if err != nil {
 		t.Fatalf("GenerateTokenPair() error: %v", err)
 	}
-
-	ctx := context.Background()
 
 	// Token should be valid initially
 	_, err = svc.ValidateAccessToken(ctx, pair.AccessToken)

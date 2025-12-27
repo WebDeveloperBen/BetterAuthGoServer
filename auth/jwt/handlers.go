@@ -96,7 +96,7 @@ func (p *Plugin) handlePasswordGrant(w http.ResponseWriter, r *http.Request, req
 		EmailVerified: user.EmailVerified,
 	}
 
-	pair, err := p.service.GenerateTokenPair(userInfo, session.ID)
+	pair, err := p.service.GenerateTokenPair(r.Context(), userInfo, session.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -265,6 +265,36 @@ func (p *Plugin) TokenIntrospectHandler() http.HandlerFunc {
 		}
 
 		_ = writeJSON(w, http.StatusOK, response)
+	}
+}
+
+// KeyRotateHandler returns a handler for POST /keys/rotate
+// This endpoint forces key rotation and returns the new key ID.
+// Requires admin authorization (should be protected by middleware).
+func (p *Plugin) KeyRotateHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if p.keyManager == nil {
+			writeError(w, http.StatusNotImplemented, ErrNotInitialized)
+			return
+		}
+
+		// Rotate the key
+		newKey, err := p.keyManager.RotateKey(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		// Also cleanup any expired keys
+		cleaned, _ := p.keyManager.CleanupExpiredKeys(r.Context())
+
+		_ = writeJSON(w, http.StatusOK, map[string]any{
+			"message":      "Key rotated successfully",
+			"kid":          newKey.ID,
+			"algorithm":    newKey.Algorithm,
+			"activated_at": newKey.ActivatedAt,
+			"keys_cleaned": cleaned,
+		})
 	}
 }
 

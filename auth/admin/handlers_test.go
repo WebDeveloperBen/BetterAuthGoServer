@@ -439,7 +439,7 @@ func (m *mockSessionManager) Delete(ctx context.Context, sessionID string) error
 	return nil
 }
 
-func (m *mockSessionManager) WriteAuthResponse(w http.ResponseWriter, session *plugin.Session, user *plugin.User) error {
+func (m *mockSessionManager) WriteAuthResponse(ctx context.Context, w http.ResponseWriter, session *plugin.Session, user *plugin.User) error {
 	return nil
 }
 

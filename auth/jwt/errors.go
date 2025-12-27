@@ -20,4 +20,14 @@ var (
 	ErrInvalidGrantType   = errors.New("jwt: invalid grant type")
 	ErrInvalidCredentials = errors.New("jwt: invalid credentials")
 	ErrUserBanned         = errors.New("jwt: user banned")
+
+	// Key management errors
+	ErrKeyNotFound       = errors.New("jwt: key not found")
+	ErrKeyExpired        = errors.New("jwt: key expired")
+	ErrNoActiveKey       = errors.New("jwt: no active signing key")
+	ErrKeyGeneration     = errors.New("jwt: key generation failed")
+	ErrKeyEncryption     = errors.New("jwt: key encryption failed")
+	ErrKeyDecryption     = errors.New("jwt: key decryption failed")
+	ErrDatabaseRequired  = errors.New("jwt: database required for database-backed keys")
+	ErrEncryptorRequired = errors.New("jwt: encryptor required for database-backed keys")
 )

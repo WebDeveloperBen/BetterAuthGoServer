@@ -108,7 +108,7 @@ func (p *Plugin) handleSignUp() http.HandlerFunc {
 
 		if session != nil {
 			// WriteAuthResponse handles both cookie and JWT modes
-			if err := p.ctx.Sessions.WriteAuthResponse(w, session, user); err != nil {
+			if err := p.ctx.Sessions.WriteAuthResponse(r.Context(), w, session, user); err != nil {
 				writeError(w, http.StatusInternalServerError, err)
 				return
 			}
@@ -144,7 +144,7 @@ func (p *Plugin) handleSignIn() http.HandlerFunc {
 		}
 
 		// WriteAuthResponse handles both cookie and JWT modes
-		if err := p.ctx.Sessions.WriteAuthResponse(w, session, user); err != nil {
+		if err := p.ctx.Sessions.WriteAuthResponse(r.Context(), w, session, user); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}

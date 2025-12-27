@@ -223,10 +223,15 @@ func main() {
 			admin.WithAllowImpersonatingAdmins(false),
 		)).
 		// ----- JWT Plugin -----
+		// Using ES256 with database-backed keys for production-ready JWT auth.
+		// Keys are encrypted at rest with AES-256-GCM and support rotation.
+		// JWKS endpoint available at /.well-known/jwks.json
 		Use(jwt.NewPlugin(
-			jwt.WithAlgorithm(jwt.AlgorithmHS256),
-			jwt.WithAccessTTL(15*time.Minute),
-			jwt.WithRefreshTTL(7*24*time.Hour),
+			jwt.WithAlgorithm(jwt.AlgorithmES256),          // ECDSA P-256 (recommended)
+			jwt.WithKeySource(jwt.KeySourceDatabase),       // Store keys in DB (encrypted)
+			jwt.WithKeyRotationGracePeriod(24*time.Hour),   // Old keys valid for 24h after rotation
+			jwt.WithAccessTTL(15*time.Minute),              // Short-lived access tokens
+			jwt.WithRefreshTTL(7*24*time.Hour),             // Long-lived refresh tokens
 			jwt.WithIssuer(baseURL),
 			jwt.WithAudience(baseURL),
 		)).
