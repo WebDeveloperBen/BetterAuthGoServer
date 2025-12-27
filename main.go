@@ -29,6 +29,7 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/apikey"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/csrf"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/deviceauth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/jwt"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
@@ -340,6 +341,20 @@ func main() {
 				// TODO: Migrate anonymous user data (shopping cart, preferences, etc.)
 				return nil
 			}),
+		)).
+		// ----- Device Authorization Plugin (OAuth 2.0 Device Flow) -----
+		Use(deviceauth.NewPlugin(
+			deviceauth.WithVerificationURI(baseURL+"/device"),
+			deviceauth.WithExpiresIn(30*time.Minute),
+			deviceauth.WithPollingInterval(5),
+			deviceauth.WithOnDeviceAuthRequest(func(ctx context.Context, dc *deviceauth.DeviceCode) error {
+				logger.Info("Device authorization requested",
+					"device_code_id", dc.ID,
+					"user_code", dc.UserCode,
+					"client_id", dc.ClientID,
+				)
+				return nil
+			}),
 		))
 
 	// Add OAuth plugin if any providers are configured
@@ -520,7 +535,7 @@ func main() {
 		"port", port,
 		"base_url", baseURL,
 		"database", maskDSN(dbURL),
-		"plugins", []string{"otp", "password", "ratelimit", "csrf", "admin", "jwt", "webauthn", "organization", "apikey", "anonymous", "oauth"},
+		"plugins", []string{"otp", "password", "ratelimit", "csrf", "admin", "jwt", "webauthn", "organization", "apikey", "anonymous", "deviceauth", "oauth"},
 	)
 
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
