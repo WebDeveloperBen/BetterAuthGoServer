@@ -25,6 +25,7 @@ import (
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/admin"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/anonymous"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/apikey"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/csrf"
@@ -36,6 +37,7 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/organization"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/otp"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/password"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/ratelimit"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/webauthn"
@@ -324,6 +326,20 @@ func main() {
 					"path", r.URL.Path,
 				)
 			}),
+		)).
+		// ----- Anonymous Plugin (Passwordless Anonymous Sessions) -----
+		Use(anonymous.NewPlugin(
+			anonymous.WithEmailDomain("anonymous.local"),
+			anonymous.WithAnonymousUserTTL(30*24*time.Hour), // Cleanup after 30 days
+			anonymous.WithCleanupInterval(1*time.Hour),
+			anonymous.WithOnLinkAccount(func(ctx context.Context, anonUser, newUser *plugin.User) error {
+				logger.Info("Anonymous account linked",
+					"anonymous_user_id", anonUser.ID,
+					"new_user_id", newUser.ID,
+				)
+				// TODO: Migrate anonymous user data (shopping cart, preferences, etc.)
+				return nil
+			}),
 		))
 
 	// Add OAuth plugin if any providers are configured
@@ -504,7 +520,7 @@ func main() {
 		"port", port,
 		"base_url", baseURL,
 		"database", maskDSN(dbURL),
-		"plugins", []string{"otp", "password", "ratelimit", "csrf", "admin", "jwt", "webauthn", "organization", "apikey", "oauth"},
+		"plugins", []string{"otp", "password", "ratelimit", "csrf", "admin", "jwt", "webauthn", "organization", "apikey", "anonymous", "oauth"},
 	)
 
 	if err := http.ListenAndServe(":"+port, mux); err != nil {

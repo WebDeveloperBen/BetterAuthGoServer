@@ -538,6 +538,12 @@ func toPluginUser(u *models.User) *plugin.User {
 	}
 }
 
+// DeleteUser deletes a user by ID.
+// Implements anonymous.AuthProvider.
+func (a *Auth) DeleteUser(ctx context.Context, userID string) error {
+	return a.store.DeleteUser(ctx, userID)
+}
+
 // FireOAuthAccountLinked publishes an OAuth account linked event.
 // Implements oauth.AuthProvider.
 func (a *Auth) FireOAuthAccountLinked(ctx context.Context, userID, provider, providerAccountID string) error {

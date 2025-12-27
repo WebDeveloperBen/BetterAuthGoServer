@@ -66,8 +66,9 @@ func Setup(t *testing.T) *TestEnv {
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
-	// Create auth instance
+	// Create auth instance with default plugins (password, OTP, etc.)
 	authInstance, err := auth.New(dbStore,
+		config.WithDefaults(),
 		config.WithSecret("test-secret-key-32-characters!!!"),
 		config.WithBaseURL("http://localhost:3000"),
 		config.WithSessionDuration(24*time.Hour),
@@ -141,6 +142,7 @@ func SetupIsolated(t *testing.T) *TestEnv {
 	}
 
 	authInstance, err := auth.New(dbStore,
+		config.WithDefaults(),
 		config.WithSecret("test-secret-key-32-characters!!!"),
 		config.WithBaseURL("http://localhost:3000"),
 		config.WithSessionDuration(24*time.Hour),
@@ -193,8 +195,9 @@ func SetupWithRateLimiting(t *testing.T, authRateLimit int) *TestEnv {
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
-	// Create auth instance with rate limiting
+	// Create auth instance with rate limiting and default plugins
 	authInstance, err := auth.New(dbStore,
+		config.WithDefaults(),
 		config.WithSecret("test-secret-key-32-characters!!!"),
 		config.WithBaseURL("http://localhost:3000"),
 		config.WithSessionDuration(24*time.Hour),

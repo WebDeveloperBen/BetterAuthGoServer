@@ -11,6 +11,7 @@ import (
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
 )
 
 func setupTestService(t *testing.T) *Service {
@@ -35,8 +36,11 @@ func setupTestService(t *testing.T) *Service {
 func createTestTables(db *bun.DB) error {
 	ctx := context.Background()
 
-	// Create users table with explicit schema since models.User doesn't have bun tags
-	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT, email_verified INTEGER, name TEXT, image TEXT, banned INTEGER, banned_at TEXT, ban_reason TEXT, role TEXT, created_at TEXT, updated_at TEXT)"); err != nil {
+	// Create users table using the store.User model (has bun tags)
+	if _, err := db.NewCreateTable().
+		Model((*store.User)(nil)).
+		IfNotExists().
+		Exec(ctx); err != nil {
 		return err
 	}
 
@@ -48,8 +52,11 @@ func createTestTables(db *bun.DB) error {
 		return err
 	}
 
-	// Create accounts table (needed for DeleteUser)
-	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, user_id TEXT, provider TEXT, provider_account_id TEXT)"); err != nil {
+	// Create accounts table using store.Account model
+	if _, err := db.NewCreateTable().
+		Model((*store.Account)(nil)).
+		IfNotExists().
+		Exec(ctx); err != nil {
 		return err
 	}
 
