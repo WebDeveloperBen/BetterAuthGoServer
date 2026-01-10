@@ -274,20 +274,37 @@ func (p *Plugin) Middleware() []plugin.Middleware {
 
 // ensureSessionExtensionColumns adds organization-specific columns to the sessions table.
 // This extends the core sessions table with active_organization_id and active_team_id.
-// Uses ALTER TABLE ADD COLUMN IF NOT EXISTS for idempotency.
+// Checks if columns exist first to avoid SQL syntax errors.
 func (p *Plugin) ensureSessionExtensionColumns(db *bun.DB) error {
 	ctx := context.Background()
 
-	// PostgreSQL and SQLite both support ADD COLUMN IF NOT EXISTS
-	// (SQLite added support in version 3.35.0, 2021)
-	alterStatements := []string{
-		"ALTER TABLE sessions ADD COLUMN IF NOT EXISTS active_organization_id TEXT",
-		"ALTER TABLE sessions ADD COLUMN IF NOT EXISTS active_team_id TEXT",
+	// Check if columns already exist to avoid SQL syntax issues
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name IN ('active_organization_id', 'active_team_id')").Scan(&count); err != nil {
+		return fmt.Errorf("failed to check existing columns: %w", err)
 	}
 
-	for _, stmt := range alterStatements {
-		if _, err := db.ExecContext(ctx, stmt); err != nil {
-			return err
+	if count == 2 {
+		// Both columns already exist
+		return nil
+	}
+
+	// Add columns that don't exist
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'active_organization_id'").Scan(&count); err != nil {
+		return fmt.Errorf("failed to check active_organization_id column: %w", err)
+	}
+	if count == 0 {
+		if _, err := db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN active_organization_id TEXT"); err != nil {
+			return fmt.Errorf("failed to add active_organization_id column: %w", err)
+		}
+	}
+
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'active_team_id'").Scan(&count); err != nil {
+		return fmt.Errorf("failed to check active_team_id column: %w", err)
+	}
+	if count == 0 {
+		if _, err := db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN active_team_id TEXT"); err != nil {
+			return fmt.Errorf("failed to add active_team_id column: %w", err)
 		}
 	}
 

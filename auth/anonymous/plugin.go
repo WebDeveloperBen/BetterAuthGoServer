@@ -92,20 +92,24 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 
 // ensureUserExtensionColumns adds the is_anonymous column to the users table.
 // This extends the core users table with anonymous-specific fields.
-// Uses ALTER TABLE ADD COLUMN IF NOT EXISTS for idempotency.
+// Checks if column exists first to avoid SQL syntax errors.
 func (p *Plugin) ensureUserExtensionColumns(db *bun.DB) error {
 	ctx := context.Background()
 
-	// PostgreSQL and SQLite both support ADD COLUMN IF NOT EXISTS
-	// (SQLite added support in version 3.35.0, 2021)
-	alterStatements := []string{
-		"ALTER TABLE users ADD COLUMN IF NOT EXISTS is_anonymous BOOLEAN DEFAULT FALSE",
+	// Check if column already exists to avoid SQL syntax issues
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'is_anonymous'").Scan(&count); err != nil {
+		return fmt.Errorf("failed to check is_anonymous column: %w", err)
 	}
 
-	for _, stmt := range alterStatements {
-		if _, err := db.ExecContext(ctx, stmt); err != nil {
-			return err
-		}
+	if count > 0 {
+		// Column already exists
+		return nil
+	}
+
+	// Add the column
+	if _, err := db.ExecContext(ctx, "ALTER TABLE users ADD COLUMN is_anonymous BOOLEAN DEFAULT FALSE"); err != nil {
+		return fmt.Errorf("failed to add is_anonymous column: %w", err)
 	}
 
 	return nil

@@ -20,6 +20,20 @@ A complete, embeddable authentication library for Go applications. Handles email
 - **Extensible Hooks** - React to auth events (user created, sign in, password changed, etc.)
 - **Database Agnostic** - Ships with PostgreSQL and SQLite support via Bun ORM
 
+## Database Setup
+
+**Quick Start (Docker):**
+```bash
+docker-compose up postgres -d  # Start PostgreSQL
+go run main.go                 # Start server (auto-creates tables)
+```
+
+**Manual Setup:**
+- PostgreSQL: `DATABASE_URL=postgres://user:pass@localhost:5432/dbname`
+- SQLite: `DATABASE_URL=file:auth.db` (default)
+
+Tables are **automatically created** on first run!
+
 ## Installation
 
 ```bash
@@ -442,6 +456,9 @@ task check             # Run all checks
 # Docker
 task up                # Start postgres + auth
 task down              # Stop all services
+
+# Test Nuxt integration
+cd nuxt-playground && npm install && npm run dev  # Requires auth server + database
 ```
 
 ## Security Considerations

@@ -28,6 +28,7 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/anonymous"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/apikey"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/cors"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/csrf"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/deviceauth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
@@ -77,14 +78,18 @@ func main() {
 	}
 	defer func() { _ = bunDB.Close() }()
 
-	// Create store and run migrations
+	// ============================================================================
+	// DATABASE SETUP
+	// ============================================================================
 	dbStore := store.New(bunDB)
+
+	// Run basic migrations first
 	if err := dbStore.Migrate(context.Background()); err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
 	// ============================================================================
-	// AUTH SERVICE - FULL CONFIGURATION
+	// AUTH SERVICE - BASIC CONFIGURATION
 	// ============================================================================
 	authService, err := auth.New(dbStore,
 		// ----- Core Configuration -----
@@ -149,8 +154,7 @@ func main() {
 	}
 
 	// ============================================================================
-	// REGISTER PLUGINS - Using builder pattern with chained Use() calls
-	// Order matters for migrations
+	// PLUGIN MIGRATIONS - Run before plugin registration
 	// ============================================================================
 
 	// Build OAuth providers dynamically based on environment
@@ -180,8 +184,114 @@ func main() {
 		))
 	}
 
-	// Chain all plugins using builder pattern
+	// Create plugins to collect their migrations
+	pluginList := []plugin.Plugin{
+		// ----- CORS Plugin -----
+		cors.NewPlugin(
+			cors.WithOrigins("http://localhost:3000", "http://localhost:3001"),
+			cors.WithCredentials(true),
+		),
+		// ----- OTP Plugin (Email/Password Reset Tokens) -----
+		otp.NewPlugin(
+			otp.WithPasswordResetExpiry(1*time.Hour),
+			otp.WithEmailVerificationExpiry(24*time.Hour),
+			otp.WithEmailChangeExpiry(1*time.Hour),
+		),
+		// ----- Password Plugin (Email/Password Authentication) -----
+		password.NewPlugin(
+			password.WithMinLength(8),
+			password.WithMaxLength(128),
+			password.WithComplexity(true),
+			password.WithResetExpiry(1*time.Hour),
+			password.WithAutoSignIn(true),
+			password.WithLockoutThreshold(5),
+			password.WithLockoutDuration(15*time.Minute),
+		),
+		// ----- Rate Limiting Plugin -----
+		ratelimit.NewPlugin(
+			ratelimit.WithLimit(100, 1*time.Minute),
+			ratelimit.WithKeyFunc(func(r *http.Request) string {
+				if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+					return strings.Split(xff, ",")[0]
+				}
+				return strings.Split(r.RemoteAddr, ":")[0]
+			}),
+			ratelimit.WithTrustedProxies([]string{"127.0.0.1", "::1"}),
+		),
+		// ----- CSRF Plugin -----
+		csrf.NewPlugin(
+			csrf.WithCookieName("csrf_token"),
+			csrf.WithHeaderName("X-CSRF-Token"),
+		),
+		// ----- Admin Plugin -----
+		admin.NewPlugin(
+			admin.WithDefaultRole("user"),
+			admin.WithAdminRoles([]string{"admin", "superadmin"}),
+			admin.WithAdminUserIDs([]string{}),
+			admin.WithImpersonationSessionDuration(1*time.Hour),
+			admin.WithDefaultBanReason("Violation of terms of service"),
+			admin.WithDefaultBanExpiresIn(0),
+			admin.WithBannedUserMessage("Your account has been suspended."),
+			admin.WithAllowImpersonatingAdmins(false),
+		),
+		// ----- JWT Plugin -----
+		jwt.NewPlugin(
+			jwt.WithAlgorithm(jwt.AlgorithmES256),        // ECDSA P-256 (recommended)
+			jwt.WithKeySource(jwt.KeySourceDatabase),     // Store keys in DB (encrypted)
+			jwt.WithKeyRotationGracePeriod(24*time.Hour), // Old keys valid for 24h after rotation
+			jwt.WithAccessTTL(15*time.Minute),            // Short-lived access tokens
+			jwt.WithRefreshTTL(7*24*time.Hour),           // Long-lived refresh tokens
+			jwt.WithIssuer(baseURL),
+			jwt.WithAudience(baseURL),
+		),
+		// ----- WebAuthn Plugin (Passwordless/2FA) -----
+		webauthn.NewPlugin(
+			webauthn.WithRPID(parsedURL.Hostname()),
+			webauthn.WithRPDisplayName("BetterAuth Demo"),
+			webauthn.WithRPOrigins([]string{baseURL, frontendURL}),
+			webauthn.WithTimeout(5*time.Minute),
+			webauthn.WithAllowResidentKey(true),
+			webauthn.WithAllowPasswordlessAccounts(true),
+			webauthn.WithAllowSecondFactor(true),
+			webauthn.WithUserVerification("preferred"),
+		),
+	}
+
+	// Add OAuth providers if configured
+	if len(oauthProviders) > 0 {
+		pluginList = append(pluginList, oauth.NewPlugin(oauthProviders...))
+	}
+
+	// Collect all plugin migrations
+	var pluginMigrations []any
+	for _, p := range pluginList {
+		if mp, ok := p.(plugin.MigrationsProvider); ok {
+			pluginMigrations = append(pluginMigrations, mp.Migrations()...)
+		}
+	}
+
+	// Run plugin migrations
+	for _, model := range pluginMigrations {
+		_, err := bunDB.NewCreateTable().
+			Model(model).
+			IfNotExists().
+			Exec(context.Background())
+		if err != nil {
+			log.Fatal("Failed to migrate plugin table:", err)
+		}
+	}
+
+	// ============================================================================
+	// REGISTER PLUGINS - Now that migrations are complete
+	// ============================================================================
+
+	// Register all plugins using builder pattern with chained Use() calls
 	authService.
+		// ----- CORS Plugin -----
+		Use(cors.NewPlugin(
+			cors.WithOrigins("http://localhost:3000", "http://localhost:3001"),
+			cors.WithCredentials(true),
+		)).
 		// ----- OTP Plugin (Email/Password Reset Tokens) -----
 		Use(otp.NewPlugin(
 			otp.WithPasswordResetExpiry(1*time.Hour),
@@ -368,6 +478,10 @@ func main() {
 	}
 
 	// ============================================================================
+	// HTTP SERVER SETUP
+	// ============================================================================
+
+	// ============================================================================
 	// EVENT SUBSCRIPTIONS
 	// ============================================================================
 	eventBus := authService.EventBus()
@@ -535,7 +649,7 @@ func main() {
 		"port", port,
 		"base_url", baseURL,
 		"database", maskDSN(dbURL),
-		"plugins", []string{"otp", "password", "ratelimit", "csrf", "admin", "jwt", "webauthn", "organization", "apikey", "anonymous", "deviceauth", "oauth"},
+		"plugins", []string{"cors", "otp", "password", "ratelimit", "csrf", "admin", "jwt", "webauthn", "organization", "apikey", "anonymous", "deviceauth", "oauth"},
 	)
 
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
