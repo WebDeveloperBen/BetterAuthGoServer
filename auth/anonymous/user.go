@@ -44,16 +44,16 @@ func (u *User) ToPluginUser() *plugin.User {
 type userRow struct {
 	bun.BaseModel `bun:"table:users"`
 
-	ID            string     `bun:"id"`
-	Email         string     `bun:"email"`
-	EmailVerified bool       `bun:"email_verified"`
-	Name          string     `bun:"name"`
-	Image         *string    `bun:"image"`
-	Role          string     `bun:"role"`
-	Banned        bool       `bun:"banned"`
-	IsAnonymous   bool       `bun:"is_anonymous"`
-	CreatedAt     time.Time  `bun:"created_at"`
-	UpdatedAt     time.Time  `bun:"updated_at"`
+	ID            string    `bun:"id"`
+	Email         string    `bun:"email"`
+	EmailVerified bool      `bun:"email_verified"`
+	Name          string    `bun:"name"`
+	Image         *string   `bun:"image"`
+	Role          string    `bun:"role"`
+	Banned        bool      `bun:"banned"`
+	IsAnonymous   bool      `bun:"is_anonymous"`
+	CreatedAt     time.Time `bun:"created_at"`
+	UpdatedAt     time.Time `bun:"updated_at"`
 }
 
 // toUser converts a userRow to our local User type

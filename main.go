@@ -230,11 +230,11 @@ func main() {
 		// Keys are encrypted at rest with AES-256-GCM and support rotation.
 		// JWKS endpoint available at /.well-known/jwks.json
 		Use(jwt.NewPlugin(
-			jwt.WithAlgorithm(jwt.AlgorithmES256),          // ECDSA P-256 (recommended)
-			jwt.WithKeySource(jwt.KeySourceDatabase),       // Store keys in DB (encrypted)
-			jwt.WithKeyRotationGracePeriod(24*time.Hour),   // Old keys valid for 24h after rotation
-			jwt.WithAccessTTL(15*time.Minute),              // Short-lived access tokens
-			jwt.WithRefreshTTL(7*24*time.Hour),             // Long-lived refresh tokens
+			jwt.WithAlgorithm(jwt.AlgorithmES256),        // ECDSA P-256 (recommended)
+			jwt.WithKeySource(jwt.KeySourceDatabase),     // Store keys in DB (encrypted)
+			jwt.WithKeyRotationGracePeriod(24*time.Hour), // Old keys valid for 24h after rotation
+			jwt.WithAccessTTL(15*time.Minute),            // Short-lived access tokens
+			jwt.WithRefreshTTL(7*24*time.Hour),           // Long-lived refresh tokens
 			jwt.WithIssuer(baseURL),
 			jwt.WithAudience(baseURL),
 		)).
@@ -303,11 +303,11 @@ func main() {
 		)).
 		// ----- API Key Plugin -----
 		Use(apikey.NewPlugin(
-			apikey.WithDefaultPrefix("ba"),                      // Keys prefixed with "ba_"
-			apikey.WithRateLimitEnabled(true),                   // Enable rate limiting per key
-			apikey.WithRateLimitTimeWindow(24*time.Hour),        // 24 hour window
-			apikey.WithRateLimitMax(1000),                       // 1000 requests per window
-			apikey.WithSessionForAPIKeys(true),                  // API keys create synthetic sessions
+			apikey.WithDefaultPrefix("ba"),                         // Keys prefixed with "ba_"
+			apikey.WithRateLimitEnabled(true),                      // Enable rate limiting per key
+			apikey.WithRateLimitTimeWindow(24*time.Hour),           // 24 hour window
+			apikey.WithRateLimitMax(1000),                          // 1000 requests per window
+			apikey.WithSessionForAPIKeys(true),                     // API keys create synthetic sessions
 			apikey.WithAPIKeyHeaders("x-api-key", "Authorization"), // Check these headers
 			apikey.WithDefaultPermissions(apikey.Permissions{
 				"api": {"read"}, // Default permissions for new keys

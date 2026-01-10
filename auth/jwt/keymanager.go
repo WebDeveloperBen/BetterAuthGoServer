@@ -29,7 +29,7 @@ type KeyManager struct {
 	db          *bun.DB
 	encryptor   *token.Encryptor
 	algorithm   Algorithm
-	keySize     int           // RSA key size (default 2048)
+	keySize     int // RSA key size (default 2048)
 	curve       elliptic.Curve
 	gracePeriod time.Duration // How long rotated keys remain valid
 	logger      *slog.Logger
