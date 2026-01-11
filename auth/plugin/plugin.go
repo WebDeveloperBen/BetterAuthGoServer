@@ -5,12 +5,13 @@ package plugin
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"net/http"
 
-	"github.com/uptrace/bun"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
+	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
 // Plugin is the core interface that all plugins must implement
@@ -28,13 +29,37 @@ type Plugin interface {
 // DBProvider is an interface for stores that can provide database access.
 // Implement this interface in your store to allow plugins to access the database.
 type DBProvider interface {
-	DB() *bun.DB
+	// DB returns the underlying database connection for raw SQL operations.
+	DB() db.DBTX
+	// Dialect returns the database dialect (postgres, sqlite, mysql).
+	Dialect() db.Dialect
+}
+
+// PluginStoreProvider is an interface for stores that provide the full plugin store.
+// This is the preferred way for plugins to access database operations.
+type PluginStoreProvider interface {
+	// PluginStore returns the store for plugin database operations.
+	PluginStore() db.PluginStore
 }
 
 // Context provides plugins access to auth internals during initialization
 type Context struct {
-	// DB is the database connection (may be nil if store doesn't implement DBProvider)
-	DB *bun.DB
+	// Store provides access to plugin database operations.
+	// This is the preferred way to access database functionality.
+	// May be nil if the store doesn't implement PluginStoreProvider.
+	Store db.PluginStore
+
+	// RawDB provides the underlying database connection for advanced use cases.
+	// Most plugins should use Store instead.
+	// May be nil if the store doesn't implement DBProvider.
+	RawDB db.DBTX
+
+	// Dialect indicates the database type (postgres, sqlite, mysql).
+	Dialect db.Dialect
+
+	// DB is deprecated: use Store or RawDB instead.
+	// This field is kept for backwards compatibility during migration.
+	DB *sql.DB
 
 	// BaseURL is the base URL of the auth service
 	BaseURL string

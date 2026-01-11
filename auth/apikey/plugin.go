@@ -60,7 +60,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.ctx = ctx
 
 	// Database is required
-	if ctx.DB == nil {
+	if ctx.Store == nil {
 		ctx.Logger.Warn("apikey plugin: no database available, plugin disabled")
 		return nil
 	}
@@ -80,8 +80,11 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 	p.config = config
 
+	// Create store adapter using sqlc-based store
+	store := NewStoreAdapter(ctx.Store)
+
 	// Create service
-	p.service = NewService(ctx.DB, ctx.Hasher, config, ctx.Logger)
+	p.service = NewService(store, ctx.Hasher, config, ctx.Logger)
 
 	// Create handlers
 	p.handlers = newHandlers(p.service, auth, &config)

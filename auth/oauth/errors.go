@@ -12,4 +12,5 @@ var (
 	ErrStateNotFound    = errors.New("oauth: state not found")
 	ErrMissingCode      = errors.New("oauth: missing code or state parameter")
 	ErrNoUserInfo       = errors.New("oauth: no user info in result")
+	ErrStoreRequired    = errors.New("oauth: plugin store is required")
 )

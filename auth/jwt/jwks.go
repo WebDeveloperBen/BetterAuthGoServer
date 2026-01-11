@@ -1,6 +1,7 @@
 package jwt
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 )
@@ -30,9 +31,15 @@ type JWKPublic struct {
 	Y   string `json:"y,omitempty"`   // Y coordinate (base64url, EC only)
 }
 
+// JWKSProvider is an interface for retrieving JWKS.
+// Implemented by both KeyManager and KeyManagerAdapter.
+type JWKSProvider interface {
+	GetJWKS(ctx context.Context) (*JWKS, error)
+}
+
 // JWKSHandler returns an HTTP handler that serves the JWKS endpoint.
 // This handler should be mounted at /.well-known/jwks.json
-func JWKSHandler(km *KeyManager) http.HandlerFunc {
+func JWKSHandler(km JWKSProvider) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

@@ -379,9 +379,15 @@ func (a *Auth) buildPluginContext() plugin.Context {
 		EventBus:  a.eventBus,
 	}
 
-	// Check if store provides DB access
+	// Check if store provides the new PluginStore interface (preferred)
+	if storeProvider, ok := a.store.(plugin.PluginStoreProvider); ok {
+		ctx.Store = storeProvider.PluginStore()
+	}
+
+	// Check if store provides raw DB access
 	if dbProvider, ok := a.store.(plugin.DBProvider); ok {
-		ctx.DB = dbProvider.DB()
+		ctx.RawDB = dbProvider.DB()
+		ctx.Dialect = dbProvider.Dialect()
 	}
 
 	return ctx

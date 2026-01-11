@@ -39,7 +39,7 @@ func (p *Plugin) handleAnonymousSignIn() http.HandlerFunc {
 		currentPluginUser, _ := p.auth.GetUserFromRequest(r)
 		if currentPluginUser != nil {
 			// Query the is_anonymous status from our plugin's column
-			isAnonymous, err := IsUserAnonymous(ctx, p.ctx.DB, currentPluginUser.ID)
+			isAnonymous, err := IsUserAnonymous(ctx, p.store, currentPluginUser.ID)
 			if err != nil {
 				p.ctx.Logger.Error("failed to check anonymous status", "error", err)
 			}

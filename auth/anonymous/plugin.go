@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/uptrace/bun"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
@@ -21,6 +20,7 @@ type Plugin struct {
 	ctx     plugin.Context
 	auth    AuthProvider
 	service *Service
+	store   AnonymousStore
 	opts    []Option
 }
 
@@ -54,13 +54,17 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.auth = auth
 
 	// Require database for cleanup functionality
-	if ctx.DB == nil {
+	if ctx.Store == nil {
 		ctx.Logger.Warn("anonymous plugin disabled: no database connection")
 		return nil
 	}
 
+	// Create store adapter
+	storeAdapter := NewStoreAdapter(ctx.Store)
+	p.store = storeAdapter
+
 	// Ensure the is_anonymous column exists on the users table
-	if err := p.ensureUserExtensionColumns(ctx.DB); err != nil {
+	if err := storeAdapter.EnsureAnonymousColumn(context.Background()); err != nil {
 		ctx.Logger.Error("anonymous plugin: failed to ensure schema", "error", err)
 		return err
 	}
@@ -72,7 +76,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 
 	// Create service
-	p.service = NewService(ctx.DB, auth, config, ctx.Logger)
+	p.service = NewService(storeAdapter, auth, config, ctx.Logger)
 
 	// Subscribe to SignedIn events for account linking
 	if ctx.EventBus != nil {
@@ -90,30 +94,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	return nil
 }
 
-// ensureUserExtensionColumns adds the is_anonymous column to the users table.
-// This extends the core users table with anonymous-specific fields.
-// Checks if column exists first to avoid SQL syntax errors.
-func (p *Plugin) ensureUserExtensionColumns(db *bun.DB) error {
-	ctx := context.Background()
 
-	// Check if column already exists to avoid SQL syntax issues
-	var count int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'is_anonymous'").Scan(&count); err != nil {
-		return fmt.Errorf("failed to check is_anonymous column: %w", err)
-	}
-
-	if count > 0 {
-		// Column already exists
-		return nil
-	}
-
-	// Add the column
-	if _, err := db.ExecContext(ctx, "ALTER TABLE users ADD COLUMN is_anonymous BOOLEAN DEFAULT FALSE"); err != nil {
-		return fmt.Errorf("failed to add is_anonymous column: %w", err)
-	}
-
-	return nil
-}
 
 // Close cleans up plugin resources
 func (p *Plugin) Close() error {

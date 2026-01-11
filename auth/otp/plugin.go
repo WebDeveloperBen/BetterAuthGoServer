@@ -29,7 +29,7 @@ const (
 // Plugin implements the OTP functionality as a plugin.
 type Plugin struct {
 	ctx     plugin.Context
-	store   *Store
+	store   TokenStore
 	service *Service
 	opts    []Option
 }
@@ -57,7 +57,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.ctx = ctx
 
 	// Require database access
-	if ctx.DB == nil {
+	if ctx.Store == nil {
 		ctx.Logger.Warn("otp plugin: no database available, plugin disabled")
 		return nil
 	}
@@ -68,8 +68,8 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		opt(&config)
 	}
 
-	// Create store and service
-	p.store = NewStore(ctx.DB)
+	// Create store adapter using sqlc-based store
+	p.store = NewStoreAdapter(ctx.Store)
 	p.service = NewService(p.store, ctx.Hasher, config)
 
 	ctx.Logger.Info("otp plugin initialized")

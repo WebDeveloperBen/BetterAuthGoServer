@@ -84,11 +84,12 @@ const (
 
 // Plugin wraps JWT functionality as an auth plugin
 type Plugin struct {
-	service    *Service
-	keyManager *KeyManager
-	ctx        plugin.Context
-	auth       AuthProvider
-	opts       []Option
+	service           *Service
+	keyManager        *KeyManager        // Deprecated: Bun-based key manager
+	keyManagerAdapter *KeyManagerAdapter // sqlc-based key manager
+	ctx               plugin.Context
+	auth              AuthProvider
+	opts              []Option
 }
 
 // WithKeyRotationGracePeriod sets how long rotated keys remain valid for verification.
@@ -157,26 +158,26 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 
 	// Set up KeyManager for database-backed asymmetric keys
 	if config.KeySource == KeySourceDatabase {
-		if ctx.DB == nil {
+		if ctx.Store == nil {
 			return ErrDatabaseRequired
 		}
 		if ctx.Encryptor == nil {
 			return ErrEncryptorRequired
 		}
 
-		// Build KeyManager options
-		var kmOpts []KeyManagerOption
+		// Build KeyManagerAdapter options
+		var kmOpts []KeyManagerAdapterOption
 		if config.KeyRotationGracePeriod > 0 {
-			kmOpts = append(kmOpts, WithKeyManagerGracePeriod(config.KeyRotationGracePeriod))
+			kmOpts = append(kmOpts, WithAdapterGracePeriod(config.KeyRotationGracePeriod))
 		}
 		if config.KeySize > 0 {
-			kmOpts = append(kmOpts, WithKeyManagerKeySize(config.KeySize))
+			kmOpts = append(kmOpts, WithAdapterKeySize(config.KeySize))
 		}
-		kmOpts = append(kmOpts, WithKeyManagerLogger(ctx.Logger))
+		kmOpts = append(kmOpts, WithAdapterLogger(ctx.Logger))
 
-		// Create KeyManager
-		km := NewKeyManager(ctx.DB, ctx.Encryptor, config.Algorithm, kmOpts...)
-		p.keyManager = km
+		// Create KeyManagerAdapter using the sqlc store
+		km := NewKeyManagerAdapter(ctx.Store, ctx.Encryptor, config.Algorithm, kmOpts...)
+		p.keyManagerAdapter = km
 		config.KeyManager = km
 
 		// Ensure there's an active key (generates one if needed)
@@ -191,8 +192,8 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 
 	// Use database-backed blocklist if available, otherwise use memory
 	if config.TokenBlocklist == nil {
-		if ctx.DB != nil {
-			config.TokenBlocklist = NewDBTokenBlocklist(ctx.DB)
+		if ctx.Store != nil {
+			config.TokenBlocklist = NewBlocklistAdapter(ctx.Store)
 		} else {
 			config.TokenBlocklist = NewMemoryTokenBlocklist()
 		}
@@ -248,11 +249,11 @@ func (p *Plugin) Routes() []plugin.Route {
 	}
 
 	// Add JWKS endpoint if using database-backed keys
-	if p.keyManager != nil {
+	if p.keyManagerAdapter != nil {
 		routes = append(routes, plugin.Route{
 			Method:  "GET",
 			Path:    "/.well-known/jwks.json",
-			Handler: JWKSHandler(p.keyManager),
+			Handler: JWKSHandler(p.keyManagerAdapter),
 		})
 		routes = append(routes, plugin.Route{
 			Method:  "POST",

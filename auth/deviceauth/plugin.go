@@ -1,8 +1,6 @@
 package deviceauth
 
 import (
-	"context"
-
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
@@ -23,9 +21,8 @@ type Plugin struct {
 
 // Compile-time interface checks
 var (
-	_ plugin.Plugin             = (*Plugin)(nil)
-	_ plugin.RoutesProvider     = (*Plugin)(nil)
-	_ plugin.MigrationsProvider = (*Plugin)(nil)
+	_ plugin.Plugin         = (*Plugin)(nil)
+	_ plugin.RoutesProvider = (*Plugin)(nil)
 )
 
 // NewPlugin creates a new device authorization plugin with the given options.
@@ -51,8 +48,8 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.auth = auth
 
 	// Check for required context
-	if ctx.DB == nil {
-		ctx.Logger.Warn("deviceauth: DB not available, plugin disabled")
+	if ctx.Store == nil {
+		ctx.Logger.Warn("deviceauth: Store not available, plugin disabled")
 		return nil
 	}
 
@@ -72,13 +69,11 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		p.config.VerificationURI = ctx.BaseURL + "/device"
 	}
 
-	// Create table if not exists
-	if err := p.ensureTable(ctx); err != nil {
-		return err
-	}
+	// Create store adapter
+	storeAdapter := NewStoreAdapter(ctx.Store)
 
 	// Create service and handlers
-	p.service = NewService(ctx.DB, ctx.Hasher, p.config, ctx.Logger)
+	p.service = NewService(storeAdapter, ctx.Hasher, p.config, ctx.Logger)
 	p.handlers = newHandlers(p.service, p.auth)
 
 	ctx.Logger.Info("deviceauth: plugin initialized",
@@ -136,52 +131,4 @@ func (p *Plugin) Routes() []plugin.Route {
 			RequireAuth: false,
 		},
 	}
-}
-
-// Migrations returns the database models for auto-migration.
-func (p *Plugin) Migrations() []any {
-	return []any{&DeviceCode{}}
-}
-
-// ensureTable creates the device_codes table if it doesn't exist.
-func (p *Plugin) ensureTable(ctx plugin.Context) error {
-	_, err := ctx.DB.NewCreateTable().
-		Model((*DeviceCode)(nil)).
-		IfNotExists().
-		Exec(context.Background())
-
-	if err != nil {
-		ctx.Logger.Error("deviceauth: failed to create table", "error", err)
-		return err
-	}
-
-	// Create indexes
-	indexes := []struct {
-		name   string
-		column string
-		unique bool
-	}{
-		{"idx_device_codes_device_code_hash", "device_code_hash", false},
-		{"idx_device_codes_user_code", "user_code", true},
-		{"idx_device_codes_expires_at", "expires_at", false},
-	}
-
-	for _, idx := range indexes {
-		query := ctx.DB.NewCreateIndex().
-			Model((*DeviceCode)(nil)).
-			Index(idx.name).
-			Column(idx.column).
-			IfNotExists()
-
-		if idx.unique {
-			query = query.Unique()
-		}
-
-		if _, err := query.Exec(context.Background()); err != nil {
-			// Index might already exist, log but don't fail
-			ctx.Logger.Debug("deviceauth: index creation", "index", idx.name, "error", err)
-		}
-	}
-
-	return nil
 }

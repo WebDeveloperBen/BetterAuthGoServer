@@ -273,20 +273,20 @@ func (p *Plugin) TokenIntrospectHandler() http.HandlerFunc {
 // Requires admin authorization (should be protected by middleware).
 func (p *Plugin) KeyRotateHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if p.keyManager == nil {
+		if p.keyManagerAdapter == nil {
 			writeError(w, http.StatusNotImplemented, ErrNotInitialized)
 			return
 		}
 
 		// Rotate the key
-		newKey, err := p.keyManager.RotateKey(r.Context())
+		newKey, err := p.keyManagerAdapter.RotateKey(r.Context())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
 
 		// Also cleanup any expired keys
-		cleaned, _ := p.keyManager.CleanupExpiredKeys(r.Context())
+		cleaned, _ := p.keyManagerAdapter.CleanupExpiredKeys(r.Context())
 
 		_ = writeJSON(w, http.StatusOK, map[string]any{
 			"message":      "Key rotated successfully",

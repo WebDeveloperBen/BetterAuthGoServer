@@ -40,7 +40,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.ctx = ctx
 
 	// Require database access.
-	if ctx.DB == nil {
+	if ctx.Store == nil {
 		ctx.Logger.Warn("webauthn plugin: no database available, plugin disabled")
 		return nil
 	}
@@ -67,7 +67,8 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		return nil
 	}
 
-	store := NewStore(ctx.DB)
+	// Create store adapter using sqlc-based store
+	store := NewStoreAdapter(ctx.Store)
 	service, err := NewService(store, ctx.Encryptor, config, ctx.Logger)
 	if err != nil {
 		return err

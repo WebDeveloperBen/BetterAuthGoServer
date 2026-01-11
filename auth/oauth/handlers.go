@@ -107,8 +107,8 @@ func (p *Plugin) completeOAuthUserCreation(ctx context.Context, provider string,
 		return nil, ErrNoUserInfo
 	}
 
-	// Initialize account store for OAuth-specific operations
-	accountStore := NewAccountStore(p.ctx.DB)
+	// Use the account store initialized in Init
+	accountStore := p.accountStore
 
 	// Try to find existing OAuth account by provider and provider account ID
 	existingAccount, err := accountStore.GetAccountByProvider(ctx, provider, userInfo.ID)

@@ -8,15 +8,25 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
+// TokenStore defines the interface for OTP token persistence.
+// Implemented by both Store (Bun) and StoreAdapter (sqlc).
+type TokenStore interface {
+	Create(ctx context.Context, token *OTPToken) error
+	GetByTokenHash(ctx context.Context, tokenHash string) (*OTPToken, error)
+	Delete(ctx context.Context, id string) error
+	DeleteByUserAndType(ctx context.Context, userID string, tokenType TokenType) error
+	DeleteExpired(ctx context.Context) error
+}
+
 // Service handles OTP token operations.
 type Service struct {
-	store  *Store
+	store  TokenStore
 	hasher *token.Hasher
 	config Config
 }
 
 // NewService creates a new OTP service.
-func NewService(store *Store, hasher *token.Hasher, config Config) *Service {
+func NewService(store TokenStore, hasher *token.Hasher, config Config) *Service {
 	return &Service{
 		store:  store,
 		hasher: hasher,

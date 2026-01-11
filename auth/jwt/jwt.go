@@ -26,6 +26,15 @@ const (
 	AlgorithmEdDSA Algorithm = "EdDSA"
 )
 
+// KeyProvider is an interface for database-backed JWT key management.
+// Implemented by both KeyManager (Bun) and KeyManagerAdapter (sqlc).
+type KeyProvider interface {
+	// GetActiveKey returns the current active signing key
+	GetActiveKey(ctx context.Context) (*LoadedKey, error)
+	// GetKeyForVerification returns a key by ID for token verification
+	GetKeyForVerification(ctx context.Context, kid string) (*LoadedKey, error)
+}
+
 // Config holds JWT service configuration
 type Config struct {
 	// Algorithm is the signing algorithm (default: HS256)
@@ -47,7 +56,8 @@ type Config struct {
 	KeySource KeySource
 
 	// KeyManager handles database-backed keys (set automatically when KeySource is KeySourceDatabase)
-	KeyManager *KeyManager
+	// Can be either *KeyManager (Bun) or *KeyManagerAdapter (sqlc)
+	KeyManager KeyProvider
 
 	// AccessTokenTTL is the lifetime of access tokens (default: 15 minutes)
 	AccessTokenTTL time.Duration
@@ -99,7 +109,7 @@ type Service struct {
 	signingKey any
 	verifyKey  any
 	method     jwt.SigningMethod
-	keyManager *KeyManager
+	keyManager KeyProvider
 }
 
 // NewService creates a new JWT service
@@ -517,6 +527,6 @@ func (s *Service) Config() Config {
 }
 
 // KeyManager returns the key manager (nil if not using database-backed keys)
-func (s *Service) KeyManager() *KeyManager {
+func (s *Service) KeyManager() KeyProvider {
 	return s.keyManager
 }

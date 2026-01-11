@@ -12,10 +12,11 @@ const (
 
 // Plugin wraps OAuth functionality as an auth plugin
 type Plugin struct {
-	service   *Service
-	providers []Provider
-	ctx       plugin.Context
-	auth      AuthProvider
+	service      *Service
+	providers    []Provider
+	ctx          plugin.Context
+	auth         AuthProvider
+	accountStore *AccountStoreAdapter
 }
 
 // Ensure Plugin implements required interfaces
@@ -52,8 +53,12 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 	p.auth = auth
 
-	// Create state store with auto-table creation
-	stateStore := NewDBStateStore(ctx.DB)
+	// Create stores - use new sqlc-based store if available
+	if ctx.Store == nil {
+		return ErrStoreRequired
+	}
+	stateStore := NewStoreAdapter(ctx.Store)
+	p.accountStore = NewAccountStoreAdapter(ctx.Store)
 
 	// Create OAuth service with token utilities from context
 	service := NewService(stateStore, ctx.Hasher, ctx.Encryptor)
