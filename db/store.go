@@ -597,3 +597,193 @@ func (s *Store) DeleteExpiredDeviceCodes(ctx context.Context) (int64, error) {
 func (s *Store) DeleteDeviceCode(ctx context.Context, id string) error {
 	return s.q.DeleteDeviceCode(ctx, id)
 }
+
+// =============================================================================
+// Organization Store Methods - delegates to Querier
+// =============================================================================
+
+// CreateOrganization creates a new organization.
+func (s *Store) CreateOrganization(ctx context.Context, org *Organization) error {
+	return s.q.CreateOrganization(ctx, org)
+}
+
+// GetOrganizationByID retrieves an organization by ID.
+func (s *Store) GetOrganizationByID(ctx context.Context, id string) (*Organization, error) {
+	return s.q.GetOrganizationByID(ctx, id)
+}
+
+// GetOrganizationBySlug retrieves an organization by slug.
+func (s *Store) GetOrganizationBySlug(ctx context.Context, slug string) (*Organization, error) {
+	return s.q.GetOrganizationBySlug(ctx, slug)
+}
+
+// UpdateOrganization updates an organization.
+func (s *Store) UpdateOrganization(ctx context.Context, org *Organization) error {
+	return s.q.UpdateOrganization(ctx, org)
+}
+
+// DeleteOrganization deletes an organization by ID.
+func (s *Store) DeleteOrganization(ctx context.Context, id string) error {
+	return s.q.DeleteOrganization(ctx, id)
+}
+
+// ListUserOrganizations returns all organizations a user is a member of.
+func (s *Store) ListUserOrganizations(ctx context.Context, userID string) ([]*Organization, error) {
+	return s.q.ListUserOrganizations(ctx, userID)
+}
+
+// CheckSlugExists checks if an organization slug already exists.
+func (s *Store) CheckSlugExists(ctx context.Context, slug string) (bool, error) {
+	return s.q.CheckSlugExists(ctx, slug)
+}
+
+// =============================================================================
+// Member Store Methods - delegates to Querier
+// =============================================================================
+
+// CreateMember adds a member to an organization.
+func (s *Store) CreateMember(ctx context.Context, member *OrgMember) error {
+	return s.q.CreateMember(ctx, member)
+}
+
+// GetMember retrieves a member by organization ID and user ID.
+func (s *Store) GetMember(ctx context.Context, orgID, userID string) (*OrgMember, error) {
+	return s.q.GetMember(ctx, orgID, userID)
+}
+
+// GetMemberByID retrieves a member by ID.
+func (s *Store) GetMemberByID(ctx context.Context, id string) (*OrgMember, error) {
+	return s.q.GetMemberByID(ctx, id)
+}
+
+// ListMembersByOrganization returns all members of an organization.
+func (s *Store) ListMembersByOrganization(ctx context.Context, orgID string) ([]*OrgMember, error) {
+	return s.q.ListMembersByOrganization(ctx, orgID)
+}
+
+// ListMembersByUser returns all memberships for a user.
+func (s *Store) ListMembersByUser(ctx context.Context, userID string) ([]*OrgMember, error) {
+	return s.q.ListMembersByUser(ctx, userID)
+}
+
+// UpdateMemberRole updates a member's role.
+func (s *Store) UpdateMemberRole(ctx context.Context, id, role string, updatedAt time.Time) error {
+	return s.q.UpdateMemberRole(ctx, id, role, updatedAt)
+}
+
+// DeleteMember removes a member from an organization.
+func (s *Store) DeleteMember(ctx context.Context, orgID, userID string) error {
+	return s.q.DeleteMember(ctx, orgID, userID)
+}
+
+// CountOrganizationMembers returns the number of members in an organization.
+func (s *Store) CountOrganizationMembers(ctx context.Context, orgID string) (int64, error) {
+	return s.q.CountOrganizationMembers(ctx, orgID)
+}
+
+// GetFirstMemberByUser returns the first membership for a user.
+func (s *Store) GetFirstMemberByUser(ctx context.Context, userID string) (*OrgMember, error) {
+	return s.q.GetFirstMemberByUser(ctx, userID)
+}
+
+// =============================================================================
+// Invitation Store Methods - delegates to Querier
+// =============================================================================
+
+// CreateInvitation creates a new invitation.
+func (s *Store) CreateInvitation(ctx context.Context, inv *OrgInvitation) error {
+	return s.q.CreateInvitation(ctx, inv)
+}
+
+// GetInvitationByID retrieves an invitation by ID.
+func (s *Store) GetInvitationByID(ctx context.Context, id string) (*OrgInvitation, error) {
+	return s.q.GetInvitationByID(ctx, id)
+}
+
+// GetPendingInvitationByEmailAndOrg retrieves a pending invitation by email and org.
+func (s *Store) GetPendingInvitationByEmailAndOrg(ctx context.Context, email, orgID string) (*OrgInvitation, error) {
+	return s.q.GetPendingInvitationByEmailAndOrg(ctx, email, orgID)
+}
+
+// ListInvitationsByOrganization returns all invitations for an organization.
+func (s *Store) ListInvitationsByOrganization(ctx context.Context, orgID string) ([]*OrgInvitation, error) {
+	return s.q.ListInvitationsByOrganization(ctx, orgID)
+}
+
+// ListPendingInvitationsByEmail returns all pending invitations for an email.
+func (s *Store) ListPendingInvitationsByEmail(ctx context.Context, email string) ([]*OrgInvitation, error) {
+	return s.q.ListPendingInvitationsByEmail(ctx, email)
+}
+
+// UpdateInvitationStatus updates an invitation's status.
+func (s *Store) UpdateInvitationStatus(ctx context.Context, id, status string) error {
+	return s.q.UpdateInvitationStatus(ctx, id, status)
+}
+
+// CancelPendingInvitations cancels all pending invitations for an email and org.
+func (s *Store) CancelPendingInvitations(ctx context.Context, email, orgID string) error {
+	return s.q.CancelPendingInvitations(ctx, email, orgID)
+}
+
+// DeleteExpiredInvitations removes expired invitations.
+func (s *Store) DeleteExpiredInvitations(ctx context.Context) (int64, error) {
+	return s.q.DeleteExpiredInvitations(ctx)
+}
+
+// =============================================================================
+// Team Store Methods - delegates to Querier
+// =============================================================================
+
+// CreateTeam creates a new team.
+func (s *Store) CreateTeam(ctx context.Context, team *OrgTeam) error {
+	return s.q.CreateTeam(ctx, team)
+}
+
+// GetTeamByID retrieves a team by ID.
+func (s *Store) GetTeamByID(ctx context.Context, id string) (*OrgTeam, error) {
+	return s.q.GetTeamByID(ctx, id)
+}
+
+// ListTeamsByOrganization returns all teams for an organization.
+func (s *Store) ListTeamsByOrganization(ctx context.Context, orgID string) ([]*OrgTeam, error) {
+	return s.q.ListTeamsByOrganization(ctx, orgID)
+}
+
+// UpdateTeam updates a team.
+func (s *Store) UpdateTeam(ctx context.Context, id, name string, updatedAt time.Time) error {
+	return s.q.UpdateTeam(ctx, id, name, updatedAt)
+}
+
+// DeleteTeam deletes a team by ID.
+func (s *Store) DeleteTeam(ctx context.Context, id string) error {
+	return s.q.DeleteTeam(ctx, id)
+}
+
+// =============================================================================
+// Team Member Store Methods - delegates to Querier
+// =============================================================================
+
+// CreateTeamMember adds a member to a team.
+func (s *Store) CreateTeamMember(ctx context.Context, member *OrgTeamMember) error {
+	return s.q.CreateTeamMember(ctx, member)
+}
+
+// GetTeamMember retrieves a team member by team ID and user ID.
+func (s *Store) GetTeamMember(ctx context.Context, teamID, userID string) (*OrgTeamMember, error) {
+	return s.q.GetTeamMember(ctx, teamID, userID)
+}
+
+// ListTeamMembersByTeam returns all members of a team.
+func (s *Store) ListTeamMembersByTeam(ctx context.Context, teamID string) ([]*OrgTeamMember, error) {
+	return s.q.ListTeamMembersByTeam(ctx, teamID)
+}
+
+// ListTeamMembersByUser returns all team memberships for a user.
+func (s *Store) ListTeamMembersByUser(ctx context.Context, userID string) ([]*OrgTeamMember, error) {
+	return s.q.ListTeamMembersByUser(ctx, userID)
+}
+
+// DeleteTeamMember removes a member from a team.
+func (s *Store) DeleteTeamMember(ctx context.Context, teamID, userID string) error {
+	return s.q.DeleteTeamMember(ctx, teamID, userID)
+}

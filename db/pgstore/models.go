@@ -60,6 +60,17 @@ type DeviceCode struct {
 	UpdatedAt       time.Time      `json:"updated_at"`
 }
 
+type Invitation struct {
+	ID             string       `json:"id"`
+	Email          string       `json:"email"`
+	OrganizationID string       `json:"organization_id"`
+	InviterID      string       `json:"inviter_id"`
+	Role           string       `json:"role"`
+	Status         string       `json:"status"`
+	ExpiresAt      sql.NullTime `json:"expires_at"`
+	CreatedAt      time.Time    `json:"created_at"`
+}
+
 type JwtKey struct {
 	ID            string       `json:"id"`
 	Algorithm     string       `json:"algorithm"`
@@ -79,6 +90,15 @@ type JwtRevokedToken struct {
 	ID        string    `json:"id"`
 	ExpiresAt time.Time `json:"expires_at"`
 	RevokedAt time.Time `json:"revoked_at"`
+}
+
+type Member struct {
+	ID             string    `json:"id"`
+	OrganizationID string    `json:"organization_id"`
+	UserID         string    `json:"user_id"`
+	Role           string    `json:"role"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type OauthAccount struct {
@@ -102,6 +122,16 @@ type OauthState struct {
 	ExpiresAt  time.Time      `json:"expires_at"`
 }
 
+type Organization struct {
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Slug      string         `json:"slug"`
+	Logo      sql.NullString `json:"logo"`
+	Metadata  sql.NullString `json:"metadata"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+}
+
 type OtpToken struct {
 	ID         string         `json:"id"`
 	UserID     string         `json:"user_id"`
@@ -122,6 +152,21 @@ type Session struct {
 	ExpiresAt      time.Time      `json:"expires_at"`
 	LastUsed       time.Time      `json:"last_used"`
 	ImpersonatedBy sql.NullString `json:"impersonated_by"`
+}
+
+type Team struct {
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	OrganizationID string    `json:"organization_id"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type TeamMember struct {
+	ID        string    `json:"id"`
+	TeamID    string    `json:"team_id"`
+	UserID    string    `json:"user_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type User struct {

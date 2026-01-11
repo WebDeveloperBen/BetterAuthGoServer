@@ -22,6 +22,7 @@ type Member struct {
 	OrganizationID string
 	Role           string // owner, admin, member
 	CreatedAt      time.Time
+	UpdatedAt      time.Time
 
 	// Relations (loaded separately when needed)
 	Organization *Organization

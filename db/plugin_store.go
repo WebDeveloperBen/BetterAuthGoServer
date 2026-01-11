@@ -37,6 +37,9 @@ type PluginStore interface {
 
 	// Device Authorization operations
 	DeviceAuthStore
+
+	// Organization operations
+	OrganizationStore
 }
 
 // OTPStore defines OTP token operations for plugins.
@@ -217,6 +220,103 @@ type DeviceAuthStore interface {
 	DeleteExpiredDeviceCodes(ctx context.Context) (int64, error)
 	// DeleteDeviceCode removes a device code by ID.
 	DeleteDeviceCode(ctx context.Context, id string) error
+}
+
+// OrganizationStore defines organization operations for plugins.
+type OrganizationStore interface {
+	// Organizations
+	CreateOrganization(ctx context.Context, org *Organization) error
+	GetOrganizationByID(ctx context.Context, id string) (*Organization, error)
+	GetOrganizationBySlug(ctx context.Context, slug string) (*Organization, error)
+	UpdateOrganization(ctx context.Context, org *Organization) error
+	DeleteOrganization(ctx context.Context, id string) error
+	ListUserOrganizations(ctx context.Context, userID string) ([]*Organization, error)
+	CheckSlugExists(ctx context.Context, slug string) (bool, error)
+
+	// Members
+	CreateMember(ctx context.Context, member *OrgMember) error
+	GetMember(ctx context.Context, orgID, userID string) (*OrgMember, error)
+	GetMemberByID(ctx context.Context, id string) (*OrgMember, error)
+	ListMembersByOrganization(ctx context.Context, orgID string) ([]*OrgMember, error)
+	ListMembersByUser(ctx context.Context, userID string) ([]*OrgMember, error)
+	UpdateMemberRole(ctx context.Context, id, role string, updatedAt time.Time) error
+	DeleteMember(ctx context.Context, orgID, userID string) error
+	CountOrganizationMembers(ctx context.Context, orgID string) (int64, error)
+	GetFirstMemberByUser(ctx context.Context, userID string) (*OrgMember, error)
+
+	// Invitations
+	CreateInvitation(ctx context.Context, inv *OrgInvitation) error
+	GetInvitationByID(ctx context.Context, id string) (*OrgInvitation, error)
+	GetPendingInvitationByEmailAndOrg(ctx context.Context, email, orgID string) (*OrgInvitation, error)
+	ListInvitationsByOrganization(ctx context.Context, orgID string) ([]*OrgInvitation, error)
+	ListPendingInvitationsByEmail(ctx context.Context, email string) ([]*OrgInvitation, error)
+	UpdateInvitationStatus(ctx context.Context, id, status string) error
+	CancelPendingInvitations(ctx context.Context, email, orgID string) error
+	DeleteExpiredInvitations(ctx context.Context) (int64, error)
+
+	// Teams
+	CreateTeam(ctx context.Context, team *OrgTeam) error
+	GetTeamByID(ctx context.Context, id string) (*OrgTeam, error)
+	ListTeamsByOrganization(ctx context.Context, orgID string) ([]*OrgTeam, error)
+	UpdateTeam(ctx context.Context, id, name string, updatedAt time.Time) error
+	DeleteTeam(ctx context.Context, id string) error
+
+	// Team Members
+	CreateTeamMember(ctx context.Context, member *OrgTeamMember) error
+	GetTeamMember(ctx context.Context, teamID, userID string) (*OrgTeamMember, error)
+	ListTeamMembersByTeam(ctx context.Context, teamID string) ([]*OrgTeamMember, error)
+	ListTeamMembersByUser(ctx context.Context, userID string) ([]*OrgTeamMember, error)
+	DeleteTeamMember(ctx context.Context, teamID, userID string) error
+}
+
+// Organization represents an organization.
+type Organization struct {
+	ID        string
+	Name      string
+	Slug      string
+	Logo      *string
+	Metadata  *string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// OrgMember represents a membership in an organization.
+type OrgMember struct {
+	ID             string
+	OrganizationID string
+	UserID         string
+	Role           string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+// OrgInvitation represents an invitation to join an organization.
+type OrgInvitation struct {
+	ID             string
+	Email          string
+	OrganizationID string
+	InviterID      string
+	Role           string
+	Status         string
+	ExpiresAt      *time.Time
+	CreatedAt      time.Time
+}
+
+// OrgTeam represents a team within an organization.
+type OrgTeam struct {
+	ID             string
+	Name           string
+	OrganizationID string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+// OrgTeamMember represents a membership in a team.
+type OrgTeamMember struct {
+	ID        string
+	TeamID    string
+	UserID    string
+	CreatedAt time.Time
 }
 
 // Ensure Store implements PluginStore

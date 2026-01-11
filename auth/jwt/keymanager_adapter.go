@@ -23,6 +23,17 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
+// LoadedKey represents a decrypted key ready for use
+type LoadedKey struct {
+	ID          string
+	Algorithm   string
+	Status      string
+	PrivateKey  crypto.PrivateKey
+	PublicKey   crypto.PublicKey
+	ActivatedAt time.Time
+	ExpiresAt   *time.Time
+}
+
 // KeyManagerStore defines the interface for JWT key storage operations.
 type KeyManagerStore interface {
 	CreateJWTKey(ctx context.Context, key *db.JWTKey) error

@@ -2,7 +2,6 @@ package otp
 
 import (
 	"context"
-	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
@@ -60,8 +59,7 @@ func (a *StoreAdapter) DeleteExpired(ctx context.Context) error {
 
 // toOTPToken converts a db.OTPToken to an OTPToken.
 func (a *StoreAdapter) toOTPToken(t *db.OTPToken) *OTPToken {
-	var expiresAt time.Time
-	expiresAt = t.ExpiresAt
+	expiresAt := t.ExpiresAt
 
 	return &OTPToken{
 		ID:         t.ID,

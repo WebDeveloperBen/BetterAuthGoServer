@@ -60,8 +60,8 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		p.logger = slog.Default()
 	}
 
-	if ctx.Store == nil {
-		p.logger.Warn("organization plugin: no store available, plugin disabled")
+	if ctx.RawDB == nil {
+		p.logger.Warn("organization plugin: no database available, plugin disabled")
 		return nil
 	}
 
@@ -104,8 +104,14 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		return nil
 	}
 
+	// Check for PluginStore
+	if ctx.Store == nil {
+		p.logger.Warn("organization plugin: no plugin store available, plugin disabled")
+		return nil
+	}
+
 	// Create service
-	p.service = NewService(ctx.RawDB, ctx.Dialect, p.logger, &p.config)
+	p.service = NewService(ctx.Store, ctx.RawDB, ctx.Dialect, p.logger, &p.config)
 
 	// Create handlers
 	p.handlers = newHandlers(p.service, &p.config, userProvider, sessionInfoProvider)

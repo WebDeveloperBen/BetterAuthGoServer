@@ -85,7 +85,6 @@ const (
 // Plugin wraps JWT functionality as an auth plugin
 type Plugin struct {
 	service           *Service
-	keyManager        *KeyManager        // Deprecated: Bun-based key manager
 	keyManagerAdapter *KeyManagerAdapter // sqlc-based key manager
 	ctx               plugin.Context
 	auth              AuthProvider

@@ -10,6 +10,7 @@ import (
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/organization"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
+	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
 // setupHandlersTest sets up the test environment for handler tests
@@ -29,13 +30,22 @@ func setupHandlersTest(t *testing.T) (*testDB, *organization.Plugin, *mockAuthPr
 	}
 	mockAuth := newMockAuthProvider(user, session)
 
+	// Create a store for the plugin context
+	store, err := db.New(tdb.DB, db.DialectSQLite)
+	if err != nil {
+		tdb.cleanup(t)
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
 	// Create and initialize the plugin
 	p := organization.NewPlugin(
 		organization.WithTeams(organization.TeamsConfig{Enabled: true}),
 	)
 
 	ctx := plugin.Context{
-		DB:      tdb.DB,
+		Store:   store,
+		RawDB:   tdb.DB,
+		Dialect: db.DialectSQLite,
 		BaseURL: "http://localhost:8080",
 		Secret:  "test-secret",
 		Auth:    mockAuth,
@@ -617,12 +627,20 @@ func TestHandlers_Unauthorized(t *testing.T) {
 	tdb := setupTestDB(t)
 	defer tdb.cleanup(t)
 
+	// Create a store for the plugin context
+	store, err := db.New(tdb.DB, db.DialectSQLite)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
 	// Create plugin with nil user in mock provider
 	mockAuth := newMockAuthProvider(nil, nil)
 
 	p := organization.NewPlugin()
 	ctx := plugin.Context{
-		DB:      tdb.DB,
+		Store:   store,
+		RawDB:   tdb.DB,
+		Dialect: db.DialectSQLite,
 		BaseURL: "http://localhost:8080",
 		Secret:  "test-secret",
 		Auth:    mockAuth,
@@ -728,11 +746,19 @@ func TestPlugin_Middleware(t *testing.T) {
 	tdb := setupTestDB(t)
 	defer tdb.cleanup(t)
 
+	// Create a store for the plugin context
+	store, err := db.New(tdb.DB, db.DialectSQLite)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
 	mockAuth := newMockAuthProvider(&plugin.User{ID: "user-1"}, &plugin.SessionInfo{ID: "session-1", UserID: "user-1"})
 
 	p := organization.NewPlugin()
 	ctx := plugin.Context{
-		DB:      tdb.DB,
+		Store:   store,
+		RawDB:   tdb.DB,
+		Dialect: db.DialectSQLite,
 		BaseURL: "http://localhost:8080",
 		Secret:  "test-secret",
 		Auth:    mockAuth,

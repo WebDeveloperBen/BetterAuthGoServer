@@ -12,14 +12,10 @@ import (
 )
 
 func TestService_CreateAnonymousUser(t *testing.T) {
-	tdb := setupTestDB(t)
-	defer tdb.cleanup(t)
-
 	t.Run("creates anonymous user successfully", func(t *testing.T) {
-		tdb.truncateTables(t)
-
+		store := newMockAnonymousStore()
 		auth := newMockAuthProvider()
-		service := createTestService(t, tdb.DB, auth)
+		service := createTestService(t, store, auth)
 		defer func() { _ = service.Close() }()
 
 		req := httptest.NewRequest("POST", "/anonymous", nil)
@@ -56,10 +52,9 @@ func TestService_CreateAnonymousUser(t *testing.T) {
 	})
 
 	t.Run("uses custom email domain", func(t *testing.T) {
-		tdb.truncateTables(t)
-
+		store := newMockAnonymousStore()
 		auth := newMockAuthProvider()
-		service := createTestService(t, tdb.DB, auth, anonymous.WithEmailDomain("custom.local"))
+		service := createTestService(t, store, auth, anonymous.WithEmailDomain("custom.local"))
 		defer func() { _ = service.Close() }()
 
 		req := httptest.NewRequest("POST", "/anonymous", nil)
@@ -80,11 +75,10 @@ func TestService_CreateAnonymousUser(t *testing.T) {
 	})
 
 	t.Run("uses custom email generator", func(t *testing.T) {
-		tdb.truncateTables(t)
-
+		store := newMockAnonymousStore()
 		auth := newMockAuthProvider()
 		customEmail := "custom-user@test.local"
-		service := createTestService(t, tdb.DB, auth, anonymous.WithGenerateEmail(func() string {
+		service := createTestService(t, store, auth, anonymous.WithGenerateEmail(func() string {
 			return customEmail
 		}))
 		defer func() { _ = service.Close() }()
@@ -102,11 +96,10 @@ func TestService_CreateAnonymousUser(t *testing.T) {
 	})
 
 	t.Run("uses custom name generator", func(t *testing.T) {
-		tdb.truncateTables(t)
-
+		store := newMockAnonymousStore()
 		auth := newMockAuthProvider()
 		customName := "Guest User"
-		service := createTestService(t, tdb.DB, auth, anonymous.WithGenerateName(func() string {
+		service := createTestService(t, store, auth, anonymous.WithGenerateName(func() string {
 			return customName
 		}))
 		defer func() { _ = service.Close() }()
@@ -124,11 +117,10 @@ func TestService_CreateAnonymousUser(t *testing.T) {
 	})
 
 	t.Run("fails when session creation fails", func(t *testing.T) {
-		tdb.truncateTables(t)
-
+		store := newMockAnonymousStore()
 		auth := newMockAuthProvider()
 		auth.createSessionErr = errors.New("session error")
-		service := createTestService(t, tdb.DB, auth)
+		service := createTestService(t, store, auth)
 		defer func() { _ = service.Close() }()
 
 		req := httptest.NewRequest("POST", "/anonymous", nil)
@@ -146,14 +138,10 @@ func TestService_CreateAnonymousUser(t *testing.T) {
 }
 
 func TestService_HandleAccountLink(t *testing.T) {
-	tdb := setupTestDB(t)
-	defer tdb.cleanup(t)
-
 	t.Run("links account successfully", func(t *testing.T) {
-		tdb.truncateTables(t)
-
+		store := newMockAnonymousStore()
 		auth := newMockAuthProvider()
-		service := createTestService(t, tdb.DB, auth)
+		service := createTestService(t, store, auth)
 		defer func() { _ = service.Close() }()
 
 		anonUser := &plugin.User{
@@ -182,13 +170,12 @@ func TestService_HandleAccountLink(t *testing.T) {
 	})
 
 	t.Run("calls OnLinkAccount callback", func(t *testing.T) {
-		tdb.truncateTables(t)
-
+		store := newMockAnonymousStore()
 		auth := newMockAuthProvider()
 		callbackCalled := false
 		var callbackAnonUser, callbackNewUser *plugin.User
 
-		service := createTestService(t, tdb.DB, auth, anonymous.WithOnLinkAccount(
+		service := createTestService(t, store, auth, anonymous.WithOnLinkAccount(
 			func(ctx context.Context, anonUser, newUser *plugin.User) error {
 				callbackCalled = true
 				callbackAnonUser = anonUser
@@ -222,12 +209,11 @@ func TestService_HandleAccountLink(t *testing.T) {
 	})
 
 	t.Run("returns callback error", func(t *testing.T) {
-		tdb.truncateTables(t)
-
+		store := newMockAnonymousStore()
 		auth := newMockAuthProvider()
 		callbackErr := errors.New("callback error")
 
-		service := createTestService(t, tdb.DB, auth, anonymous.WithOnLinkAccount(
+		service := createTestService(t, store, auth, anonymous.WithOnLinkAccount(
 			func(ctx context.Context, anonUser, newUser *plugin.User) error {
 				return callbackErr
 			},
@@ -245,10 +231,9 @@ func TestService_HandleAccountLink(t *testing.T) {
 	})
 
 	t.Run("does not delete when DisableDeleteAnonymousUser is set", func(t *testing.T) {
-		tdb.truncateTables(t)
-
+		store := newMockAnonymousStore()
 		auth := newMockAuthProvider()
-		service := createTestService(t, tdb.DB, auth, anonymous.WithDisableDeleteAnonymousUser())
+		service := createTestService(t, store, auth, anonymous.WithDisableDeleteAnonymousUser())
 		defer func() { _ = service.Close() }()
 
 		anonUser := &plugin.User{ID: "anon-1"}
@@ -269,12 +254,10 @@ func TestService_HandleAccountLink(t *testing.T) {
 }
 
 func TestService_Close(t *testing.T) {
-	tdb := setupTestDB(t)
-	defer tdb.cleanup(t)
-
 	t.Run("closes without error", func(t *testing.T) {
+		store := newMockAnonymousStore()
 		auth := newMockAuthProvider()
-		service := createTestService(t, tdb.DB, auth)
+		service := createTestService(t, store, auth)
 
 		err := service.Close()
 		if err != nil {
@@ -283,8 +266,9 @@ func TestService_Close(t *testing.T) {
 	})
 
 	t.Run("closes with TTL cleanup running", func(t *testing.T) {
+		store := newMockAnonymousStore()
 		auth := newMockAuthProvider()
-		service := createTestService(t, tdb.DB, auth,
+		service := createTestService(t, store, auth,
 			anonymous.WithAnonymousUserTTL(24*time.Hour),
 			anonymous.WithCleanupInterval(100*time.Millisecond),
 		)
@@ -300,31 +284,21 @@ func TestService_Close(t *testing.T) {
 }
 
 func TestService_CleanupStaleUsers(t *testing.T) {
-	tdb := setupTestDB(t)
-	defer tdb.cleanup(t)
-
 	t.Run("deletes stale anonymous users", func(t *testing.T) {
-		tdb.truncateTables(t)
-		ctx := context.Background()
+		store := newMockAnonymousStore()
 
 		// Create old anonymous user (older than 1 second TTL)
 		oldTime := time.Now().Add(-2 * time.Second)
-		_, err := tdb.DB.ExecContext(ctx, `
-			INSERT INTO users (id, email, name, role, is_anonymous, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		`, "old-anon-1", "old@anonymous.local", "Old Anonymous", "user", true, oldTime, oldTime)
-		if err != nil {
-			t.Fatalf("Failed to create old user: %v", err)
-		}
+		store.addUser("old-anon-1", "old@anonymous.local", "Old Anonymous", true, oldTime)
 
 		// Create fresh anonymous user
-		tdb.createTestUser(t, "new-anon-1", "new@anonymous.local", "New Anonymous", true)
+		store.addUser("new-anon-1", "new@anonymous.local", "New Anonymous", true, time.Now())
 
 		// Create regular user (should not be deleted)
-		tdb.createTestUser(t, "regular-1", "regular@example.com", "Regular User", false)
+		store.addUser("regular-1", "regular@example.com", "Regular User", false, time.Now())
 
 		auth := newMockAuthProvider()
-		service := createTestService(t, tdb.DB, auth,
+		service := createTestService(t, store, auth,
 			anonymous.WithAnonymousUserTTL(1*time.Second),
 			anonymous.WithCleanupInterval(50*time.Millisecond),
 		)
@@ -335,30 +309,17 @@ func TestService_CleanupStaleUsers(t *testing.T) {
 		_ = service.Close()
 
 		// Check that old anonymous user was deleted
-		var count int
-		err = tdb.DB.NewSelect().Table("users").Where("id = ?", "old-anon-1").ColumnExpr("COUNT(*)").Scan(ctx, &count)
-		if err != nil {
-			t.Fatalf("Failed to check user: %v", err)
-		}
-		if count != 0 {
+		if store.getUser("old-anon-1") != nil {
 			t.Error("Old anonymous user should be deleted")
 		}
 
 		// Check that new anonymous user still exists
-		err = tdb.DB.NewSelect().Table("users").Where("id = ?", "new-anon-1").ColumnExpr("COUNT(*)").Scan(ctx, &count)
-		if err != nil {
-			t.Fatalf("Failed to check user: %v", err)
-		}
-		if count != 1 {
+		if store.getUser("new-anon-1") == nil {
 			t.Error("New anonymous user should still exist")
 		}
 
 		// Check that regular user still exists
-		err = tdb.DB.NewSelect().Table("users").Where("id = ?", "regular-1").ColumnExpr("COUNT(*)").Scan(ctx, &count)
-		if err != nil {
-			t.Fatalf("Failed to check user: %v", err)
-		}
-		if count != 1 {
+		if store.getUser("regular-1") == nil {
 			t.Error("Regular user should still exist")
 		}
 	})

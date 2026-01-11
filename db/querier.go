@@ -145,4 +145,48 @@ type Querier interface {
 	UpdateDeviceCodeLastPolled(ctx context.Context, id string, lastPolledAt time.Time) error
 	DeleteExpiredDeviceCodes(ctx context.Context) (int64, error)
 	DeleteDeviceCode(ctx context.Context, id string) error
+
+	// Organization operations
+	CreateOrganization(ctx context.Context, org *Organization) error
+	GetOrganizationByID(ctx context.Context, id string) (*Organization, error)
+	GetOrganizationBySlug(ctx context.Context, slug string) (*Organization, error)
+	UpdateOrganization(ctx context.Context, org *Organization) error
+	DeleteOrganization(ctx context.Context, id string) error
+	ListUserOrganizations(ctx context.Context, userID string) ([]*Organization, error)
+	CheckSlugExists(ctx context.Context, slug string) (bool, error)
+
+	// Member operations
+	CreateMember(ctx context.Context, member *OrgMember) error
+	GetMember(ctx context.Context, orgID, userID string) (*OrgMember, error)
+	GetMemberByID(ctx context.Context, id string) (*OrgMember, error)
+	ListMembersByOrganization(ctx context.Context, orgID string) ([]*OrgMember, error)
+	ListMembersByUser(ctx context.Context, userID string) ([]*OrgMember, error)
+	UpdateMemberRole(ctx context.Context, id, role string, updatedAt time.Time) error
+	DeleteMember(ctx context.Context, orgID, userID string) error
+	CountOrganizationMembers(ctx context.Context, orgID string) (int64, error)
+	GetFirstMemberByUser(ctx context.Context, userID string) (*OrgMember, error)
+
+	// Invitation operations
+	CreateInvitation(ctx context.Context, inv *OrgInvitation) error
+	GetInvitationByID(ctx context.Context, id string) (*OrgInvitation, error)
+	GetPendingInvitationByEmailAndOrg(ctx context.Context, email, orgID string) (*OrgInvitation, error)
+	ListInvitationsByOrganization(ctx context.Context, orgID string) ([]*OrgInvitation, error)
+	ListPendingInvitationsByEmail(ctx context.Context, email string) ([]*OrgInvitation, error)
+	UpdateInvitationStatus(ctx context.Context, id, status string) error
+	CancelPendingInvitations(ctx context.Context, email, orgID string) error
+	DeleteExpiredInvitations(ctx context.Context) (int64, error)
+
+	// Team operations
+	CreateTeam(ctx context.Context, team *OrgTeam) error
+	GetTeamByID(ctx context.Context, id string) (*OrgTeam, error)
+	ListTeamsByOrganization(ctx context.Context, orgID string) ([]*OrgTeam, error)
+	UpdateTeam(ctx context.Context, id, name string, updatedAt time.Time) error
+	DeleteTeam(ctx context.Context, id string) error
+
+	// Team Member operations
+	CreateTeamMember(ctx context.Context, member *OrgTeamMember) error
+	GetTeamMember(ctx context.Context, teamID, userID string) (*OrgTeamMember, error)
+	ListTeamMembersByTeam(ctx context.Context, teamID string) ([]*OrgTeamMember, error)
+	ListTeamMembersByUser(ctx context.Context, userID string) ([]*OrgTeamMember, error)
+	DeleteTeamMember(ctx context.Context, teamID, userID string) error
 }

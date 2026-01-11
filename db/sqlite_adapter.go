@@ -969,5 +969,427 @@ func (a *sqliteAdapter) DeleteDeviceCode(ctx context.Context, id string) error {
 	return a.q.DeleteDeviceCode(ctx, id)
 }
 
+// =============================================================================
+// Organization operations
+// =============================================================================
+
+func (a *sqliteAdapter) CreateOrganization(ctx context.Context, org *Organization) error {
+	return a.q.CreateOrganization(ctx, sqlitestore.CreateOrganizationParams{
+		ID:        org.ID,
+		Name:      org.Name,
+		Slug:      org.Slug,
+		Logo:      toNullString(org.Logo),
+		Metadata:  toNullString(org.Metadata),
+		CreatedAt: org.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: org.UpdatedAt.Format(time.RFC3339),
+	})
+}
+
+func (a *sqliteAdapter) GetOrganizationByID(ctx context.Context, id string) (*Organization, error) {
+	o, err := a.q.GetOrganizationByID(ctx, id)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return sqliteOrgToModel(&o), nil
+}
+
+func (a *sqliteAdapter) GetOrganizationBySlug(ctx context.Context, slug string) (*Organization, error) {
+	o, err := a.q.GetOrganizationBySlug(ctx, slug)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return sqliteOrgToModel(&o), nil
+}
+
+func (a *sqliteAdapter) UpdateOrganization(ctx context.Context, org *Organization) error {
+	return a.q.UpdateOrganization(ctx, sqlitestore.UpdateOrganizationParams{
+		ID:        org.ID,
+		Name:      org.Name,
+		Slug:      org.Slug,
+		Logo:      toNullString(org.Logo),
+		Metadata:  toNullString(org.Metadata),
+		UpdatedAt: org.UpdatedAt.Format(time.RFC3339),
+	})
+}
+
+func (a *sqliteAdapter) DeleteOrganization(ctx context.Context, id string) error {
+	return a.q.DeleteOrganization(ctx, id)
+}
+
+func (a *sqliteAdapter) ListUserOrganizations(ctx context.Context, userID string) ([]*Organization, error) {
+	rows, err := a.q.ListUserOrganizations(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*Organization, len(rows))
+	for i, r := range rows {
+		result[i] = sqliteOrgToModel(&r)
+	}
+	return result, nil
+}
+
+func (a *sqliteAdapter) CheckSlugExists(ctx context.Context, slug string) (bool, error) {
+	return a.q.CheckSlugExists(ctx, slug)
+}
+
+// =============================================================================
+// Member operations
+// =============================================================================
+
+func (a *sqliteAdapter) CreateMember(ctx context.Context, member *OrgMember) error {
+	return a.q.CreateMember(ctx, sqlitestore.CreateMemberParams{
+		ID:             member.ID,
+		OrganizationID: member.OrganizationID,
+		UserID:         member.UserID,
+		Role:           member.Role,
+		CreatedAt:      member.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:      member.UpdatedAt.Format(time.RFC3339),
+	})
+}
+
+func (a *sqliteAdapter) GetMember(ctx context.Context, orgID, userID string) (*OrgMember, error) {
+	m, err := a.q.GetMember(ctx, sqlitestore.GetMemberParams{
+		OrganizationID: orgID,
+		UserID:         userID,
+	})
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return sqliteMemberToModel(&m), nil
+}
+
+func (a *sqliteAdapter) GetMemberByID(ctx context.Context, id string) (*OrgMember, error) {
+	m, err := a.q.GetMemberByID(ctx, id)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return sqliteMemberToModel(&m), nil
+}
+
+func (a *sqliteAdapter) ListMembersByOrganization(ctx context.Context, orgID string) ([]*OrgMember, error) {
+	rows, err := a.q.ListMembersByOrganization(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*OrgMember, len(rows))
+	for i, r := range rows {
+		result[i] = sqliteMemberToModel(&r)
+	}
+	return result, nil
+}
+
+func (a *sqliteAdapter) ListMembersByUser(ctx context.Context, userID string) ([]*OrgMember, error) {
+	rows, err := a.q.ListMembersByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*OrgMember, len(rows))
+	for i, r := range rows {
+		result[i] = sqliteMemberToModel(&r)
+	}
+	return result, nil
+}
+
+func (a *sqliteAdapter) UpdateMemberRole(ctx context.Context, id, role string, updatedAt time.Time) error {
+	return a.q.UpdateMemberRole(ctx, sqlitestore.UpdateMemberRoleParams{
+		ID:        id,
+		Role:      role,
+		UpdatedAt: updatedAt.Format(time.RFC3339),
+	})
+}
+
+func (a *sqliteAdapter) DeleteMember(ctx context.Context, orgID, userID string) error {
+	return a.q.DeleteMember(ctx, sqlitestore.DeleteMemberParams{
+		OrganizationID: orgID,
+		UserID:         userID,
+	})
+}
+
+func (a *sqliteAdapter) CountOrganizationMembers(ctx context.Context, orgID string) (int64, error) {
+	return a.q.CountOrganizationMembers(ctx, orgID)
+}
+
+func (a *sqliteAdapter) GetFirstMemberByUser(ctx context.Context, userID string) (*OrgMember, error) {
+	m, err := a.q.GetFirstMemberByUser(ctx, userID)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return sqliteMemberToModel(&m), nil
+}
+
+// =============================================================================
+// Invitation operations
+// =============================================================================
+
+func (a *sqliteAdapter) CreateInvitation(ctx context.Context, inv *OrgInvitation) error {
+	var expiresAt sql.NullString
+	if inv.ExpiresAt != nil {
+		expiresAt = sql.NullString{String: inv.ExpiresAt.Format(time.RFC3339), Valid: true}
+	}
+	return a.q.CreateInvitation(ctx, sqlitestore.CreateInvitationParams{
+		ID:             inv.ID,
+		Email:          inv.Email,
+		OrganizationID: inv.OrganizationID,
+		InviterID:      inv.InviterID,
+		Role:           inv.Role,
+		Status:         inv.Status,
+		ExpiresAt:      expiresAt,
+		CreatedAt:      inv.CreatedAt.Format(time.RFC3339),
+	})
+}
+
+func (a *sqliteAdapter) GetInvitationByID(ctx context.Context, id string) (*OrgInvitation, error) {
+	inv, err := a.q.GetInvitationByID(ctx, id)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return sqliteInvitationToModel(&inv), nil
+}
+
+func (a *sqliteAdapter) GetPendingInvitationByEmailAndOrg(ctx context.Context, email, orgID string) (*OrgInvitation, error) {
+	inv, err := a.q.GetInvitationByEmailAndOrg(ctx, sqlitestore.GetInvitationByEmailAndOrgParams{
+		Email:          email,
+		OrganizationID: orgID,
+	})
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return sqliteInvitationToModel(&inv), nil
+}
+
+func (a *sqliteAdapter) ListInvitationsByOrganization(ctx context.Context, orgID string) ([]*OrgInvitation, error) {
+	rows, err := a.q.ListInvitationsByOrganization(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*OrgInvitation, len(rows))
+	for i, r := range rows {
+		result[i] = sqliteInvitationToModel(&r)
+	}
+	return result, nil
+}
+
+func (a *sqliteAdapter) ListPendingInvitationsByEmail(ctx context.Context, email string) ([]*OrgInvitation, error) {
+	rows, err := a.q.ListInvitationsByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*OrgInvitation, len(rows))
+	for i, r := range rows {
+		result[i] = sqliteInvitationToModel(&r)
+	}
+	return result, nil
+}
+
+func (a *sqliteAdapter) UpdateInvitationStatus(ctx context.Context, id, status string) error {
+	return a.q.UpdateInvitationStatus(ctx, sqlitestore.UpdateInvitationStatusParams{
+		ID:     id,
+		Status: status,
+	})
+}
+
+func (a *sqliteAdapter) CancelPendingInvitations(ctx context.Context, email, orgID string) error {
+	return a.q.CancelPendingInvitations(ctx, sqlitestore.CancelPendingInvitationsParams{
+		Email:          email,
+		OrganizationID: orgID,
+	})
+}
+
+func (a *sqliteAdapter) DeleteExpiredInvitations(ctx context.Context) (int64, error) {
+	return a.q.DeleteExpiredInvitations(ctx)
+}
+
+// =============================================================================
+// Team operations
+// =============================================================================
+
+func (a *sqliteAdapter) CreateTeam(ctx context.Context, team *OrgTeam) error {
+	return a.q.CreateTeam(ctx, sqlitestore.CreateTeamParams{
+		ID:             team.ID,
+		Name:           team.Name,
+		OrganizationID: team.OrganizationID,
+		CreatedAt:      team.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:      team.UpdatedAt.Format(time.RFC3339),
+	})
+}
+
+func (a *sqliteAdapter) GetTeamByID(ctx context.Context, id string) (*OrgTeam, error) {
+	t, err := a.q.GetTeamByID(ctx, id)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return sqliteTeamToModel(&t), nil
+}
+
+func (a *sqliteAdapter) ListTeamsByOrganization(ctx context.Context, orgID string) ([]*OrgTeam, error) {
+	rows, err := a.q.ListTeamsByOrganization(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*OrgTeam, len(rows))
+	for i, r := range rows {
+		result[i] = sqliteTeamToModel(&r)
+	}
+	return result, nil
+}
+
+func (a *sqliteAdapter) UpdateTeam(ctx context.Context, id, name string, updatedAt time.Time) error {
+	return a.q.UpdateTeam(ctx, sqlitestore.UpdateTeamParams{
+		ID:        id,
+		Name:      name,
+		UpdatedAt: updatedAt.Format(time.RFC3339),
+	})
+}
+
+func (a *sqliteAdapter) DeleteTeam(ctx context.Context, id string) error {
+	return a.q.DeleteTeam(ctx, id)
+}
+
+// =============================================================================
+// Team Member operations
+// =============================================================================
+
+func (a *sqliteAdapter) CreateTeamMember(ctx context.Context, member *OrgTeamMember) error {
+	return a.q.CreateTeamMember(ctx, sqlitestore.CreateTeamMemberParams{
+		ID:        member.ID,
+		TeamID:    member.TeamID,
+		UserID:    member.UserID,
+		CreatedAt: member.CreatedAt.Format(time.RFC3339),
+	})
+}
+
+func (a *sqliteAdapter) GetTeamMember(ctx context.Context, teamID, userID string) (*OrgTeamMember, error) {
+	m, err := a.q.GetTeamMember(ctx, sqlitestore.GetTeamMemberParams{
+		TeamID: teamID,
+		UserID: userID,
+	})
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return sqliteTeamMemberToModel(&m), nil
+}
+
+func (a *sqliteAdapter) ListTeamMembersByTeam(ctx context.Context, teamID string) ([]*OrgTeamMember, error) {
+	rows, err := a.q.ListTeamMembersByTeam(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*OrgTeamMember, len(rows))
+	for i, r := range rows {
+		result[i] = sqliteTeamMemberToModel(&r)
+	}
+	return result, nil
+}
+
+func (a *sqliteAdapter) ListTeamMembersByUser(ctx context.Context, userID string) ([]*OrgTeamMember, error) {
+	rows, err := a.q.ListTeamMembersByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*OrgTeamMember, len(rows))
+	for i, r := range rows {
+		result[i] = sqliteTeamMemberToModel(&r)
+	}
+	return result, nil
+}
+
+func (a *sqliteAdapter) DeleteTeamMember(ctx context.Context, teamID, userID string) error {
+	return a.q.DeleteTeamMember(ctx, sqlitestore.DeleteTeamMemberParams{
+		TeamID: teamID,
+		UserID: userID,
+	})
+}
+
+// =============================================================================
+// Organization model converters
+// =============================================================================
+
+func sqliteOrgToModel(o *sqlitestore.Organization) *Organization {
+	return &Organization{
+		ID:        o.ID,
+		Name:      o.Name,
+		Slug:      o.Slug,
+		Logo:      fromNullString(o.Logo),
+		Metadata:  fromNullString(o.Metadata),
+		CreatedAt: parseTime(o.CreatedAt),
+		UpdatedAt: parseTime(o.UpdatedAt),
+	}
+}
+
+func sqliteMemberToModel(m *sqlitestore.Member) *OrgMember {
+	return &OrgMember{
+		ID:             m.ID,
+		OrganizationID: m.OrganizationID,
+		UserID:         m.UserID,
+		Role:           m.Role,
+		CreatedAt:      parseTime(m.CreatedAt),
+		UpdatedAt:      parseTime(m.UpdatedAt),
+	}
+}
+
+func sqliteInvitationToModel(i *sqlitestore.Invitation) *OrgInvitation {
+	var expiresAt *time.Time
+	if i.ExpiresAt.Valid {
+		t := parseTime(i.ExpiresAt.String)
+		expiresAt = &t
+	}
+	return &OrgInvitation{
+		ID:             i.ID,
+		Email:          i.Email,
+		OrganizationID: i.OrganizationID,
+		InviterID:      i.InviterID,
+		Role:           i.Role,
+		Status:         i.Status,
+		ExpiresAt:      expiresAt,
+		CreatedAt:      parseTime(i.CreatedAt),
+	}
+}
+
+func sqliteTeamToModel(t *sqlitestore.Team) *OrgTeam {
+	return &OrgTeam{
+		ID:             t.ID,
+		Name:           t.Name,
+		OrganizationID: t.OrganizationID,
+		CreatedAt:      parseTime(t.CreatedAt),
+		UpdatedAt:      parseTime(t.UpdatedAt),
+	}
+}
+
+func sqliteTeamMemberToModel(m *sqlitestore.TeamMember) *OrgTeamMember {
+	return &OrgTeamMember{
+		ID:        m.ID,
+		TeamID:    m.TeamID,
+		UserID:    m.UserID,
+		CreatedAt: parseTime(m.CreatedAt),
+	}
+}
+
 // Ensure sqliteAdapter implements Querier
 var _ Querier = (*sqliteAdapter)(nil)

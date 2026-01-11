@@ -953,5 +953,418 @@ func (a *pgAdapter) DeleteDeviceCode(ctx context.Context, id string) error {
 	return a.q.DeleteDeviceCode(ctx, id)
 }
 
+// =============================================================================
+// Organization operations
+// =============================================================================
+
+func (a *pgAdapter) CreateOrganization(ctx context.Context, org *Organization) error {
+	return a.q.CreateOrganization(ctx, pgstore.CreateOrganizationParams{
+		ID:        org.ID,
+		Name:      org.Name,
+		Slug:      org.Slug,
+		Logo:      toNullString(org.Logo),
+		Metadata:  toNullString(org.Metadata),
+		CreatedAt: org.CreatedAt,
+		UpdatedAt: org.UpdatedAt,
+	})
+}
+
+func (a *pgAdapter) GetOrganizationByID(ctx context.Context, id string) (*Organization, error) {
+	o, err := a.q.GetOrganizationByID(ctx, id)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return pgOrganizationToModel(&o), nil
+}
+
+func (a *pgAdapter) GetOrganizationBySlug(ctx context.Context, slug string) (*Organization, error) {
+	o, err := a.q.GetOrganizationBySlug(ctx, slug)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return pgOrganizationToModel(&o), nil
+}
+
+func (a *pgAdapter) UpdateOrganization(ctx context.Context, org *Organization) error {
+	return a.q.UpdateOrganization(ctx, pgstore.UpdateOrganizationParams{
+		ID:        org.ID,
+		Name:      org.Name,
+		Slug:      org.Slug,
+		Logo:      toNullString(org.Logo),
+		Metadata:  toNullString(org.Metadata),
+		UpdatedAt: org.UpdatedAt,
+	})
+}
+
+func (a *pgAdapter) DeleteOrganization(ctx context.Context, id string) error {
+	return a.q.DeleteOrganization(ctx, id)
+}
+
+func (a *pgAdapter) ListUserOrganizations(ctx context.Context, userID string) ([]*Organization, error) {
+	orgs, err := a.q.ListUserOrganizations(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*Organization, len(orgs))
+	for i := range orgs {
+		result[i] = pgOrganizationToModel(&orgs[i])
+	}
+	return result, nil
+}
+
+func (a *pgAdapter) CheckSlugExists(ctx context.Context, slug string) (bool, error) {
+	return a.q.CheckSlugExists(ctx, slug)
+}
+
+// =============================================================================
+// Member operations
+// =============================================================================
+
+func (a *pgAdapter) CreateMember(ctx context.Context, member *OrgMember) error {
+	return a.q.CreateMember(ctx, pgstore.CreateMemberParams{
+		ID:             member.ID,
+		OrganizationID: member.OrganizationID,
+		UserID:         member.UserID,
+		Role:           member.Role,
+		CreatedAt:      member.CreatedAt,
+		UpdatedAt:      member.UpdatedAt,
+	})
+}
+
+func (a *pgAdapter) GetMember(ctx context.Context, orgID, userID string) (*OrgMember, error) {
+	m, err := a.q.GetMember(ctx, pgstore.GetMemberParams{
+		OrganizationID: orgID,
+		UserID:         userID,
+	})
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return pgMemberToModel(&m), nil
+}
+
+func (a *pgAdapter) GetMemberByID(ctx context.Context, id string) (*OrgMember, error) {
+	m, err := a.q.GetMemberByID(ctx, id)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return pgMemberToModel(&m), nil
+}
+
+func (a *pgAdapter) ListMembersByOrganization(ctx context.Context, orgID string) ([]*OrgMember, error) {
+	members, err := a.q.ListMembersByOrganization(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*OrgMember, len(members))
+	for i := range members {
+		result[i] = pgMemberToModel(&members[i])
+	}
+	return result, nil
+}
+
+func (a *pgAdapter) ListMembersByUser(ctx context.Context, userID string) ([]*OrgMember, error) {
+	members, err := a.q.ListMembersByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*OrgMember, len(members))
+	for i := range members {
+		result[i] = pgMemberToModel(&members[i])
+	}
+	return result, nil
+}
+
+func (a *pgAdapter) UpdateMemberRole(ctx context.Context, id, role string, updatedAt time.Time) error {
+	return a.q.UpdateMemberRole(ctx, pgstore.UpdateMemberRoleParams{
+		ID:        id,
+		Role:      role,
+		UpdatedAt: updatedAt,
+	})
+}
+
+func (a *pgAdapter) DeleteMember(ctx context.Context, orgID, userID string) error {
+	return a.q.DeleteMember(ctx, pgstore.DeleteMemberParams{
+		OrganizationID: orgID,
+		UserID:         userID,
+	})
+}
+
+func (a *pgAdapter) CountOrganizationMembers(ctx context.Context, orgID string) (int64, error) {
+	return a.q.CountOrganizationMembers(ctx, orgID)
+}
+
+func (a *pgAdapter) GetFirstMemberByUser(ctx context.Context, userID string) (*OrgMember, error) {
+	m, err := a.q.GetFirstMemberByUser(ctx, userID)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return pgMemberToModel(&m), nil
+}
+
+// =============================================================================
+// Invitation operations
+// =============================================================================
+
+func (a *pgAdapter) CreateInvitation(ctx context.Context, inv *OrgInvitation) error {
+	return a.q.CreateInvitation(ctx, pgstore.CreateInvitationParams{
+		ID:             inv.ID,
+		Email:          inv.Email,
+		OrganizationID: inv.OrganizationID,
+		InviterID:      inv.InviterID,
+		Role:           inv.Role,
+		Status:         inv.Status,
+		ExpiresAt:      toNullTime(inv.ExpiresAt),
+		CreatedAt:      inv.CreatedAt,
+	})
+}
+
+func (a *pgAdapter) GetInvitationByID(ctx context.Context, id string) (*OrgInvitation, error) {
+	inv, err := a.q.GetInvitationByID(ctx, id)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return pgInvitationToModel(&inv), nil
+}
+
+func (a *pgAdapter) GetPendingInvitationByEmailAndOrg(ctx context.Context, email, orgID string) (*OrgInvitation, error) {
+	inv, err := a.q.GetInvitationByEmailAndOrg(ctx, pgstore.GetInvitationByEmailAndOrgParams{
+		Email:          email,
+		OrganizationID: orgID,
+	})
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return pgInvitationToModel(&inv), nil
+}
+
+func (a *pgAdapter) ListInvitationsByOrganization(ctx context.Context, orgID string) ([]*OrgInvitation, error) {
+	invs, err := a.q.ListInvitationsByOrganization(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*OrgInvitation, len(invs))
+	for i := range invs {
+		result[i] = pgInvitationToModel(&invs[i])
+	}
+	return result, nil
+}
+
+func (a *pgAdapter) ListPendingInvitationsByEmail(ctx context.Context, email string) ([]*OrgInvitation, error) {
+	invs, err := a.q.ListInvitationsByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*OrgInvitation, len(invs))
+	for i := range invs {
+		result[i] = pgInvitationToModel(&invs[i])
+	}
+	return result, nil
+}
+
+func (a *pgAdapter) UpdateInvitationStatus(ctx context.Context, id, status string) error {
+	return a.q.UpdateInvitationStatus(ctx, pgstore.UpdateInvitationStatusParams{
+		ID:     id,
+		Status: status,
+	})
+}
+
+func (a *pgAdapter) CancelPendingInvitations(ctx context.Context, email, orgID string) error {
+	return a.q.CancelPendingInvitations(ctx, pgstore.CancelPendingInvitationsParams{
+		Email:          email,
+		OrganizationID: orgID,
+	})
+}
+
+func (a *pgAdapter) DeleteExpiredInvitations(ctx context.Context) (int64, error) {
+	return a.q.DeleteExpiredInvitations(ctx)
+}
+
+// =============================================================================
+// Team operations
+// =============================================================================
+
+func (a *pgAdapter) CreateTeam(ctx context.Context, team *OrgTeam) error {
+	return a.q.CreateTeam(ctx, pgstore.CreateTeamParams{
+		ID:             team.ID,
+		Name:           team.Name,
+		OrganizationID: team.OrganizationID,
+		CreatedAt:      team.CreatedAt,
+		UpdatedAt:      team.UpdatedAt,
+	})
+}
+
+func (a *pgAdapter) GetTeamByID(ctx context.Context, id string) (*OrgTeam, error) {
+	t, err := a.q.GetTeamByID(ctx, id)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return pgTeamToModel(&t), nil
+}
+
+func (a *pgAdapter) ListTeamsByOrganization(ctx context.Context, orgID string) ([]*OrgTeam, error) {
+	teams, err := a.q.ListTeamsByOrganization(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*OrgTeam, len(teams))
+	for i := range teams {
+		result[i] = pgTeamToModel(&teams[i])
+	}
+	return result, nil
+}
+
+func (a *pgAdapter) UpdateTeam(ctx context.Context, id, name string, updatedAt time.Time) error {
+	return a.q.UpdateTeam(ctx, pgstore.UpdateTeamParams{
+		ID:        id,
+		Name:      name,
+		UpdatedAt: updatedAt,
+	})
+}
+
+func (a *pgAdapter) DeleteTeam(ctx context.Context, id string) error {
+	return a.q.DeleteTeam(ctx, id)
+}
+
+// =============================================================================
+// Team Member operations
+// =============================================================================
+
+func (a *pgAdapter) CreateTeamMember(ctx context.Context, member *OrgTeamMember) error {
+	return a.q.CreateTeamMember(ctx, pgstore.CreateTeamMemberParams{
+		ID:        member.ID,
+		TeamID:    member.TeamID,
+		UserID:    member.UserID,
+		CreatedAt: member.CreatedAt,
+	})
+}
+
+func (a *pgAdapter) GetTeamMember(ctx context.Context, teamID, userID string) (*OrgTeamMember, error) {
+	m, err := a.q.GetTeamMember(ctx, pgstore.GetTeamMemberParams{
+		TeamID: teamID,
+		UserID: userID,
+	})
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return pgTeamMemberToModel(&m), nil
+}
+
+func (a *pgAdapter) ListTeamMembersByTeam(ctx context.Context, teamID string) ([]*OrgTeamMember, error) {
+	members, err := a.q.ListTeamMembersByTeam(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*OrgTeamMember, len(members))
+	for i := range members {
+		result[i] = pgTeamMemberToModel(&members[i])
+	}
+	return result, nil
+}
+
+func (a *pgAdapter) ListTeamMembersByUser(ctx context.Context, userID string) ([]*OrgTeamMember, error) {
+	members, err := a.q.ListTeamMembersByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*OrgTeamMember, len(members))
+	for i := range members {
+		result[i] = pgTeamMemberToModel(&members[i])
+	}
+	return result, nil
+}
+
+func (a *pgAdapter) DeleteTeamMember(ctx context.Context, teamID, userID string) error {
+	return a.q.DeleteTeamMember(ctx, pgstore.DeleteTeamMemberParams{
+		TeamID: teamID,
+		UserID: userID,
+	})
+}
+
+// =============================================================================
+// Model converters for Organization types
+// =============================================================================
+
+func pgOrganizationToModel(o *pgstore.Organization) *Organization {
+	return &Organization{
+		ID:        o.ID,
+		Name:      o.Name,
+		Slug:      o.Slug,
+		Logo:      fromNullString(o.Logo),
+		Metadata:  fromNullString(o.Metadata),
+		CreatedAt: o.CreatedAt,
+		UpdatedAt: o.UpdatedAt,
+	}
+}
+
+func pgMemberToModel(m *pgstore.Member) *OrgMember {
+	return &OrgMember{
+		ID:             m.ID,
+		OrganizationID: m.OrganizationID,
+		UserID:         m.UserID,
+		Role:           m.Role,
+		CreatedAt:      m.CreatedAt,
+		UpdatedAt:      m.UpdatedAt,
+	}
+}
+
+func pgInvitationToModel(inv *pgstore.Invitation) *OrgInvitation {
+	return &OrgInvitation{
+		ID:             inv.ID,
+		Email:          inv.Email,
+		OrganizationID: inv.OrganizationID,
+		InviterID:      inv.InviterID,
+		Role:           inv.Role,
+		Status:         inv.Status,
+		ExpiresAt:      fromNullTime(inv.ExpiresAt),
+		CreatedAt:      inv.CreatedAt,
+	}
+}
+
+func pgTeamToModel(t *pgstore.Team) *OrgTeam {
+	return &OrgTeam{
+		ID:             t.ID,
+		Name:           t.Name,
+		OrganizationID: t.OrganizationID,
+		CreatedAt:      t.CreatedAt,
+		UpdatedAt:      t.UpdatedAt,
+	}
+}
+
+func pgTeamMemberToModel(m *pgstore.TeamMember) *OrgTeamMember {
+	return &OrgTeamMember{
+		ID:        m.ID,
+		TeamID:    m.TeamID,
+		UserID:    m.UserID,
+		CreatedAt: m.CreatedAt,
+	}
+}
+
 // Ensure pgAdapter implements Querier
 var _ Querier = (*pgAdapter)(nil)

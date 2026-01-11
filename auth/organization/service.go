@@ -2,7 +2,6 @@ package organization
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -11,17 +10,19 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
-// Service provides organization operations using the database directly.
+// Service provides organization operations using the store adapter.
 type Service struct {
-	rawDB   db.DBTX
+	store   *StoreAdapter
+	rawDB   db.DBTX // Kept for queries not yet migrated (like session updates)
 	dialect db.Dialect
 	logger  *slog.Logger
 	config  *Config
 }
 
 // NewService creates a new organization service.
-func NewService(rawDB db.DBTX, dialect db.Dialect, logger *slog.Logger, config *Config) *Service {
+func NewService(store db.PluginStore, rawDB db.DBTX, dialect db.Dialect, logger *slog.Logger, config *Config) *Service {
 	return &Service{
+		store:   NewStoreAdapter(store),
 		rawDB:   rawDB,
 		dialect: dialect,
 		logger:  logger,
@@ -36,15 +37,16 @@ func (s *Service) CreateOrganization(ctx context.Context, name, slug string, cre
 		return nil, fmt.Errorf("user not allowed to create organizations")
 	}
 
-	// Check organization limit
-	var userOrgCount int
-	err := s.rawDB.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM organizations o
-		JOIN members m ON m.organization_id = o.id
-		WHERE m.user_id = ? AND m.role = ?
-	`, creatorID, "owner").Scan(&userOrgCount)
+	// Check organization limit by counting user's owned organizations
+	members, err := s.store.ListMembersByUser(ctx, creatorID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check organization count: %w", err)
+	}
+	var userOrgCount int
+	for _, m := range members {
+		if m.Role == "owner" {
+			userOrgCount++
+		}
 	}
 
 	if userOrgCount >= s.config.OrganizationLimit(creatorID) {
@@ -52,12 +54,11 @@ func (s *Service) CreateOrganization(ctx context.Context, name, slug string, cre
 	}
 
 	// Check if slug is unique
-	var slugExists int
-	err = s.rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM organizations WHERE slug = ?`, slug).Scan(&slugExists)
+	slugExists, err := s.store.CheckSlugExists(ctx, slug)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check slug uniqueness: %w", err)
 	}
-	if slugExists > 0 {
+	if slugExists {
 		return nil, fmt.Errorf("organization slug already exists")
 	}
 
@@ -91,27 +92,25 @@ func (s *Service) CreateOrganization(ctx context.Context, name, slug string, cre
 	}
 
 	// Create organization
-	_, err = s.rawDB.ExecContext(ctx, `
-		INSERT INTO organizations (id, name, slug, logo, metadata, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, org.ID, org.Name, org.Slug, org.Logo, org.Metadata, s.formatTime(org.CreatedAt), s.formatTime(org.UpdatedAt))
-	if err != nil {
+	if err := s.store.CreateOrganization(ctx, org); err != nil {
 		return nil, fmt.Errorf("failed to create organization: %w", err)
 	}
 
 	// Add creator as member with appropriate role
-	memberID := generateID()
-	_, err = s.rawDB.ExecContext(ctx, `
-		INSERT INTO members (id, user_id, organization_id, role, created_at)
-		VALUES (?, ?, ?, ?, ?)
-	`, memberID, creatorID, org.ID, s.config.CreatorRole, s.formatTime(now))
-	if err != nil {
+	member := &Member{
+		ID:             generateID(),
+		UserID:         creatorID,
+		OrganizationID: org.ID,
+		Role:           s.config.CreatorRole,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := s.store.CreateMember(ctx, member); err != nil {
 		return nil, fmt.Errorf("failed to add creator as member: %w", err)
 	}
 
 	// Run after hook
 	if s.config.OrganizationHooks.AfterCreateOrganization != nil {
-		member, _ := s.GetMember(ctx, org.ID, creatorID)
 		if err := s.config.OrganizationHooks.AfterCreateOrganization(org, member, creatorID); err != nil {
 			s.logger.Error("after create organization hook failed", "error", err)
 		}
@@ -122,39 +121,25 @@ func (s *Service) CreateOrganization(ctx context.Context, name, slug string, cre
 
 // GetOrganization retrieves an organization by ID.
 func (s *Service) GetOrganization(ctx context.Context, id string) (*Organization, error) {
-	org := &Organization{}
-	var createdAt, updatedAt string
-	err := s.rawDB.QueryRowContext(ctx, `
-		SELECT id, name, slug, logo, metadata, created_at, updated_at
-		FROM organizations WHERE id = ?
-	`, id).Scan(&org.ID, &org.Name, &org.Slug, &org.Logo, &org.Metadata, &createdAt, &updatedAt)
+	org, err := s.store.GetOrganizationByID(ctx, id)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("organization not found")
-		}
 		return nil, fmt.Errorf("failed to get organization: %w", err)
 	}
-	org.CreatedAt = s.parseTime(createdAt)
-	org.UpdatedAt = s.parseTime(updatedAt)
+	if org == nil {
+		return nil, fmt.Errorf("organization not found")
+	}
 	return org, nil
 }
 
 // GetOrganizationBySlug retrieves an organization by slug.
 func (s *Service) GetOrganizationBySlug(ctx context.Context, slug string) (*Organization, error) {
-	org := &Organization{}
-	var createdAt, updatedAt string
-	err := s.rawDB.QueryRowContext(ctx, `
-		SELECT id, name, slug, logo, metadata, created_at, updated_at
-		FROM organizations WHERE slug = ?
-	`, slug).Scan(&org.ID, &org.Name, &org.Slug, &org.Logo, &org.Metadata, &createdAt, &updatedAt)
+	org, err := s.store.GetOrganizationBySlug(ctx, slug)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("organization not found")
-		}
 		return nil, fmt.Errorf("failed to get organization by slug: %w", err)
 	}
-	org.CreatedAt = s.parseTime(createdAt)
-	org.UpdatedAt = s.parseTime(updatedAt)
+	if org == nil {
+		return nil, fmt.Errorf("organization not found")
+	}
 	return org, nil
 }
 
@@ -179,12 +164,11 @@ func (s *Service) UpdateOrganization(ctx context.Context, id string, updates map
 	if slug, ok := updates["slug"].(string); ok {
 		// Check slug uniqueness if changing
 		if slug != org.Slug {
-			var slugExists int
-			err = s.rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM organizations WHERE slug = ? AND id != ?`, slug, id).Scan(&slugExists)
+			existingOrg, err := s.store.GetOrganizationBySlug(ctx, slug)
 			if err != nil {
 				return nil, fmt.Errorf("failed to check slug uniqueness: %w", err)
 			}
-			if slugExists > 0 {
+			if existingOrg != nil && existingOrg.ID != id {
 				return nil, fmt.Errorf("organization slug already exists")
 			}
 		}
@@ -204,11 +188,7 @@ func (s *Service) UpdateOrganization(ctx context.Context, id string, updates map
 
 	org.UpdatedAt = time.Now()
 
-	_, err = s.rawDB.ExecContext(ctx, `
-		UPDATE organizations SET name = ?, slug = ?, logo = ?, metadata = ?, updated_at = ?
-		WHERE id = ?
-	`, org.Name, org.Slug, org.Logo, org.Metadata, s.formatTime(org.UpdatedAt), org.ID)
-	if err != nil {
+	if err := s.store.UpdateOrganization(ctx, org); err != nil {
 		return nil, fmt.Errorf("failed to update organization: %w", err)
 	}
 
@@ -232,30 +212,50 @@ func (s *Service) DeleteOrganization(ctx context.Context, id string) error {
 		}
 	}
 
-	// Delete team members
-	if _, err := s.rawDB.ExecContext(ctx, `
-		DELETE FROM team_members WHERE team_id IN (SELECT id FROM teams WHERE organization_id = ?)
-	`, id); err != nil {
-		return fmt.Errorf("failed to delete team members: %w", err)
+	// Delete team members for teams in this org
+	teams, err := s.store.ListTeamsByOrganization(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to list teams: %w", err)
+	}
+	for _, team := range teams {
+		members, err := s.store.ListTeamMembersByTeam(ctx, team.ID)
+		if err != nil {
+			return fmt.Errorf("failed to list team members: %w", err)
+		}
+		for _, m := range members {
+			if err := s.store.DeleteTeamMember(ctx, team.ID, m.UserID); err != nil {
+				return fmt.Errorf("failed to delete team member: %w", err)
+			}
+		}
+		if err := s.store.DeleteTeam(ctx, team.ID); err != nil {
+			return fmt.Errorf("failed to delete team: %w", err)
+		}
 	}
 
-	// Delete teams
-	if _, err := s.rawDB.ExecContext(ctx, `DELETE FROM teams WHERE organization_id = ?`, id); err != nil {
-		return fmt.Errorf("failed to delete teams: %w", err)
+	// Delete invitations - use CancelPendingInvitations for all emails (or iterate)
+	invitations, err := s.store.ListInvitationsByOrganization(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to list invitations: %w", err)
 	}
-
-	// Delete invitations
-	if _, err := s.rawDB.ExecContext(ctx, `DELETE FROM invitations WHERE organization_id = ?`, id); err != nil {
-		return fmt.Errorf("failed to delete invitations: %w", err)
+	for _, inv := range invitations {
+		if err := s.store.UpdateInvitationStatus(ctx, inv.ID, "cancelled"); err != nil {
+			s.logger.Warn("failed to cancel invitation", "id", inv.ID, "error", err)
+		}
 	}
 
 	// Delete members
-	if _, err := s.rawDB.ExecContext(ctx, `DELETE FROM members WHERE organization_id = ?`, id); err != nil {
-		return fmt.Errorf("failed to delete members: %w", err)
+	members, err := s.store.ListMembersByOrganization(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to list members: %w", err)
+	}
+	for _, m := range members {
+		if err := s.store.DeleteMember(ctx, id, m.UserID); err != nil {
+			return fmt.Errorf("failed to delete member: %w", err)
+		}
 	}
 
 	// Delete organization
-	if _, err := s.rawDB.ExecContext(ctx, `DELETE FROM organizations WHERE id = ?`, id); err != nil {
+	if err := s.store.DeleteOrganization(ctx, id); err != nil {
 		return fmt.Errorf("failed to delete organization: %w", err)
 	}
 
@@ -271,27 +271,9 @@ func (s *Service) DeleteOrganization(ctx context.Context, id string) error {
 
 // ListUserOrganizations returns organizations where the user is a member.
 func (s *Service) ListUserOrganizations(ctx context.Context, userID string) ([]*Organization, error) {
-	rows, err := s.rawDB.QueryContext(ctx, `
-		SELECT o.id, o.name, o.slug, o.logo, o.metadata, o.created_at, o.updated_at
-		FROM organizations o
-		JOIN members m ON m.organization_id = o.id
-		WHERE m.user_id = ?
-	`, userID)
+	orgs, err := s.store.ListUserOrganizations(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user organizations: %w", err)
-	}
-	defer rows.Close()
-
-	var orgs []*Organization
-	for rows.Next() {
-		org := &Organization{}
-		var createdAt, updatedAt string
-		if err := rows.Scan(&org.ID, &org.Name, &org.Slug, &org.Logo, &org.Metadata, &createdAt, &updatedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan organization: %w", err)
-		}
-		org.CreatedAt = s.parseTime(createdAt)
-		org.UpdatedAt = s.parseTime(updatedAt)
-		orgs = append(orgs, org)
 	}
 	return orgs, nil
 }
@@ -310,19 +292,17 @@ func (s *Service) AddMember(ctx context.Context, organizationID, userID, role st
 		}
 	}
 
+	now := time.Now()
 	member := &Member{
 		ID:             generateID(),
 		UserID:         userID,
 		OrganizationID: organizationID,
 		Role:           role,
-		CreatedAt:      time.Now(),
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
-	_, err := s.rawDB.ExecContext(ctx, `
-		INSERT INTO members (id, user_id, organization_id, role, created_at)
-		VALUES (?, ?, ?, ?, ?)
-	`, member.ID, member.UserID, member.OrganizationID, member.Role, s.formatTime(member.CreatedAt))
-	if err != nil {
+	if err := s.store.CreateMember(ctx, member); err != nil {
 		return nil, fmt.Errorf("failed to add member: %w", err)
 	}
 
@@ -346,10 +326,7 @@ func (s *Service) RemoveMember(ctx context.Context, organizationID, userID strin
 		}
 	}
 
-	_, err := s.rawDB.ExecContext(ctx, `
-		DELETE FROM members WHERE organization_id = ? AND user_id = ?
-	`, organizationID, userID)
-	if err != nil {
+	if err := s.store.DeleteMember(ctx, organizationID, userID); err != nil {
 		return fmt.Errorf("failed to remove member: %w", err)
 	}
 
@@ -379,12 +356,13 @@ func (s *Service) UpdateMemberRole(ctx context.Context, organizationID, userID, 
 		}
 	}
 
-	member.Role = role
-
-	_, err = s.rawDB.ExecContext(ctx, `UPDATE members SET role = ? WHERE id = ?`, role, member.ID)
-	if err != nil {
+	now := time.Now()
+	if err := s.store.UpdateMemberRole(ctx, member.ID, role, now); err != nil {
 		return nil, fmt.Errorf("failed to update member role: %w", err)
 	}
+
+	member.Role = role
+	member.UpdatedAt = now
 
 	// Run after hook
 	if s.config.OrganizationHooks.AfterUpdateMemberRole != nil {
@@ -398,61 +376,34 @@ func (s *Service) UpdateMemberRole(ctx context.Context, organizationID, userID, 
 
 // GetMember retrieves a member.
 func (s *Service) GetMember(ctx context.Context, organizationID, userID string) (*Member, error) {
-	member := &Member{}
-	var createdAt string
-	err := s.rawDB.QueryRowContext(ctx, `
-		SELECT id, user_id, organization_id, role, created_at
-		FROM members WHERE organization_id = ? AND user_id = ?
-	`, organizationID, userID).Scan(&member.ID, &member.UserID, &member.OrganizationID, &member.Role, &createdAt)
+	member, err := s.store.GetMember(ctx, organizationID, userID)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("member not found")
-		}
 		return nil, fmt.Errorf("failed to get member: %w", err)
 	}
-	member.CreatedAt = s.parseTime(createdAt)
+	if member == nil {
+		return nil, fmt.Errorf("member not found")
+	}
 	return member, nil
 }
 
 // ListMembers lists all members of an organization.
 func (s *Service) ListMembers(ctx context.Context, organizationID string) ([]*Member, error) {
-	rows, err := s.rawDB.QueryContext(ctx, `
-		SELECT id, user_id, organization_id, role, created_at
-		FROM members WHERE organization_id = ?
-	`, organizationID)
+	members, err := s.store.ListMembersByOrganization(ctx, organizationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list members: %w", err)
-	}
-	defer rows.Close()
-
-	var members []*Member
-	for rows.Next() {
-		member := &Member{}
-		var createdAt string
-		if err := rows.Scan(&member.ID, &member.UserID, &member.OrganizationID, &member.Role, &createdAt); err != nil {
-			return nil, fmt.Errorf("failed to scan member: %w", err)
-		}
-		member.CreatedAt = s.parseTime(createdAt)
-		members = append(members, member)
 	}
 	return members, nil
 }
 
 // GetActiveMember gets the user's active member record.
 func (s *Service) GetActiveMember(ctx context.Context, userID string) (*Member, error) {
-	member := &Member{}
-	var createdAt string
-	err := s.rawDB.QueryRowContext(ctx, `
-		SELECT id, user_id, organization_id, role, created_at
-		FROM members WHERE user_id = ? LIMIT 1
-	`, userID).Scan(&member.ID, &member.UserID, &member.OrganizationID, &member.Role, &createdAt)
+	member, err := s.store.GetFirstMemberByUser(ctx, userID)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("no membership found")
-		}
 		return nil, fmt.Errorf("failed to get active member: %w", err)
 	}
-	member.CreatedAt = s.parseTime(createdAt)
+	if member == nil {
+		return nil, fmt.Errorf("no membership found")
+	}
 	return member, nil
 }
 
@@ -478,12 +429,7 @@ func (s *Service) CreateInvitation(ctx context.Context, organizationID, email, r
 		}
 	}
 
-	_, err := s.rawDB.ExecContext(ctx, `
-		INSERT INTO invitations (id, email, organization_id, inviter_id, role, status, expires_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, invitation.ID, invitation.Email, invitation.OrganizationID, invitation.InviterID,
-		invitation.Role, invitation.Status, s.formatTimePtr(invitation.ExpiresAt), s.formatTime(invitation.CreatedAt))
-	if err != nil {
+	if err := s.store.CreateInvitation(ctx, invitation); err != nil {
 		return nil, fmt.Errorf("failed to create invitation: %w", err)
 	}
 
@@ -528,25 +474,22 @@ func (s *Service) AcceptInvitation(ctx context.Context, invitationID, userID str
 	}
 
 	// Add member
+	now := time.Now()
 	member := &Member{
 		ID:             generateID(),
 		UserID:         userID,
 		OrganizationID: invitation.OrganizationID,
 		Role:           invitation.Role,
-		CreatedAt:      time.Now(),
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
-	_, err = s.rawDB.ExecContext(ctx, `
-		INSERT INTO members (id, user_id, organization_id, role, created_at)
-		VALUES (?, ?, ?, ?, ?)
-	`, member.ID, member.UserID, member.OrganizationID, member.Role, s.formatTime(member.CreatedAt))
-	if err != nil {
+	if err := s.store.CreateMember(ctx, member); err != nil {
 		return nil, fmt.Errorf("failed to add member: %w", err)
 	}
 
 	// Update invitation status
-	_, err = s.rawDB.ExecContext(ctx, `UPDATE invitations SET status = ? WHERE id = ?`, "accepted", invitationID)
-	if err != nil {
+	if err := s.store.UpdateInvitationStatus(ctx, invitationID, "accepted"); err != nil {
 		return nil, fmt.Errorf("failed to update invitation status: %w", err)
 	}
 
@@ -578,8 +521,7 @@ func (s *Service) RejectInvitation(ctx context.Context, invitationID, userID str
 		}
 	}
 
-	_, err = s.rawDB.ExecContext(ctx, `UPDATE invitations SET status = ? WHERE id = ?`, "rejected", invitationID)
-	if err != nil {
+	if err := s.store.UpdateInvitationStatus(ctx, invitationID, "rejected"); err != nil {
 		return fmt.Errorf("failed to reject invitation: %w", err)
 	}
 
@@ -607,8 +549,7 @@ func (s *Service) CancelInvitation(ctx context.Context, invitationID, cancelledB
 		}
 	}
 
-	_, err = s.rawDB.ExecContext(ctx, `UPDATE invitations SET status = ? WHERE id = ?`, "cancelled", invitationID)
-	if err != nil {
+	if err := s.store.UpdateInvitationStatus(ctx, invitationID, "cancelled"); err != nil {
 		return fmt.Errorf("failed to cancel invitation: %w", err)
 	}
 
@@ -624,87 +565,30 @@ func (s *Service) CancelInvitation(ctx context.Context, invitationID, cancelledB
 
 // ListInvitations lists invitations for an organization.
 func (s *Service) ListInvitations(ctx context.Context, organizationID string) ([]*Invitation, error) {
-	rows, err := s.rawDB.QueryContext(ctx, `
-		SELECT id, email, organization_id, inviter_id, role, status, expires_at, created_at
-		FROM invitations WHERE organization_id = ?
-	`, organizationID)
+	invitations, err := s.store.ListInvitationsByOrganization(ctx, organizationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list invitations: %w", err)
-	}
-	defer rows.Close()
-
-	var invitations []*Invitation
-	for rows.Next() {
-		inv := &Invitation{}
-		var expiresAt, createdAt sql.NullString
-		if err := rows.Scan(&inv.ID, &inv.Email, &inv.OrganizationID, &inv.InviterID,
-			&inv.Role, &inv.Status, &expiresAt, &createdAt); err != nil {
-			return nil, fmt.Errorf("failed to scan invitation: %w", err)
-		}
-		if expiresAt.Valid {
-			t := s.parseTime(expiresAt.String)
-			inv.ExpiresAt = &t
-		}
-		if createdAt.Valid {
-			inv.CreatedAt = s.parseTime(createdAt.String)
-		}
-		invitations = append(invitations, inv)
 	}
 	return invitations, nil
 }
 
 // GetInvitation retrieves an invitation by ID.
 func (s *Service) GetInvitation(ctx context.Context, id string) (*Invitation, error) {
-	inv := &Invitation{}
-	var expiresAt, createdAt sql.NullString
-	err := s.rawDB.QueryRowContext(ctx, `
-		SELECT id, email, organization_id, inviter_id, role, status, expires_at, created_at
-		FROM invitations WHERE id = ?
-	`, id).Scan(&inv.ID, &inv.Email, &inv.OrganizationID, &inv.InviterID,
-		&inv.Role, &inv.Status, &expiresAt, &createdAt)
+	invitation, err := s.store.GetInvitationByID(ctx, id)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("invitation not found")
-		}
 		return nil, fmt.Errorf("failed to get invitation: %w", err)
 	}
-	if expiresAt.Valid {
-		t := s.parseTime(expiresAt.String)
-		inv.ExpiresAt = &t
+	if invitation == nil {
+		return nil, fmt.Errorf("invitation not found")
 	}
-	if createdAt.Valid {
-		inv.CreatedAt = s.parseTime(createdAt.String)
-	}
-	return inv, nil
+	return invitation, nil
 }
 
 // ListUserInvitations lists pending invitations for a user by email.
 func (s *Service) ListUserInvitations(ctx context.Context, email string) ([]*Invitation, error) {
-	rows, err := s.rawDB.QueryContext(ctx, `
-		SELECT id, email, organization_id, inviter_id, role, status, expires_at, created_at
-		FROM invitations WHERE email = ? AND status = ?
-	`, email, "pending")
+	invitations, err := s.store.ListPendingInvitationsByEmail(ctx, email)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user invitations: %w", err)
-	}
-	defer rows.Close()
-
-	var invitations []*Invitation
-	for rows.Next() {
-		inv := &Invitation{}
-		var expiresAt, createdAt sql.NullString
-		if err := rows.Scan(&inv.ID, &inv.Email, &inv.OrganizationID, &inv.InviterID,
-			&inv.Role, &inv.Status, &expiresAt, &createdAt); err != nil {
-			return nil, fmt.Errorf("failed to scan invitation: %w", err)
-		}
-		if expiresAt.Valid {
-			t := s.parseTime(expiresAt.String)
-			inv.ExpiresAt = &t
-		}
-		if createdAt.Valid {
-			inv.CreatedAt = s.parseTime(createdAt.String)
-		}
-		invitations = append(invitations, inv)
 	}
 	return invitations, nil
 }
@@ -715,19 +599,16 @@ func (s *Service) CreateTeam(ctx context.Context, organizationID, name string) (
 		return nil, fmt.Errorf("teams are not enabled")
 	}
 
+	now := time.Now()
 	team := &Team{
 		ID:             generateID(),
 		Name:           name,
 		OrganizationID: organizationID,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
-	_, err := s.rawDB.ExecContext(ctx, `
-		INSERT INTO teams (id, name, organization_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)
-	`, team.ID, team.Name, team.OrganizationID, s.formatTime(team.CreatedAt), s.formatTime(team.UpdatedAt))
-	if err != nil {
+	if err := s.store.CreateTeam(ctx, team); err != nil {
 		return nil, fmt.Errorf("failed to create team: %w", err)
 	}
 
@@ -736,20 +617,13 @@ func (s *Service) CreateTeam(ctx context.Context, organizationID, name string) (
 
 // GetTeam retrieves a team by ID.
 func (s *Service) GetTeam(ctx context.Context, teamID string) (*Team, error) {
-	team := &Team{}
-	var createdAt, updatedAt string
-	err := s.rawDB.QueryRowContext(ctx, `
-		SELECT id, name, organization_id, created_at, updated_at
-		FROM teams WHERE id = ?
-	`, teamID).Scan(&team.ID, &team.Name, &team.OrganizationID, &createdAt, &updatedAt)
+	team, err := s.store.GetTeamByID(ctx, teamID)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("team not found")
-		}
 		return nil, fmt.Errorf("failed to get team: %w", err)
 	}
-	team.CreatedAt = s.parseTime(createdAt)
-	team.UpdatedAt = s.parseTime(updatedAt)
+	if team == nil {
+		return nil, fmt.Errorf("team not found")
+	}
 	return team, nil
 }
 
@@ -760,45 +634,40 @@ func (s *Service) UpdateTeam(ctx context.Context, teamID, name string) (*Team, e
 		return nil, err
 	}
 
-	team.Name = name
-	team.UpdatedAt = time.Now()
-
-	_, err = s.rawDB.ExecContext(ctx, `UPDATE teams SET name = ?, updated_at = ? WHERE id = ?`,
-		team.Name, s.formatTime(team.UpdatedAt), team.ID)
-	if err != nil {
+	now := time.Now()
+	if err := s.store.UpdateTeam(ctx, teamID, name, now); err != nil {
 		return nil, fmt.Errorf("failed to update team: %w", err)
 	}
 
+	team.Name = name
+	team.UpdatedAt = now
 	return team, nil
 }
 
 // DeleteTeam deletes a team.
 func (s *Service) DeleteTeam(ctx context.Context, teamID string) error {
-	_, err := s.rawDB.ExecContext(ctx, `DELETE FROM teams WHERE id = ?`, teamID)
-	return err
+	// First delete all team members
+	members, err := s.store.ListTeamMembersByTeam(ctx, teamID)
+	if err != nil {
+		return fmt.Errorf("failed to list team members: %w", err)
+	}
+	for _, m := range members {
+		if err := s.store.DeleteTeamMember(ctx, teamID, m.UserID); err != nil {
+			return fmt.Errorf("failed to delete team member: %w", err)
+		}
+	}
+
+	if err := s.store.DeleteTeam(ctx, teamID); err != nil {
+		return fmt.Errorf("failed to delete team: %w", err)
+	}
+	return nil
 }
 
 // ListTeams lists teams for an organization.
 func (s *Service) ListTeams(ctx context.Context, organizationID string) ([]*Team, error) {
-	rows, err := s.rawDB.QueryContext(ctx, `
-		SELECT id, name, organization_id, created_at, updated_at
-		FROM teams WHERE organization_id = ?
-	`, organizationID)
+	teams, err := s.store.ListTeamsByOrganization(ctx, organizationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list teams: %w", err)
-	}
-	defer rows.Close()
-
-	var teams []*Team
-	for rows.Next() {
-		team := &Team{}
-		var createdAt, updatedAt string
-		if err := rows.Scan(&team.ID, &team.Name, &team.OrganizationID, &createdAt, &updatedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan team: %w", err)
-		}
-		team.CreatedAt = s.parseTime(createdAt)
-		team.UpdatedAt = s.parseTime(updatedAt)
-		teams = append(teams, team)
 	}
 	return teams, nil
 }
@@ -812,11 +681,7 @@ func (s *Service) AddTeamMember(ctx context.Context, teamID, userID string) (*Te
 		CreatedAt: time.Now(),
 	}
 
-	_, err := s.rawDB.ExecContext(ctx, `
-		INSERT INTO team_members (id, team_id, user_id, created_at)
-		VALUES (?, ?, ?, ?)
-	`, teamMember.ID, teamMember.TeamID, teamMember.UserID, s.formatTime(teamMember.CreatedAt))
-	if err != nil {
+	if err := s.store.CreateTeamMember(ctx, teamMember); err != nil {
 		return nil, fmt.Errorf("failed to add team member: %w", err)
 	}
 
@@ -825,35 +690,23 @@ func (s *Service) AddTeamMember(ctx context.Context, teamID, userID string) (*Te
 
 // RemoveTeamMember removes a user from a team.
 func (s *Service) RemoveTeamMember(ctx context.Context, teamID, userID string) error {
-	_, err := s.rawDB.ExecContext(ctx, `DELETE FROM team_members WHERE team_id = ? AND user_id = ?`, teamID, userID)
-	return err
+	if err := s.store.DeleteTeamMember(ctx, teamID, userID); err != nil {
+		return fmt.Errorf("failed to remove team member: %w", err)
+	}
+	return nil
 }
 
 // ListTeamMembers lists members of a team.
 func (s *Service) ListTeamMembers(ctx context.Context, teamID string) ([]*TeamMember, error) {
-	rows, err := s.rawDB.QueryContext(ctx, `
-		SELECT id, team_id, user_id, created_at
-		FROM team_members WHERE team_id = ?
-	`, teamID)
+	members, err := s.store.ListTeamMembersByTeam(ctx, teamID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list team members: %w", err)
-	}
-	defer rows.Close()
-
-	var members []*TeamMember
-	for rows.Next() {
-		member := &TeamMember{}
-		var createdAt string
-		if err := rows.Scan(&member.ID, &member.TeamID, &member.UserID, &createdAt); err != nil {
-			return nil, fmt.Errorf("failed to scan team member: %w", err)
-		}
-		member.CreatedAt = s.parseTime(createdAt)
-		members = append(members, member)
 	}
 	return members, nil
 }
 
 // SetActiveOrganization sets the active organization for a session.
+// Note: This still uses raw SQL as session table extensions are not yet in sqlc.
 func (s *Service) SetActiveOrganization(ctx context.Context, sessionID string, organizationID *string) error {
 	// Validate organization exists if ID is provided
 	if organizationID != nil && *organizationID != "" {
@@ -872,6 +725,7 @@ func (s *Service) SetActiveOrganization(ctx context.Context, sessionID string, o
 }
 
 // SetActiveTeam sets the active team for a session.
+// Note: This still uses raw SQL as session table extensions are not yet in sqlc.
 func (s *Service) SetActiveTeam(ctx context.Context, sessionID string, teamID *string) error {
 	if !s.config.Teams.Enabled {
 		return fmt.Errorf("teams are not enabled")
@@ -894,41 +748,16 @@ func (s *Service) SetActiveTeam(ctx context.Context, sessionID string, teamID *s
 }
 
 // GetActiveOrganization gets the active organization for a session.
+// Note: This still uses raw SQL as session table extensions are not yet in sqlc.
 func (s *Service) GetActiveOrganization(ctx context.Context, sessionID string) (*string, error) {
-	var activeOrgID sql.NullString
+	var activeOrgID *string
 
 	err := s.rawDB.QueryRowContext(ctx, `SELECT active_organization_id FROM sessions WHERE id = ?`, sessionID).Scan(&activeOrgID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active organization: %w", err)
 	}
 
-	if !activeOrgID.Valid {
-		return nil, nil
-	}
-
-	return &activeOrgID.String, nil
-}
-
-// Helper methods for time formatting based on dialect
-
-func (s *Service) formatTime(t time.Time) string {
-	if s.dialect == db.DialectPostgres {
-		return t.Format(time.RFC3339)
-	}
-	return t.Format(time.RFC3339)
-}
-
-func (s *Service) formatTimePtr(t *time.Time) *string {
-	if t == nil {
-		return nil
-	}
-	str := s.formatTime(*t)
-	return &str
-}
-
-func (s *Service) parseTime(str string) time.Time {
-	t, _ := time.Parse(time.RFC3339, str)
-	return t
+	return activeOrgID, nil
 }
 
 // generateID generates a unique ID (simplified implementation).
