@@ -1,6 +1,7 @@
 package webauthn
 
 import (
+	webauthndb "github.com/webdeveloperben/BetterAuthGoServer/auth/webauthn/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
@@ -14,15 +15,15 @@ type Plugin struct {
 	ctx     plugin.Context
 	auth    AuthProvider
 	service *Service
+	dbStore *webauthndb.Store
 	config  Config
 	opts    []Option
 }
 
 // Compile-time interface checks.
 var (
-	_ plugin.Plugin             = (*Plugin)(nil)
-	_ plugin.RoutesProvider     = (*Plugin)(nil)
-	_ plugin.MigrationsProvider = (*Plugin)(nil)
+	_ plugin.Plugin         = (*Plugin)(nil)
+	_ plugin.RoutesProvider = (*Plugin)(nil)
 )
 
 // NewPlugin creates a new WebAuthn plugin with the given options.
@@ -40,7 +41,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.ctx = ctx
 
 	// Require database access.
-	if ctx.Store == nil {
+	if ctx.RawDB == nil {
 		ctx.Logger.Warn("webauthn plugin: no database available, plugin disabled")
 		return nil
 	}
@@ -67,8 +68,9 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		return nil
 	}
 
-	// Create store adapter using sqlc-based store
-	store := NewStoreAdapter(ctx.Store)
+	// Create plugin's own store using ctx.RawDB
+	p.dbStore = webauthndb.New(ctx.RawDB, ctx.Dialect)
+	store := NewStoreAdapter(p.dbStore)
 	service, err := NewService(store, ctx.Encryptor, config, ctx.Logger)
 	if err != nil {
 		return err
@@ -83,14 +85,6 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 // Close cleans up plugin resources.
 func (p *Plugin) Close() error {
 	return nil
-}
-
-// Migrations returns the database models for auto-migration.
-func (p *Plugin) Migrations() []any {
-	return []any{
-		&WebAuthnCredential{},
-		&WebAuthnSession{},
-	}
 }
 
 // Routes returns the WebAuthn routes.

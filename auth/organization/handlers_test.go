@@ -725,23 +725,6 @@ func TestHandlers_GetActiveMember(t *testing.T) {
 	})
 }
 
-func TestPlugin_Migrations(t *testing.T) {
-	p := organization.NewPlugin(
-		organization.WithTeams(organization.TeamsConfig{Enabled: true}),
-	)
-
-	migrations := p.Migrations()
-
-	// Should have: Organization, Member, Invitation
-	// Plus Team and TeamMember when teams enabled
-	// Note: SessionExtension is added via ALTER TABLE in Init(), not here
-	expectedCount := 5 // 3 base + 2 team models
-
-	if len(migrations) != expectedCount {
-		t.Errorf("len(migrations) = %d, want %d", len(migrations), expectedCount)
-	}
-}
-
 func TestPlugin_Middleware(t *testing.T) {
 	tdb := setupTestDB(t)
 	defer tdb.cleanup(t)

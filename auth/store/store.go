@@ -5,14 +5,23 @@ package store
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/uptrace/bun"
+
+	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
 // Store implements auth.Store using Bun (supports PostgreSQL, SQLite, MySQL)
 type Store struct {
 	db *bun.DB
 }
+
+// Compile-time check that Store implements plugin.DBProvider
+var _ interface {
+	DB() db.DBTX
+	Dialect() db.Dialect
+} = (*Store)(nil)
 
 // New creates a new database store with Bun
 func New(db *bun.DB) *Store {
@@ -87,8 +96,35 @@ func (s *Store) createIndexes(ctx context.Context) error {
 	return nil
 }
 
-// DB returns the underlying bun.DB connection.
+// BunDB returns the underlying bun.DB connection.
 // This is used by the plugin system for plugin migrations.
-func (s *Store) DB() *bun.DB {
+func (s *Store) BunDB() *bun.DB {
 	return s.db
+}
+
+// =============================================================================
+// plugin.DBProvider implementation
+// =============================================================================
+
+// DB returns the underlying database connection for raw SQL operations.
+// This implements plugin.DBProvider and allows plugins to access the raw *sql.DB.
+func (s *Store) DB() db.DBTX {
+	return s.db.DB
+}
+
+// Dialect returns the database dialect detected from the bun.DB connection.
+// This implements plugin.DBProvider.
+func (s *Store) Dialect() db.Dialect {
+	dialectName := s.db.Dialect().Name().String()
+	switch {
+	case strings.Contains(dialectName, "pg"):
+		return db.DialectPostgres
+	case strings.Contains(dialectName, "sqlite"):
+		return db.DialectSQLite
+	case strings.Contains(dialectName, "mysql"):
+		return db.DialectMySQL
+	default:
+		// Default to postgres for unknown dialects
+		return db.DialectPostgres
+	}
 }

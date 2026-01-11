@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	deviceauthdb "github.com/webdeveloperben/BetterAuthGoServer/auth/deviceauth/db"
 )
 
 // DeviceCodeStore defines the database operations required by the deviceauth plugin.
@@ -25,34 +25,19 @@ type DeviceCodeStore interface {
 	DeleteDeviceCode(ctx context.Context, id string) error
 }
 
-// StoreAdapter adapts db.DeviceAuthStore to DeviceCodeStore.
+// StoreAdapter adapts deviceauthdb.Store to DeviceCodeStore.
 type StoreAdapter struct {
-	store db.DeviceAuthStore
+	store *deviceauthdb.Store
 }
 
-// NewStoreAdapter creates a new StoreAdapter from a db.DeviceAuthStore.
-func NewStoreAdapter(store db.DeviceAuthStore) *StoreAdapter {
+// NewStoreAdapter creates a new StoreAdapter from a deviceauthdb.Store.
+func NewStoreAdapter(store *deviceauthdb.Store) *StoreAdapter {
 	return &StoreAdapter{store: store}
 }
 
 // CreateDeviceCode stores a new device authorization code.
 func (a *StoreAdapter) CreateDeviceCode(ctx context.Context, code *DeviceCode) error {
-	dbCode := &db.DeviceCode{
-		ID:              code.ID,
-		DeviceCode:      code.DeviceCode,
-		DeviceCodeHash:  code.DeviceCodeHash,
-		UserCode:        code.UserCode,
-		ClientID:        code.ClientID,
-		Scope:           code.Scope,
-		UserID:          code.UserID,
-		Status:          string(code.Status),
-		PollingInterval: code.PollingInterval,
-		LastPolledAt:    code.LastPolledAt,
-		ExpiresAt:       code.ExpiresAt,
-		CreatedAt:       code.CreatedAt,
-		UpdatedAt:       code.UpdatedAt,
-	}
-	return a.store.CreateDeviceCode(ctx, dbCode)
+	return a.store.CreateDeviceCode(ctx, a.toDBCode(code))
 }
 
 // GetDeviceCodeByUserCode retrieves a device code by user code.
@@ -99,8 +84,27 @@ func (a *StoreAdapter) DeleteDeviceCode(ctx context.Context, id string) error {
 	return a.store.DeleteDeviceCode(ctx, id)
 }
 
-// toDeviceCode converts a db.DeviceCode to a local DeviceCode.
-func (a *StoreAdapter) toDeviceCode(d *db.DeviceCode) *DeviceCode {
+// toDBCode converts a local DeviceCode to a deviceauthdb.DeviceCode.
+func (a *StoreAdapter) toDBCode(code *DeviceCode) *deviceauthdb.DeviceCode {
+	return &deviceauthdb.DeviceCode{
+		ID:              code.ID,
+		DeviceCode:      code.DeviceCode,
+		DeviceCodeHash:  code.DeviceCodeHash,
+		UserCode:        code.UserCode,
+		ClientID:        code.ClientID,
+		Scope:           code.Scope,
+		UserID:          code.UserID,
+		Status:          string(code.Status),
+		PollingInterval: code.PollingInterval,
+		LastPolledAt:    code.LastPolledAt,
+		ExpiresAt:       code.ExpiresAt,
+		CreatedAt:       code.CreatedAt,
+		UpdatedAt:       code.UpdatedAt,
+	}
+}
+
+// toDeviceCode converts a deviceauthdb.DeviceCode to a local DeviceCode.
+func (a *StoreAdapter) toDeviceCode(d *deviceauthdb.DeviceCode) *DeviceCode {
 	return &DeviceCode{
 		ID:              d.ID,
 		DeviceCode:      d.DeviceCode,

@@ -19,129 +19,6 @@ type Account struct {
 	UpdatedAt         time.Time      `json:"updated_at"`
 }
 
-type ApiKey struct {
-	ID                  string         `json:"id"`
-	Name                sql.NullString `json:"name"`
-	Start               string         `json:"start"`
-	Prefix              sql.NullString `json:"prefix"`
-	Key                 string         `json:"key"`
-	KeyPrefix           string         `json:"key_prefix"`
-	UserID              string         `json:"user_id"`
-	RateLimitEnabled    bool           `json:"rate_limit_enabled"`
-	RateLimitTimeWindow sql.NullInt64  `json:"rate_limit_time_window"`
-	RateLimitMax        sql.NullInt32  `json:"rate_limit_max"`
-	RequestCount        int32          `json:"request_count"`
-	Remaining           sql.NullInt32  `json:"remaining"`
-	RefillInterval      sql.NullInt64  `json:"refill_interval"`
-	RefillAmount        sql.NullInt32  `json:"refill_amount"`
-	LastRefillAt        sql.NullTime   `json:"last_refill_at"`
-	Enabled             bool           `json:"enabled"`
-	LastRequest         sql.NullTime   `json:"last_request"`
-	ExpiresAt           sql.NullTime   `json:"expires_at"`
-	Permissions         sql.NullString `json:"permissions"`
-	Metadata            sql.NullString `json:"metadata"`
-	CreatedAt           time.Time      `json:"created_at"`
-	UpdatedAt           time.Time      `json:"updated_at"`
-}
-
-type DeviceCode struct {
-	ID              string         `json:"id"`
-	DeviceCode      string         `json:"device_code"`
-	DeviceCodeHash  string         `json:"device_code_hash"`
-	UserCode        string         `json:"user_code"`
-	ClientID        sql.NullString `json:"client_id"`
-	Scope           sql.NullString `json:"scope"`
-	UserID          sql.NullString `json:"user_id"`
-	Status          string         `json:"status"`
-	PollingInterval int32          `json:"polling_interval"`
-	LastPolledAt    sql.NullTime   `json:"last_polled_at"`
-	ExpiresAt       time.Time      `json:"expires_at"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
-}
-
-type Invitation struct {
-	ID             string       `json:"id"`
-	Email          string       `json:"email"`
-	OrganizationID string       `json:"organization_id"`
-	InviterID      string       `json:"inviter_id"`
-	Role           string       `json:"role"`
-	Status         string       `json:"status"`
-	ExpiresAt      sql.NullTime `json:"expires_at"`
-	CreatedAt      time.Time    `json:"created_at"`
-}
-
-type JwtKey struct {
-	ID            string       `json:"id"`
-	Algorithm     string       `json:"algorithm"`
-	Use           string       `json:"use"`
-	Kty           string       `json:"kty"`
-	Status        string       `json:"status"`
-	PrivateKeyEnc string       `json:"private_key_enc"`
-	PublicKeyJwk  string       `json:"public_key_jwk"`
-	ActivatedAt   time.Time    `json:"activated_at"`
-	RotatedAt     sql.NullTime `json:"rotated_at"`
-	ExpiresAt     sql.NullTime `json:"expires_at"`
-	CreatedAt     time.Time    `json:"created_at"`
-	UpdatedAt     time.Time    `json:"updated_at"`
-}
-
-type JwtRevokedToken struct {
-	ID        string    `json:"id"`
-	ExpiresAt time.Time `json:"expires_at"`
-	RevokedAt time.Time `json:"revoked_at"`
-}
-
-type Member struct {
-	ID             string    `json:"id"`
-	OrganizationID string    `json:"organization_id"`
-	UserID         string    `json:"user_id"`
-	Role           string    `json:"role"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-}
-
-type OauthAccount struct {
-	ID                   string         `json:"id"`
-	UserID               string         `json:"user_id"`
-	Provider             string         `json:"provider"`
-	ProviderAccountID    string         `json:"provider_account_id"`
-	AccessToken          sql.NullString `json:"access_token"`
-	RefreshToken         sql.NullString `json:"refresh_token"`
-	AccessTokenExpiresAt sql.NullTime   `json:"access_token_expires_at"`
-	CreatedAt            time.Time      `json:"created_at"`
-	UpdatedAt            time.Time      `json:"updated_at"`
-}
-
-type OauthState struct {
-	State      string         `json:"state"`
-	Provider   string         `json:"provider"`
-	Verifier   sql.NullString `json:"verifier"`
-	RedirectTo sql.NullString `json:"redirect_to"`
-	CreatedAt  time.Time      `json:"created_at"`
-	ExpiresAt  time.Time      `json:"expires_at"`
-}
-
-type Organization struct {
-	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	Slug      string         `json:"slug"`
-	Logo      sql.NullString `json:"logo"`
-	Metadata  sql.NullString `json:"metadata"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-}
-
-type OtpToken struct {
-	ID         string         `json:"id"`
-	UserID     string         `json:"user_id"`
-	TokenHash  string         `json:"token_hash"`
-	Type       string         `json:"type"`
-	Identifier sql.NullString `json:"identifier"`
-	ExpiresAt  time.Time      `json:"expires_at"`
-	CreatedAt  time.Time      `json:"created_at"`
-}
-
 type Session struct {
 	ID             string         `json:"id"`
 	UserID         string         `json:"user_id"`
@@ -152,21 +29,6 @@ type Session struct {
 	ExpiresAt      time.Time      `json:"expires_at"`
 	LastUsed       time.Time      `json:"last_used"`
 	ImpersonatedBy sql.NullString `json:"impersonated_by"`
-}
-
-type Team struct {
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	OrganizationID string    `json:"organization_id"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-}
-
-type TeamMember struct {
-	ID        string    `json:"id"`
-	TeamID    string    `json:"team_id"`
-	UserID    string    `json:"user_id"`
-	CreatedAt time.Time `json:"created_at"`
 }
 
 type User struct {
@@ -192,24 +54,4 @@ type Verification struct {
 	Identifier sql.NullString `json:"identifier"`
 	ExpiresAt  time.Time      `json:"expires_at"`
 	CreatedAt  time.Time      `json:"created_at"`
-}
-
-type WebauthnCredential struct {
-	ID           string       `json:"id"`
-	UserID       string       `json:"user_id"`
-	CredentialID []byte       `json:"credential_id"`
-	PublicKey    []byte       `json:"public_key"`
-	SignCount    int32        `json:"sign_count"`
-	Transports   []string     `json:"transports"`
-	CreatedAt    time.Time    `json:"created_at"`
-	LastUsedAt   sql.NullTime `json:"last_used_at"`
-}
-
-type WebauthnSession struct {
-	ID        string         `json:"id"`
-	UserID    sql.NullString `json:"user_id"`
-	Type      string         `json:"type"`
-	Data      []byte         `json:"data"`
-	ExpiresAt time.Time      `json:"expires_at"`
-	CreatedAt time.Time      `json:"created_at"`
 }

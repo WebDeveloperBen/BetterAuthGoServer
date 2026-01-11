@@ -7,22 +7,23 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	orgdb "github.com/webdeveloperben/BetterAuthGoServer/auth/organization/db"
+	coredb "github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
 // Service provides organization operations using the store adapter.
 type Service struct {
 	store   *StoreAdapter
-	rawDB   db.DBTX // Kept for queries not yet migrated (like session updates)
-	dialect db.Dialect
+	rawDB   coredb.DBTX // Kept for queries not yet migrated (like session updates)
+	dialect coredb.Dialect
 	logger  *slog.Logger
 	config  *Config
 }
 
 // NewService creates a new organization service.
-func NewService(store db.PluginStore, rawDB db.DBTX, dialect db.Dialect, logger *slog.Logger, config *Config) *Service {
+func NewService(dbStore *orgdb.Store, rawDB coredb.DBTX, dialect coredb.Dialect, logger *slog.Logger, config *Config) *Service {
 	return &Service{
-		store:   NewStoreAdapter(store),
+		store:   NewStoreAdapter(dbStore),
 		rawDB:   rawDB,
 		dialect: dialect,
 		logger:  logger,

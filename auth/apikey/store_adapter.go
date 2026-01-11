@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	apikeydb "github.com/webdeveloperben/BetterAuthGoServer/auth/apikey/db"
 )
 
 // KeyStore defines the interface for API key persistence.
@@ -21,20 +21,19 @@ type KeyStore interface {
 	DeleteAllExpired(ctx context.Context) (int64, error)
 }
 
-// StoreAdapter adapts db.APIKeyStore to the apikey package's KeyStore interface.
+// StoreAdapter adapts apikeydb.Store to the apikey package's KeyStore interface.
 type StoreAdapter struct {
-	store db.APIKeyStore
+	store *apikeydb.Store
 }
 
-// NewStoreAdapter creates a new API key store adapter from a db.APIKeyStore.
-func NewStoreAdapter(store db.APIKeyStore) *StoreAdapter {
+// NewStoreAdapter creates a new API key store adapter from an apikeydb.Store.
+func NewStoreAdapter(store *apikeydb.Store) *StoreAdapter {
 	return &StoreAdapter{store: store}
 }
 
 // Create stores a new API key.
 func (a *StoreAdapter) Create(ctx context.Context, key *APIKey) error {
-	dbKey := a.toDBKey(key)
-	return a.store.CreateAPIKey(ctx, dbKey)
+	return a.store.CreateAPIKey(ctx, a.toDBKey(key))
 }
 
 // GetByID retrieves an API key by ID.
@@ -89,14 +88,12 @@ func (a *StoreAdapter) GetByKeyPrefix(ctx context.Context, keyPrefix string) ([]
 
 // Update updates an API key.
 func (a *StoreAdapter) Update(ctx context.Context, key *APIKey) error {
-	dbKey := a.toDBKey(key)
-	return a.store.UpdateAPIKey(ctx, dbKey)
+	return a.store.UpdateAPIKey(ctx, a.toDBKey(key))
 }
 
 // UpdateUsage updates the usage stats of an API key.
 func (a *StoreAdapter) UpdateUsage(ctx context.Context, key *APIKey) error {
-	dbKey := a.toDBKey(key)
-	return a.store.UpdateAPIKeyUsage(ctx, dbKey)
+	return a.store.UpdateAPIKeyUsage(ctx, a.toDBKey(key))
 }
 
 // Delete removes an API key.
@@ -105,18 +102,14 @@ func (a *StoreAdapter) Delete(ctx context.Context, id string) error {
 }
 
 // DeleteAllExpired removes all expired API keys.
-// Note: This requires a custom query not in the standard store interface.
-// For now, we'll return 0 as the db.Store doesn't have this method.
 func (a *StoreAdapter) DeleteAllExpired(ctx context.Context) (int64, error) {
-	// The db.Store doesn't have a DeleteExpiredAPIKeys method yet
-	// This would need to be added to the store interface if needed
-	return 0, nil
+	return a.store.DeleteExpiredAPIKeys(ctx)
 }
 
-// toDBKey converts an APIKey to a db.APIKey.
-func (a *StoreAdapter) toDBKey(key *APIKey) *db.APIKey {
+// toDBKey converts an APIKey to an apikeydb.APIKey.
+func (a *StoreAdapter) toDBKey(key *APIKey) *apikeydb.APIKey {
 	rateLimitMax := int32(key.RateLimitMax)
-	return &db.APIKey{
+	return &apikeydb.APIKey{
 		ID:                  key.ID,
 		Name:                key.Name,
 		Start:               key.Start,
@@ -142,8 +135,8 @@ func (a *StoreAdapter) toDBKey(key *APIKey) *db.APIKey {
 	}
 }
 
-// toAPIKey converts a db.APIKey to an APIKey.
-func (a *StoreAdapter) toAPIKey(k *db.APIKey) *APIKey {
+// toAPIKey converts an apikeydb.APIKey to an APIKey.
+func (a *StoreAdapter) toAPIKey(k *apikeydb.APIKey) *APIKey {
 	var rateLimitTimeWindow int64
 	if k.RateLimitTimeWindow != nil {
 		rateLimitTimeWindow = *k.RateLimitTimeWindow

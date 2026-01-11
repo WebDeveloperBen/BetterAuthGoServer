@@ -3,22 +3,22 @@ package otp
 import (
 	"context"
 
-	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	otpdb "github.com/webdeveloperben/BetterAuthGoServer/auth/otp/db"
 )
 
-// StoreAdapter adapts db.OTPStore to the OTP package's Store interface.
+// StoreAdapter adapts the OTP plugin's db.Store to the TokenStore interface.
 type StoreAdapter struct {
-	store db.OTPStore
+	store *otpdb.Store
 }
 
-// NewStoreAdapter creates a new OTP store adapter from a db.OTPStore.
-func NewStoreAdapter(store db.OTPStore) *StoreAdapter {
+// NewStoreAdapter creates a new OTP store adapter from the plugin's own store.
+func NewStoreAdapter(store *otpdb.Store) *StoreAdapter {
 	return &StoreAdapter{store: store}
 }
 
 // Create stores a new OTP token.
 func (a *StoreAdapter) Create(ctx context.Context, token *OTPToken) error {
-	dbToken := &db.OTPToken{
+	dbToken := &otpdb.Token{
 		ID:         token.ID,
 		UserID:     token.UserID,
 		TokenHash:  token.TokenHash,
@@ -27,12 +27,12 @@ func (a *StoreAdapter) Create(ctx context.Context, token *OTPToken) error {
 		ExpiresAt:  token.ExpiresAt,
 		CreatedAt:  token.CreatedAt,
 	}
-	return a.store.CreateOTPToken(ctx, dbToken)
+	return a.store.CreateToken(ctx, dbToken)
 }
 
 // GetByTokenHash retrieves a token by its hash.
 func (a *StoreAdapter) GetByTokenHash(ctx context.Context, tokenHash string) (*OTPToken, error) {
-	dbToken, err := a.store.GetOTPTokenByHash(ctx, tokenHash)
+	dbToken, err := a.store.GetTokenByHash(ctx, tokenHash)
 	if err != nil {
 		return nil, err
 	}
@@ -44,39 +44,31 @@ func (a *StoreAdapter) GetByTokenHash(ctx context.Context, tokenHash string) (*O
 
 // Delete removes a token by ID.
 func (a *StoreAdapter) Delete(ctx context.Context, id string) error {
-	return a.store.DeleteOTPToken(ctx, id)
+	return a.store.DeleteToken(ctx, id)
 }
 
 // DeleteByUserAndType removes all tokens of a specific type for a user.
 func (a *StoreAdapter) DeleteByUserAndType(ctx context.Context, userID string, tokenType TokenType) error {
-	return a.store.DeleteOTPTokensByUserAndType(ctx, userID, string(tokenType))
+	return a.store.DeleteTokensByUserAndType(ctx, userID, string(tokenType))
 }
 
 // DeleteExpired removes all expired tokens.
 func (a *StoreAdapter) DeleteExpired(ctx context.Context) error {
-	return a.store.DeleteExpiredOTPTokens(ctx)
+	return a.store.DeleteExpiredTokens(ctx)
 }
 
-// toOTPToken converts a db.OTPToken to an OTPToken.
-func (a *StoreAdapter) toOTPToken(t *db.OTPToken) *OTPToken {
-	expiresAt := t.ExpiresAt
-
+// toOTPToken converts an otpdb.Token to an OTPToken.
+func (a *StoreAdapter) toOTPToken(t *otpdb.Token) *OTPToken {
 	return &OTPToken{
 		ID:         t.ID,
 		UserID:     t.UserID,
 		TokenHash:  t.TokenHash,
 		Type:       TokenType(t.Type),
 		Identifier: t.Identifier,
-		ExpiresAt:  expiresAt,
+		ExpiresAt:  t.ExpiresAt,
 		CreatedAt:  t.CreatedAt,
 	}
 }
 
-// Ensure StoreAdapter has the same methods as Store
-var _ interface {
-	Create(ctx context.Context, token *OTPToken) error
-	GetByTokenHash(ctx context.Context, tokenHash string) (*OTPToken, error)
-	Delete(ctx context.Context, id string) error
-	DeleteByUserAndType(ctx context.Context, userID string, tokenType TokenType) error
-	DeleteExpired(ctx context.Context) error
-} = (*StoreAdapter)(nil)
+// Ensure StoreAdapter implements TokenStore
+var _ TokenStore = (*StoreAdapter)(nil)

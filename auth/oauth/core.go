@@ -39,6 +39,20 @@ func (s *State) IsExpired() bool {
 	return time.Now().After(s.ExpiresAt)
 }
 
+// OAuthAccount represents an OAuth account linked to a user.
+// This stores the provider-specific tokens and identifiers.
+type OAuthAccount struct {
+	ID                   string
+	UserID               string
+	Provider             string
+	ProviderAccountID    string
+	AccessToken          string
+	RefreshToken         string
+	AccessTokenExpiresAt *time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
 // Service handles OAuth authentication flows
 type Service struct {
 	providers  map[string]Provider

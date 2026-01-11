@@ -19,8 +19,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	jwtdb "github.com/webdeveloperben/BetterAuthGoServer/auth/jwt/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
-	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
 // LoadedKey represents a decrypted key ready for use
@@ -36,11 +36,11 @@ type LoadedKey struct {
 
 // KeyManagerStore defines the interface for JWT key storage operations.
 type KeyManagerStore interface {
-	CreateJWTKey(ctx context.Context, key *db.JWTKey) error
-	GetJWTKeyByID(ctx context.Context, id string) (*db.JWTKey, error)
-	GetActiveJWTKey(ctx context.Context, algorithm string) (*db.JWTKey, error)
-	GetJWTKeysForVerification(ctx context.Context, algorithm string) ([]*db.JWTKey, error)
-	GetJWTKeyForVerification(ctx context.Context, id string) (*db.JWTKey, error)
+	CreateJWTKey(ctx context.Context, key *jwtdb.JWTKey) error
+	GetJWTKeyByID(ctx context.Context, id string) (*jwtdb.JWTKey, error)
+	GetActiveJWTKey(ctx context.Context, algorithm string) (*jwtdb.JWTKey, error)
+	GetJWTKeysForVerification(ctx context.Context, algorithm string) ([]*jwtdb.JWTKey, error)
+	GetJWTKeyForVerification(ctx context.Context, id string) (*jwtdb.JWTKey, error)
 	RotateActiveJWTKeys(ctx context.Context, algorithm string, expiresAt time.Time) error
 	RetireExpiredJWTKeys(ctx context.Context) (int64, error)
 	DeleteJWTKey(ctx context.Context, id string) error
@@ -196,7 +196,7 @@ func (km *KeyManagerAdapter) GenerateKey(ctx context.Context) (*JWK, error) {
 	}
 
 	// Create new key
-	dbKey := &db.JWTKey{
+	dbKey := &jwtdb.JWTKey{
 		ID:            uuid.New().String(),
 		Algorithm:     string(km.algorithm),
 		Use:           KeyUseSignature,
@@ -403,8 +403,8 @@ func (km *KeyManagerAdapter) loadKey(ctx context.Context, kid string) (*LoadedKe
 	return loaded, nil
 }
 
-// decryptAndLoadKey decrypts a db.JWTKey and returns a LoadedKey.
-func (km *KeyManagerAdapter) decryptAndLoadKey(dbKey *db.JWTKey) (*LoadedKey, error) {
+// decryptAndLoadKey decrypts a jwtdb.JWTKey and returns a LoadedKey.
+func (km *KeyManagerAdapter) decryptAndLoadKey(dbKey *jwtdb.JWTKey) (*LoadedKey, error) {
 	// Decrypt private key
 	privateKeyPEM, err := km.encryptor.Decrypt(dbKey.PrivateKeyEnc)
 	if err != nil {

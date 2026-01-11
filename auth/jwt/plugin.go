@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	jwtdb "github.com/webdeveloperben/BetterAuthGoServer/auth/jwt/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
@@ -86,6 +87,7 @@ const (
 type Plugin struct {
 	service           *Service
 	keyManagerAdapter *KeyManagerAdapter // sqlc-based key manager
+	dbStore           *jwtdb.Store       // plugin's own store
 	ctx               plugin.Context
 	auth              AuthProvider
 	opts              []Option
@@ -113,7 +115,6 @@ var (
 	_ plugin.RoutesProvider     = (*Plugin)(nil)
 	_ plugin.MiddlewareProvider = (*Plugin)(nil)
 	_ plugin.JWTTokenGenerator  = (*Plugin)(nil)
-	_ plugin.MigrationsProvider = (*Plugin)(nil)
 )
 
 // NewPlugin creates a new JWT plugin with the given options
@@ -155,9 +156,14 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		config.Secret = ctx.Secret
 	}
 
+	// Create plugin's own store if database is available
+	if ctx.RawDB != nil {
+		p.dbStore = jwtdb.New(ctx.RawDB, ctx.Dialect)
+	}
+
 	// Set up KeyManager for database-backed asymmetric keys
 	if config.KeySource == KeySourceDatabase {
-		if ctx.Store == nil {
+		if p.dbStore == nil {
 			return ErrDatabaseRequired
 		}
 		if ctx.Encryptor == nil {
@@ -174,8 +180,8 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		}
 		kmOpts = append(kmOpts, WithAdapterLogger(ctx.Logger))
 
-		// Create KeyManagerAdapter using the sqlc store
-		km := NewKeyManagerAdapter(ctx.Store, ctx.Encryptor, config.Algorithm, kmOpts...)
+		// Create KeyManagerAdapter using the plugin's own store
+		km := NewKeyManagerAdapter(p.dbStore, ctx.Encryptor, config.Algorithm, kmOpts...)
 		p.keyManagerAdapter = km
 		config.KeyManager = km
 
@@ -191,8 +197,8 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 
 	// Use database-backed blocklist if available, otherwise use memory
 	if config.TokenBlocklist == nil {
-		if ctx.Store != nil {
-			config.TokenBlocklist = NewBlocklistAdapter(ctx.Store)
+		if p.dbStore != nil {
+			config.TokenBlocklist = NewBlocklistAdapter(p.dbStore)
 		} else {
 			config.TokenBlocklist = NewMemoryTokenBlocklist()
 		}
@@ -211,15 +217,6 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 // Close cleans up plugin resources
 func (p *Plugin) Close() error {
 	return nil
-}
-
-// Migrations returns the database models for auto-migration.
-// Only returns models when using database-backed keys.
-func (p *Plugin) Migrations() []any {
-	return []any{
-		&JWK{},
-		&RevokedToken{},
-	}
 }
 
 // Routes returns the JWT token endpoints

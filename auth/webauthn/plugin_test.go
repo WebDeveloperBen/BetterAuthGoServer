@@ -11,23 +11,6 @@ func TestPlugin_Name(t *testing.T) {
 	}
 }
 
-func TestPlugin_Migrations(t *testing.T) {
-	p := NewPlugin()
-	migrations := p.Migrations()
-
-	if len(migrations) != 2 {
-		t.Fatalf("expected 2 migrations, got %d", len(migrations))
-	}
-
-	// Verify the types
-	if _, ok := migrations[0].(*WebAuthnCredential); !ok {
-		t.Error("expected first migration to be *WebAuthnCredential")
-	}
-	if _, ok := migrations[1].(*WebAuthnSession); !ok {
-		t.Error("expected second migration to be *WebAuthnSession")
-	}
-}
-
 func TestPlugin_IsEnabled(t *testing.T) {
 	p := NewPlugin()
 

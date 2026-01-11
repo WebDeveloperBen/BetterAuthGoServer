@@ -4,16 +4,16 @@ import (
 	"context"
 	"time"
 
-	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	jwtdb "github.com/webdeveloperben/BetterAuthGoServer/auth/jwt/db"
 )
 
-// BlocklistAdapter adapts db.JWTStore to the jwt.TokenBlocklist interface.
+// BlocklistAdapter adapts jwtdb.Store to the jwt.TokenBlocklist interface.
 type BlocklistAdapter struct {
-	store db.JWTStore
+	store *jwtdb.Store
 }
 
-// NewBlocklistAdapter creates a new TokenBlocklist adapter from a db.JWTStore.
-func NewBlocklistAdapter(store db.JWTStore) *BlocklistAdapter {
+// NewBlocklistAdapter creates a new TokenBlocklist adapter from a jwtdb.Store.
+func NewBlocklistAdapter(store *jwtdb.Store) *BlocklistAdapter {
 	return &BlocklistAdapter{store: store}
 }
 

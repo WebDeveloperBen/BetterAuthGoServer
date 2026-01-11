@@ -64,12 +64,3 @@ func TestMemoryTokenBlocklist(t *testing.T) {
 		t.Error("Expected expired token to be cleaned up")
 	}
 }
-
-func TestRevokedToken_TableName(t *testing.T) {
-	token := &RevokedToken{}
-	expected := "jwt_revoked_tokens"
-
-	if token.TableName() != expected {
-		t.Errorf("TableName() = %s, want %s", token.TableName(), expected)
-	}
-}

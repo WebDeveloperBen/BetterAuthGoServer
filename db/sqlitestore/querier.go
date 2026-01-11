@@ -10,144 +10,48 @@ import (
 
 type Querier interface {
 	BanUser(ctx context.Context, arg BanUserParams) error
-	CancelPendingInvitations(ctx context.Context, arg CancelPendingInvitationsParams) error
-	CheckSlugExists(ctx context.Context, slug string) (bool, error)
 	CountAllUsers(ctx context.Context) (int64, error)
-	CountOrganizationMembers(ctx context.Context, organizationID string) (int64, error)
 	CountUsersWithQuery(ctx context.Context, arg CountUsersWithQueryParams) (int64, error)
 	CountUsersWithQueryAndRole(ctx context.Context, arg CountUsersWithQueryAndRoleParams) (int64, error)
 	CountUsersWithRole(ctx context.Context, role string) (int64, error)
-	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) error
 	CreateAccount(ctx context.Context, arg CreateAccountParams) error
-	CreateDeviceCode(ctx context.Context, arg CreateDeviceCodeParams) error
-	// Invitations
-	CreateInvitation(ctx context.Context, arg CreateInvitationParams) error
-	// JWT Key Management
-	CreateJWTKey(ctx context.Context, arg CreateJWTKeyParams) error
-	// Members
-	CreateMember(ctx context.Context, arg CreateMemberParams) error
-	// OAuth Accounts
-	CreateOAuthAccount(ctx context.Context, arg CreateOAuthAccountParams) error
-	// OAuth States
-	CreateOAuthState(ctx context.Context, arg CreateOAuthStateParams) error
-	CreateOTPToken(ctx context.Context, arg CreateOTPTokenParams) error
-	// Organizations
-	CreateOrganization(ctx context.Context, arg CreateOrganizationParams) error
 	CreateSession(ctx context.Context, arg CreateSessionParams) error
-	// Teams
-	CreateTeam(ctx context.Context, arg CreateTeamParams) error
-	// Team Members
-	CreateTeamMember(ctx context.Context, arg CreateTeamMemberParams) error
 	CreateUser(ctx context.Context, arg CreateUserParams) error
 	CreateVerification(ctx context.Context, arg CreateVerificationParams) error
-	// WebAuthn Credentials
-	CreateWebAuthnCredential(ctx context.Context, arg CreateWebAuthnCredentialParams) error
-	// WebAuthn Sessions
-	CreateWebAuthnSession(ctx context.Context, arg CreateWebAuthnSessionParams) error
-	DeleteAPIKey(ctx context.Context, id string) error
-	DeleteAPIKeysByUserID(ctx context.Context, userID string) error
 	DeleteAccount(ctx context.Context, id string) error
 	DeleteAccountsByUserID(ctx context.Context, userID string) error
-	DeleteDeviceCode(ctx context.Context, id string) error
-	DeleteExpiredDeviceCodes(ctx context.Context) (int64, error)
-	DeleteExpiredInvitations(ctx context.Context) (int64, error)
-	DeleteExpiredOAuthStates(ctx context.Context, expiresAt string) error
-	DeleteExpiredOTPTokens(ctx context.Context, expiresAt string) error
-	DeleteExpiredRevokedTokens(ctx context.Context, expiresAt string) error
 	DeleteExpiredSessions(ctx context.Context, expiresAt string) error
 	DeleteExpiredVerifications(ctx context.Context, expiresAt string) error
-	DeleteExpiredWebAuthnSessions(ctx context.Context, expiresAt string) error
-	DeleteInvitation(ctx context.Context, id string) error
-	DeleteJWTKey(ctx context.Context, id string) error
-	DeleteMember(ctx context.Context, arg DeleteMemberParams) error
-	DeleteMemberByID(ctx context.Context, id string) error
-	DeleteOAuthAccount(ctx context.Context, id string) error
-	DeleteOAuthState(ctx context.Context, state string) error
-	DeleteOTPToken(ctx context.Context, id string) error
-	DeleteOTPTokensByUserAndType(ctx context.Context, arg DeleteOTPTokensByUserAndTypeParams) error
-	DeleteOrganization(ctx context.Context, id string) error
 	DeleteSession(ctx context.Context, id string) error
 	DeleteSessionsByUserID(ctx context.Context, userID string) error
 	DeleteStaleAnonymousUsers(ctx context.Context, createdAt string) (int64, error)
-	DeleteTeam(ctx context.Context, id string) error
-	DeleteTeamMember(ctx context.Context, arg DeleteTeamMemberParams) error
-	DeleteTeamMemberByID(ctx context.Context, id string) error
 	DeleteUser(ctx context.Context, id string) error
 	DeleteVerification(ctx context.Context, id string) error
 	DeleteVerificationsByUserIDAndType(ctx context.Context, arg DeleteVerificationsByUserIDAndTypeParams) error
-	DeleteWebAuthnCredential(ctx context.Context, id string) error
-	DeleteWebAuthnSession(ctx context.Context, id string) error
-	GetAPIKeyByID(ctx context.Context, id string) (ApiKey, error)
-	GetAPIKeyByKeyPrefix(ctx context.Context, keyPrefix string) ([]ApiKey, error)
 	GetAccountByID(ctx context.Context, id string) (Account, error)
 	GetAccountByProvider(ctx context.Context, arg GetAccountByProviderParams) (Account, error)
 	GetAccountByUserIDAndProvider(ctx context.Context, arg GetAccountByUserIDAndProviderParams) (Account, error)
-	GetActiveJWTKey(ctx context.Context, algorithm string) (JwtKey, error)
-	GetDeviceCodeByHash(ctx context.Context, arg GetDeviceCodeByHashParams) (DeviceCode, error)
-	GetDeviceCodeByUserCode(ctx context.Context, replace string) (DeviceCode, error)
-	GetFirstMemberByUser(ctx context.Context, userID string) (Member, error)
-	GetInvitationByEmailAndOrg(ctx context.Context, arg GetInvitationByEmailAndOrgParams) (Invitation, error)
-	GetInvitationByID(ctx context.Context, id string) (Invitation, error)
-	GetJWTKeyByID(ctx context.Context, id string) (JwtKey, error)
-	GetJWTKeyForVerification(ctx context.Context, arg GetJWTKeyForVerificationParams) (JwtKey, error)
-	GetJWTKeysForVerification(ctx context.Context, arg GetJWTKeysForVerificationParams) ([]JwtKey, error)
-	GetMember(ctx context.Context, arg GetMemberParams) (Member, error)
-	GetMemberByID(ctx context.Context, id string) (Member, error)
-	GetOAuthAccountByProvider(ctx context.Context, arg GetOAuthAccountByProviderParams) (OauthAccount, error)
-	GetOAuthAccountsByUserID(ctx context.Context, userID string) ([]OauthAccount, error)
-	GetOAuthState(ctx context.Context, state string) (OauthState, error)
-	GetOTPTokenByTokenHash(ctx context.Context, tokenHash string) (OtpToken, error)
-	GetOrganizationByID(ctx context.Context, id string) (Organization, error)
-	GetOrganizationBySlug(ctx context.Context, slug string) (Organization, error)
 	GetSessionByID(ctx context.Context, id string) (Session, error)
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error)
-	GetTeamByID(ctx context.Context, id string) (Team, error)
-	GetTeamMember(ctx context.Context, arg GetTeamMemberParams) (TeamMember, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id string) (User, error)
 	GetUserWithAnonymousStatus(ctx context.Context, id string) (GetUserWithAnonymousStatusRow, error)
 	GetVerificationByTokenHash(ctx context.Context, tokenHash string) (Verification, error)
-	GetWebAuthnCredentialByID(ctx context.Context, credentialID []byte) (WebauthnCredential, error)
-	GetWebAuthnSession(ctx context.Context, id string) (WebauthnSession, error)
-	IsJWTTokenRevoked(ctx context.Context, id string) (int64, error)
-	ListAPIKeysByUserID(ctx context.Context, userID string) ([]ApiKey, error)
 	ListAccountsByUserID(ctx context.Context, userID string) ([]Account, error)
 	ListAllUsers(ctx context.Context, arg ListAllUsersParams) ([]User, error)
-	ListInvitationsByEmail(ctx context.Context, email string) ([]Invitation, error)
-	ListInvitationsByOrganization(ctx context.Context, organizationID string) ([]Invitation, error)
-	ListMembersByOrganization(ctx context.Context, organizationID string) ([]Member, error)
-	ListMembersByUser(ctx context.Context, userID string) ([]Member, error)
 	ListSessionsByUserID(ctx context.Context, userID string) ([]Session, error)
-	ListTeamMembersByTeam(ctx context.Context, teamID string) ([]TeamMember, error)
-	ListTeamMembersByUser(ctx context.Context, userID string) ([]TeamMember, error)
-	ListTeamsByOrganization(ctx context.Context, organizationID string) ([]Team, error)
-	ListUserOrganizations(ctx context.Context, userID string) ([]Organization, error)
 	// Admin operations
 	ListUsersWithQuery(ctx context.Context, arg ListUsersWithQueryParams) ([]User, error)
 	ListUsersWithQueryAndRole(ctx context.Context, arg ListUsersWithQueryAndRoleParams) ([]User, error)
 	ListUsersWithRole(ctx context.Context, arg ListUsersWithRoleParams) ([]User, error)
-	ListWebAuthnCredentialsByUserID(ctx context.Context, userID string) ([]WebauthnCredential, error)
-	RetireExpiredJWTKeys(ctx context.Context, arg RetireExpiredJWTKeysParams) (int64, error)
-	RevokeJWTToken(ctx context.Context, arg RevokeJWTTokenParams) error
-	RotateActiveJWTKeys(ctx context.Context, arg RotateActiveJWTKeysParams) error
 	// Anonymous operations
 	SetAnonymousFlag(ctx context.Context, arg SetAnonymousFlagParams) error
 	SetEmailVerified(ctx context.Context, arg SetEmailVerifiedParams) error
 	SetUserRole(ctx context.Context, arg SetUserRoleParams) error
 	UnbanUser(ctx context.Context, arg UnbanUserParams) error
-	UpdateAPIKey(ctx context.Context, arg UpdateAPIKeyParams) error
-	UpdateAPIKeyUsage(ctx context.Context, arg UpdateAPIKeyUsageParams) error
 	UpdateAccount(ctx context.Context, arg UpdateAccountParams) error
-	UpdateDeviceCodeLastPolled(ctx context.Context, arg UpdateDeviceCodeLastPolledParams) error
-	UpdateDeviceCodeStatus(ctx context.Context, arg UpdateDeviceCodeStatusParams) error
-	UpdateInvitationStatus(ctx context.Context, arg UpdateInvitationStatusParams) error
-	UpdateMemberRole(ctx context.Context, arg UpdateMemberRoleParams) error
-	UpdateOAuthAccount(ctx context.Context, arg UpdateOAuthAccountParams) error
-	UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) error
 	UpdateSessionLastUsed(ctx context.Context, arg UpdateSessionLastUsedParams) error
-	UpdateTeam(ctx context.Context, arg UpdateTeamParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
-	UpdateWebAuthnCredentialSignCount(ctx context.Context, arg UpdateWebAuthnCredentialSignCountParams) error
 }
 
 var _ Querier = (*Queries)(nil)

@@ -4,17 +4,17 @@ import (
 	"context"
 	"time"
 
-	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	orgdb "github.com/webdeveloperben/BetterAuthGoServer/auth/organization/db"
 )
 
-// StoreAdapter wraps db.PluginStore to provide organization-specific operations.
+// StoreAdapter wraps orgdb.Store to provide organization-specific operations.
 // It converts between plugin domain types and db package types.
 type StoreAdapter struct {
-	store db.PluginStore
+	store *orgdb.Store
 }
 
 // NewStoreAdapter creates a new store adapter.
-func NewStoreAdapter(store db.PluginStore) *StoreAdapter {
+func NewStoreAdapter(store *orgdb.Store) *StoreAdapter {
 	return &StoreAdapter{store: store}
 }
 
@@ -339,8 +339,8 @@ func (a *StoreAdapter) DeleteTeamMember(ctx context.Context, teamID, userID stri
 // Model converters: plugin domain types <-> db package types
 // =============================================================================
 
-func orgToDBModel(org *Organization) *db.Organization {
-	return &db.Organization{
+func orgToDBModel(org *Organization) *orgdb.Organization {
+	return &orgdb.Organization{
 		ID:        org.ID,
 		Name:      org.Name,
 		Slug:      org.Slug,
@@ -351,7 +351,7 @@ func orgToDBModel(org *Organization) *db.Organization {
 	}
 }
 
-func dbOrgToModel(dbOrg *db.Organization) *Organization {
+func dbOrgToModel(dbOrg *orgdb.Organization) *Organization {
 	return &Organization{
 		ID:        dbOrg.ID,
 		Name:      dbOrg.Name,
@@ -363,8 +363,8 @@ func dbOrgToModel(dbOrg *db.Organization) *Organization {
 	}
 }
 
-func memberToDBModel(m *Member) *db.OrgMember {
-	return &db.OrgMember{
+func memberToDBModel(m *Member) *orgdb.Member {
+	return &orgdb.Member{
 		ID:             m.ID,
 		OrganizationID: m.OrganizationID,
 		UserID:         m.UserID,
@@ -374,7 +374,7 @@ func memberToDBModel(m *Member) *db.OrgMember {
 	}
 }
 
-func dbMemberToModel(dbM *db.OrgMember) *Member {
+func dbMemberToModel(dbM *orgdb.Member) *Member {
 	return &Member{
 		ID:             dbM.ID,
 		OrganizationID: dbM.OrganizationID,
@@ -385,8 +385,8 @@ func dbMemberToModel(dbM *db.OrgMember) *Member {
 	}
 }
 
-func invitationToDBModel(inv *Invitation) *db.OrgInvitation {
-	return &db.OrgInvitation{
+func invitationToDBModel(inv *Invitation) *orgdb.Invitation {
+	return &orgdb.Invitation{
 		ID:             inv.ID,
 		Email:          inv.Email,
 		OrganizationID: inv.OrganizationID,
@@ -398,7 +398,7 @@ func invitationToDBModel(inv *Invitation) *db.OrgInvitation {
 	}
 }
 
-func dbInvitationToModel(dbInv *db.OrgInvitation) *Invitation {
+func dbInvitationToModel(dbInv *orgdb.Invitation) *Invitation {
 	return &Invitation{
 		ID:             dbInv.ID,
 		Email:          dbInv.Email,
@@ -411,8 +411,8 @@ func dbInvitationToModel(dbInv *db.OrgInvitation) *Invitation {
 	}
 }
 
-func teamToDBModel(t *Team) *db.OrgTeam {
-	return &db.OrgTeam{
+func teamToDBModel(t *Team) *orgdb.Team {
+	return &orgdb.Team{
 		ID:             t.ID,
 		Name:           t.Name,
 		OrganizationID: t.OrganizationID,
@@ -421,7 +421,7 @@ func teamToDBModel(t *Team) *db.OrgTeam {
 	}
 }
 
-func dbTeamToModel(dbT *db.OrgTeam) *Team {
+func dbTeamToModel(dbT *orgdb.Team) *Team {
 	return &Team{
 		ID:             dbT.ID,
 		Name:           dbT.Name,
@@ -431,8 +431,8 @@ func dbTeamToModel(dbT *db.OrgTeam) *Team {
 	}
 }
 
-func teamMemberToDBModel(m *TeamMember) *db.OrgTeamMember {
-	return &db.OrgTeamMember{
+func teamMemberToDBModel(m *TeamMember) *orgdb.TeamMember {
+	return &orgdb.TeamMember{
 		ID:        m.ID,
 		TeamID:    m.TeamID,
 		UserID:    m.UserID,
@@ -440,7 +440,7 @@ func teamMemberToDBModel(m *TeamMember) *db.OrgTeamMember {
 	}
 }
 
-func dbTeamMemberToModel(dbM *db.OrgTeamMember) *TeamMember {
+func dbTeamMemberToModel(dbM *orgdb.TeamMember) *TeamMember {
 	return &TeamMember{
 		ID:        dbM.ID,
 		TeamID:    dbM.TeamID,

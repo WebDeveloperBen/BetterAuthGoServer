@@ -12,6 +12,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/organization"
+	orgdb "github.com/webdeveloperben/BetterAuthGoServer/auth/organization/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
@@ -270,11 +271,8 @@ func createTestService(t *testing.T, sqlDB *sql.DB, opts ...organization.Option)
 		opt(&config)
 	}
 
-	// Create a store using the SQLite dialect
-	store, err := db.New(sqlDB, db.DialectSQLite)
-	if err != nil {
-		t.Fatalf("Failed to create store: %v", err)
-	}
+	// Create the plugin's own store using the SQLite dialect
+	store := orgdb.New(sqlDB, db.DialectSQLite)
 
 	return organization.NewService(store, sqlDB, db.DialectSQLite, slog.Default(), &config)
 }

@@ -4,8 +4,6 @@ import (
 	"context"
 	"sync"
 	"time"
-
-	"github.com/uptrace/bun"
 )
 
 // TokenBlocklist implementations for JWT token revocation.
@@ -60,19 +58,4 @@ func (b *MemoryTokenBlocklist) Revoke(ctx context.Context, jti string, expiresAt
 	defer b.mu.Unlock()
 	b.revoked[jti] = expiresAt
 	return nil
-}
-
-// RevokedToken represents a revoked JWT token in the database.
-// Used for bun auto-migration.
-type RevokedToken struct {
-	bun.BaseModel `bun:"table:jwt_revoked_tokens,alias:rt"`
-
-	ID        string    `bun:"id,pk"`
-	ExpiresAt time.Time `bun:"expires_at,notnull"`
-	RevokedAt time.Time `bun:"revoked_at,notnull,default:current_timestamp"`
-}
-
-// TableName returns the table name
-func (r *RevokedToken) TableName() string {
-	return "jwt_revoked_tokens"
 }

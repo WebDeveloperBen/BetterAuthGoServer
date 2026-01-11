@@ -37,8 +37,25 @@ func TestNewPlugin_Panic_NoProviders(t *testing.T) {
 	NewPlugin()
 }
 
-func TestPlugin_Routes(t *testing.T) {
+func TestPlugin_Routes_Disabled(t *testing.T) {
+	// Plugin without initialized service should return nil routes
 	plugin := &Plugin{}
+
+	routes := plugin.Routes()
+	if routes != nil {
+		t.Errorf("Plugin.Routes() returned %d routes, want nil when disabled", len(routes))
+	}
+}
+
+func TestPlugin_Routes_Enabled(t *testing.T) {
+	// Plugin with initialized service should return routes
+	mockStore := &mockStateStore{}
+	service := NewService(mockStore, nil, nil)
+	service.RegisterProvider(&mockProvider{name: "google"})
+
+	plugin := &Plugin{
+		service: service,
+	}
 
 	routes := plugin.Routes()
 	if len(routes) != 2 {

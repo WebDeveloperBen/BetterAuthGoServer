@@ -5,22 +5,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	webauthndb "github.com/webdeveloperben/BetterAuthGoServer/auth/webauthn/db"
 )
 
-// StoreAdapter adapts db.WebAuthnStore to the WebAuthn package's Store interface.
+// StoreAdapter adapts webauthndb.Store to the WebAuthn package's Store interface.
 type StoreAdapter struct {
-	store db.WebAuthnStore
+	store *webauthndb.Store
 }
 
-// NewStoreAdapter creates a new WebAuthn store adapter from a db.WebAuthnStore.
-func NewStoreAdapter(store db.WebAuthnStore) *StoreAdapter {
+// NewStoreAdapter creates a new WebAuthn store adapter from a webauthndb.Store.
+func NewStoreAdapter(store *webauthndb.Store) *StoreAdapter {
 	return &StoreAdapter{store: store}
 }
 
 // CreateCredential stores a new WebAuthn credential.
 func (a *StoreAdapter) CreateCredential(ctx context.Context, credential *WebAuthnCredential) error {
-	dbCred := &db.WebAuthnCredential{
+	dbCred := &webauthndb.Credential{
 		ID:           credential.ID,
 		UserID:       credential.UserID,
 		CredentialID: credential.CredentialID,
@@ -30,12 +30,12 @@ func (a *StoreAdapter) CreateCredential(ctx context.Context, credential *WebAuth
 		CreatedAt:    credential.CreatedAt,
 		LastUsedAt:   a.timeToPtr(credential.LastUsedAt),
 	}
-	return a.store.CreateWebAuthnCredential(ctx, dbCred)
+	return a.store.CreateCredential(ctx, dbCred)
 }
 
 // GetCredentialByID retrieves a credential by its credential ID.
 func (a *StoreAdapter) GetCredentialByID(ctx context.Context, credentialID []byte) (*WebAuthnCredential, error) {
-	dbCred, err := a.store.GetWebAuthnCredentialByID(ctx, credentialID)
+	dbCred, err := a.store.GetCredentialByID(ctx, credentialID)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func (a *StoreAdapter) GetCredentialByID(ctx context.Context, credentialID []byt
 
 // ListCredentialsByUser returns all credentials for a user.
 func (a *StoreAdapter) ListCredentialsByUser(ctx context.Context, userID string) ([]*WebAuthnCredential, error) {
-	dbCreds, err := a.store.ListWebAuthnCredentialsByUserID(ctx, userID)
+	dbCreds, err := a.store.ListCredentialsByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -60,17 +60,17 @@ func (a *StoreAdapter) ListCredentialsByUser(ctx context.Context, userID string)
 
 // UpdateCredentialSignCount updates the sign count and last used time.
 func (a *StoreAdapter) UpdateCredentialSignCount(ctx context.Context, id string, signCount uint32, lastUsedAt time.Time) error {
-	return a.store.UpdateWebAuthnCredentialSignCount(ctx, id, int64(signCount))
+	return a.store.UpdateCredentialSignCount(ctx, id, int64(signCount), lastUsedAt)
 }
 
 // DeleteCredential deletes a credential by record ID.
 func (a *StoreAdapter) DeleteCredential(ctx context.Context, id string) error {
-	return a.store.DeleteWebAuthnCredential(ctx, id)
+	return a.store.DeleteCredential(ctx, id)
 }
 
 // CreateSession stores a new WebAuthn session.
 func (a *StoreAdapter) CreateSession(ctx context.Context, session *WebAuthnSession) error {
-	dbSession := &db.WebAuthnSession{
+	dbSession := &webauthndb.Session{
 		ID:        session.ID,
 		UserID:    session.UserID,
 		Type:      session.Type,
@@ -78,12 +78,12 @@ func (a *StoreAdapter) CreateSession(ctx context.Context, session *WebAuthnSessi
 		ExpiresAt: session.ExpiresAt,
 		CreatedAt: session.CreatedAt,
 	}
-	return a.store.CreateWebAuthnSession(ctx, dbSession)
+	return a.store.CreateSession(ctx, dbSession)
 }
 
 // GetSession retrieves a WebAuthn session by ID.
 func (a *StoreAdapter) GetSession(ctx context.Context, id string) (*WebAuthnSession, error) {
-	dbSession, err := a.store.GetWebAuthnSession(ctx, id)
+	dbSession, err := a.store.GetSession(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -95,16 +95,16 @@ func (a *StoreAdapter) GetSession(ctx context.Context, id string) (*WebAuthnSess
 
 // DeleteSession deletes a WebAuthn session by ID.
 func (a *StoreAdapter) DeleteSession(ctx context.Context, id string) error {
-	return a.store.DeleteWebAuthnSession(ctx, id)
+	return a.store.DeleteSession(ctx, id)
 }
 
 // DeleteExpiredSessions removes all expired sessions.
 func (a *StoreAdapter) DeleteExpiredSessions(ctx context.Context) error {
-	return a.store.DeleteExpiredWebAuthnSessions(ctx)
+	return a.store.DeleteExpiredSessions(ctx)
 }
 
-// toWebAuthnCredential converts a db.WebAuthnCredential to a WebAuthnCredential.
-func (a *StoreAdapter) toWebAuthnCredential(c *db.WebAuthnCredential) *WebAuthnCredential {
+// toWebAuthnCredential converts a webauthndb.Credential to a WebAuthnCredential.
+func (a *StoreAdapter) toWebAuthnCredential(c *webauthndb.Credential) *WebAuthnCredential {
 	var lastUsedAt time.Time
 	if c.LastUsedAt != nil {
 		lastUsedAt = *c.LastUsedAt
@@ -121,8 +121,8 @@ func (a *StoreAdapter) toWebAuthnCredential(c *db.WebAuthnCredential) *WebAuthnC
 	}
 }
 
-// toWebAuthnSession converts a db.WebAuthnSession to a WebAuthnSession.
-func (a *StoreAdapter) toWebAuthnSession(s *db.WebAuthnSession) *WebAuthnSession {
+// toWebAuthnSession converts a webauthndb.Session to a WebAuthnSession.
+func (a *StoreAdapter) toWebAuthnSession(s *webauthndb.Session) *WebAuthnSession {
 	return &WebAuthnSession{
 		ID:        s.ID,
 		UserID:    s.UserID,

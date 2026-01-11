@@ -1,6 +1,7 @@
 package deviceauth
 
 import (
+	deviceauthdb "github.com/webdeveloperben/BetterAuthGoServer/auth/deviceauth/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
@@ -13,6 +14,7 @@ const (
 type Plugin struct {
 	ctx      plugin.Context
 	auth     AuthProvider
+	dbStore  *deviceauthdb.Store
 	service  *Service
 	handlers *handlers
 	config   Config
@@ -48,8 +50,8 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.auth = auth
 
 	// Check for required context
-	if ctx.Store == nil {
-		ctx.Logger.Warn("deviceauth: Store not available, plugin disabled")
+	if ctx.RawDB == nil {
+		ctx.Logger.Warn("deviceauth: Database not available, plugin disabled")
 		return nil
 	}
 
@@ -69,8 +71,11 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		p.config.VerificationURI = ctx.BaseURL + "/device"
 	}
 
+	// Create plugin's own store
+	p.dbStore = deviceauthdb.New(ctx.RawDB, ctx.Dialect)
+
 	// Create store adapter
-	storeAdapter := NewStoreAdapter(ctx.Store)
+	storeAdapter := NewStoreAdapter(p.dbStore)
 
 	// Create service and handlers
 	p.service = NewService(storeAdapter, ctx.Hasher, p.config, ctx.Logger)

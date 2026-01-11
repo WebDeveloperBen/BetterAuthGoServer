@@ -8,8 +8,33 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
+// TokenType represents the type of OTP token.
+type TokenType string
+
+const (
+	TokenTypePasswordReset     TokenType = "password_reset"
+	TokenTypeEmailVerification TokenType = "email_verification"
+	TokenTypeEmailChange       TokenType = "email_change"
+)
+
+// OTPToken represents an OTP token record.
+// These are one-time use tokens for verification flows like password reset and email verification.
+type OTPToken struct {
+	ID         string
+	UserID     string
+	TokenHash  string
+	Type       TokenType
+	Identifier *string // For email_change: new email address
+	ExpiresAt  time.Time
+	CreatedAt  time.Time
+}
+
+// IsExpired returns true if the token has expired.
+func (t *OTPToken) IsExpired() bool {
+	return time.Now().After(t.ExpiresAt)
+}
+
 // TokenStore defines the interface for OTP token persistence.
-// Implemented by both Store (Bun) and StoreAdapter (sqlc).
 type TokenStore interface {
 	Create(ctx context.Context, token *OTPToken) error
 	GetByTokenHash(ctx context.Context, tokenHash string) (*OTPToken, error)

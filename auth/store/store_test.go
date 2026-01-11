@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 )
 
@@ -26,9 +27,15 @@ func TestDB(t *testing.T) {
 	tdb := setupTestDB(t)
 	defer tdb.cleanup(t)
 
-	db := tdb.Store.DB()
-	if db == nil {
+	dbtx := tdb.Store.DB()
+	if dbtx == nil {
 		t.Fatal("DB() returned nil")
+	}
+
+	// Type assert to *sql.DB to use PingContext
+	db, ok := dbtx.(*sql.DB)
+	if !ok {
+		t.Fatal("DB() did not return *sql.DB")
 	}
 
 	// Verify the DB connection is valid by pinging

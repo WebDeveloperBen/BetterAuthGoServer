@@ -3,6 +3,7 @@
 package oauth
 
 import (
+	oauthdb "github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
@@ -16,14 +17,14 @@ type Plugin struct {
 	providers    []Provider
 	ctx          plugin.Context
 	auth         AuthProvider
+	store        *oauthdb.Store
 	accountStore *AccountStoreAdapter
 }
 
 // Ensure Plugin implements required interfaces
 var (
-	_ plugin.Plugin             = (*Plugin)(nil)
-	_ plugin.RoutesProvider     = (*Plugin)(nil)
-	_ plugin.MigrationsProvider = (*Plugin)(nil)
+	_ plugin.Plugin         = (*Plugin)(nil)
+	_ plugin.RoutesProvider = (*Plugin)(nil)
 )
 
 // NewPlugin creates a new OAuth plugin with the given providers.
@@ -53,12 +54,20 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 	p.auth = auth
 
-	// Create stores - use new sqlc-based store if available
-	if ctx.Store == nil {
-		return ErrStoreRequired
+	// Create the plugin's own store using raw DB access
+	if ctx.RawDB == nil {
+		if ctx.Logger != nil {
+			ctx.Logger.Warn("oauth plugin: no database available, plugin disabled")
+		}
+		return nil
 	}
-	stateStore := NewStoreAdapter(ctx.Store)
-	p.accountStore = NewAccountStoreAdapter(ctx.Store)
+
+	// Create the oauth store using the plugin's own sqlc-generated code
+	p.store = oauthdb.New(ctx.RawDB, ctx.Dialect)
+
+	// Create adapters for the service
+	stateStore := NewStoreAdapter(p.store)
+	p.accountStore = NewAccountStoreAdapter(p.store)
 
 	// Create OAuth service with token utilities from context
 	service := NewService(stateStore, ctx.Hasher, ctx.Encryptor)
@@ -77,16 +86,12 @@ func (p *Plugin) Close() error {
 	return nil
 }
 
-// Migrations returns database models that need migration
-func (p *Plugin) Migrations() []any {
-	return []any{
-		&OAuthState{},
-		&OAuthAccount{},
-	}
-}
-
 // Routes returns the OAuth routes
 func (p *Plugin) Routes() []plugin.Route {
+	// If plugin is disabled (no database), don't register routes
+	if p.service == nil {
+		return nil
+	}
 	return []plugin.Route{
 		{
 			Method:  "GET",

@@ -288,57 +288,133 @@ type CoreStore interface {
 - [ ] Update `auth/auth.go` to populate new context fields
 - [ ] Ensure backwards compatibility during migration
 
-### Phase 2: Migrate OAuth Plugin (Prototype)
+### Phase 2: Migrate OAuth Plugin (Prototype) ✅
 
 **Goal:** Convert oauth to plugin-owned storage as the template for other plugins.
 
+**Status:** Complete. OAuth plugin now uses its own sqlc-generated store.
+
 #### Tasks
 
-- [ ] Create `auth/oauth/db/` directory structure
-- [ ] Create `auth/oauth/db/sqlc.yaml`
-- [ ] Move schema files to `auth/oauth/db/schema/{sqlite,postgres}/`
-- [ ] Move query files to `auth/oauth/db/queries/{sqlite,postgres}/`
-- [ ] Run `sqlc generate` in `auth/oauth/db/`
-- [ ] Create `auth/oauth/store.go` using generated code
-- [ ] Update `auth/oauth/plugin.go` to use new store
-- [ ] Delete `auth/oauth/store_adapter.go` (no longer needed)
-- [ ] Delete `auth/oauth/models.go` (bun models no longer needed)
-- [ ] Delete `auth/oauth/account_store.go` (bun models no longer needed)
-- [ ] Test oauth plugin works independently
-- [ ] Remove oauth queries/schema from central `db/`
+- [x] Create `auth/oauth/db/` directory structure
+- [x] Create `auth/oauth/db/sqlc.yaml`
+- [x] Move schema files to `auth/oauth/db/schema/{sqlite,postgres}/`
+- [x] Move query files to `auth/oauth/db/queries/{sqlite,postgres}/`
+- [x] Run `sqlc generate` in `auth/oauth/db/`
+- [x] Create `auth/oauth/db/store.go` using generated code
+- [x] Update `auth/oauth/plugin.go` to use new store via `ctx.RawDB`
+- [x] Update `auth/oauth/store_adapter.go` to wrap plugin's own db.Store
+- [x] Delete `auth/oauth/models.go` (bun models removed)
+- [x] Delete `auth/oauth/account_store.go` (bun models removed)
+- [x] Move `OAuthAccount` domain model to `core.go` (no bun dependency)
+- [x] Remove `Migrations()` method from plugin.go
+- [x] Test oauth plugin works independently
+- [ ] Remove oauth queries/schema from central `db/` (deferred to Phase 4)
 
 ### Phase 3: Migrate Remaining Plugins
 
 **Goal:** Apply the same pattern to all other plugins.
 
-#### Tasks
+#### OTP Plugin ✅
 
-For each plugin (otp, jwt, webauthn, apikey, deviceauth, organization):
+- [x] Create `auth/otp/db/` directory structure
+- [x] Create `auth/otp/db/sqlc.yaml`
+- [x] Create schema and query files
+- [x] Run `sqlc generate`
+- [x] Create `auth/otp/db/store.go`
+- [x] Update `auth/otp/plugin.go` to use `ctx.RawDB`
+- [x] Update `auth/otp/store_adapter.go` to wrap plugin's own db.Store
+- [x] Move domain types to `service.go` (remove bun)
+- [x] Delete `auth/otp/models.go`
+- [x] Remove `Migrations()` method
+- [x] Test plugin works (all e2e tests pass)
 
-- [ ] Create `auth/{plugin}/db/` directory structure
-- [ ] Create `auth/{plugin}/db/sqlc.yaml`
-- [ ] Move schema and query files
-- [ ] Run `sqlc generate`
-- [ ] Create `auth/{plugin}/store.go`
-- [ ] Update `auth/{plugin}/plugin.go`
-- [ ] Delete old `store_adapter.go` and bun model files
-- [ ] Remove from central `db/`
-- [ ] Test plugin independently
+#### JWT Plugin ✅
 
-### Phase 4: Clean Up Central db/
+- [x] Create `auth/jwt/db/` directory structure
+- [x] Create `auth/jwt/db/sqlc.yaml`
+- [x] Create schema and query files (postgres and sqlite)
+- [x] Run `sqlc generate`
+- [x] Create `auth/jwt/db/store.go` with domain types (JWTKey, RevokedToken)
+- [x] Update `auth/jwt/keymanager_adapter.go` to use plugin's own `jwtdb.JWTKey`
+- [x] Update `auth/jwt/store_adapter.go` to wrap plugin's own `jwtdb.Store`
+- [x] Update `auth/jwt/plugin.go` to use `ctx.RawDB`
+- [x] Remove bun tags from `auth/jwt/keys.go` (JWK struct)
+- [x] Remove bun model from `auth/jwt/store.go` (RevokedToken)
+- [x] Remove `MigrationsProvider` interface and `Migrations()` method
+- [x] Update tests (remove `TestRevokedToken_TableName`)
+- [x] Test plugin works (all unit tests and e2e tests pass)
+
+#### WebAuthn Plugin ✅
+
+- [x] Create `auth/webauthn/db/` directory structure
+- [x] Create `auth/webauthn/db/sqlc.yaml`
+- [x] Create schema and query files (postgres and sqlite)
+- [x] Run `sqlc generate`
+- [x] Create `auth/webauthn/db/store.go` with domain types (Credential, Session)
+- [x] Update `auth/webauthn/store_adapter.go` to use plugin's own `webauthndb.Store`
+- [x] Update `auth/webauthn/plugin.go` to use `ctx.RawDB`
+- [x] Remove bun tags from `auth/webauthn/models.go`
+- [x] Remove `MigrationsProvider` interface and `Migrations()` method
+- [x] Update tests (remove `TestPlugin_Migrations`)
+- [x] Test plugin works (all unit tests and e2e tests pass)
+
+#### APIKey Plugin ✅
+
+- [x] Create `auth/apikey/db/` directory structure
+- [x] Create `auth/apikey/db/sqlc.yaml`
+- [x] Create schema and query files (postgres and sqlite)
+- [x] Run `sqlc generate`
+- [x] Create `auth/apikey/db/store.go` with domain type (APIKey)
+- [x] Update `auth/apikey/store_adapter.go` to use plugin's own `apikeydb.Store`
+- [x] Update `auth/apikey/plugin.go` to use `ctx.RawDB`
+- [x] Remove bun tags from `auth/apikey/models.go`
+- [x] Remove `MigrationsProvider` interface and `Migrations()` method
+- [x] Test plugin works (all unit tests and e2e tests pass)
+
+#### DeviceAuth Plugin ✅
+
+- [x] Create `auth/deviceauth/db/` directory structure
+- [x] Create `auth/deviceauth/db/sqlc.yaml`
+- [x] Create schema and query files (postgres and sqlite)
+- [x] Run `sqlc generate`
+- [x] Create `auth/deviceauth/db/store.go` with domain type (DeviceCode)
+- [x] Update `auth/deviceauth/store_adapter.go` to use plugin's own `deviceauthdb.Store`
+- [x] Update `auth/deviceauth/plugin.go` to use `ctx.RawDB`
+- [x] Test plugin works (all unit tests and e2e tests pass)
+
+#### Organization Plugin ✅
+
+- [x] Create `auth/organization/db/` directory structure
+- [x] Create `auth/organization/db/sqlc.yaml`
+- [x] Create schema and query files (postgres and sqlite - 5 tables)
+- [x] Run `sqlc generate`
+- [x] Create `auth/organization/db/store.go` with domain types (Organization, Member, Invitation, Team, TeamMember)
+- [x] Update `auth/organization/store_adapter.go` to use plugin's own `orgdb.Store`
+- [x] Update `auth/organization/service.go` to use plugin's own `orgdb.Store`
+- [x] Update `auth/organization/plugin.go` to use `ctx.RawDB`
+- [x] Remove `MigrationsProvider` interface and `Migrations()` method
+- [x] Update tests (remove `TestPlugin_Migrations`, update test helper)
+- [x] Test plugin works (all unit tests pass)
+
+### Phase 4: Clean Up Central db/ ✅
 
 **Goal:** Central db/ only contains core entities.
 
+**Status:** Complete. Central db/ now only contains core entities (users, sessions, accounts, verifications).
+
 #### Tasks
 
-- [ ] Remove plugin-specific interfaces from `db/plugin_store.go`
-- [ ] Remove plugin-specific methods from `db/pg_adapter.go`
-- [ ] Remove plugin-specific methods from `db/sqlite_adapter.go`
-- [ ] Remove plugin schema/query files from `db/schema/` and `db/queries/`
-- [ ] Keep only: users, sessions, accounts, verifications
-- [ ] Update `db/sqlc.yaml` to only generate core stores
-- [ ] Run `sqlc generate`
-- [ ] Rename `PluginStore` to `CoreStore`
+- [x] Remove plugin-specific interfaces from `db/plugin_store.go`
+- [x] Remove plugin-specific methods from `db/pg_adapter.go`
+- [x] Remove plugin-specific methods from `db/sqlite_adapter.go`
+- [x] Remove plugin schema/query files from `db/schema/` and `db/queries/`
+- [x] Keep only: users, sessions, accounts, verifications
+- [x] Update `db/sqlc.yaml` to only generate core stores
+- [x] Run `sqlc generate`
+- [x] Remove plugin types from `db/querier.go` and `db/convert.go`
+- [x] Remove plugin methods from `db/store.go`
+- [x] All tests pass
 
 ### Phase 5: Atlas HCL Setup
 
@@ -377,6 +453,78 @@ For each plugin (otp, jwt, webauthn, apikey, deviceauth, organization):
 - [ ] Remove bun from `go.mod`
 - [ ] Verify build and tests pass
 - [ ] Update documentation
+
+---
+
+## Testing
+
+### Running Tests During Migration
+
+As you work through the migration phases, run tests frequently to ensure everything is working. The e2e tests have been updated to use the sqlc-based `db.Store`.
+
+```bash
+# Run all unit tests (fast)
+go test ./... -short
+
+# Run e2e tests (requires Docker for PostgreSQL testcontainers)
+go test -v ./tests/e2e/... -timeout 300s
+
+# Run specific e2e test
+go test -v ./tests/e2e/... -run "TestSignUpFlow" -timeout 120s
+
+# Build all packages to check for compilation errors
+go build ./...
+```
+
+### Test Environment
+
+The e2e tests use **testcontainers** to spin up a PostgreSQL container:
+- Tests share a single container to improve performance
+- Each test truncates tables for isolation
+- The container is automatically cleaned up after tests
+
+### Key Test Files
+
+| File | Purpose |
+|------|---------|
+| `tests/e2e/e2e.go` | Test setup, shared container, migrations |
+| `tests/e2e/main_test.go` | TestMain, container lifecycle |
+| `tests/e2e/*_test.go` | Individual test files |
+
+### Database Schema for Tests
+
+The `runMigrations()` function in `tests/e2e/e2e.go` contains all PostgreSQL schema definitions. When adding new columns or tables:
+
+1. Update the migrations in `tests/e2e/e2e.go`
+2. Ensure column names match sqlc query files in `db/queries/postgres/*.sql`
+3. Run e2e tests to verify
+
+### Expected Test Results
+
+All 14 e2e tests should pass:
+- `TestConcurrentSignUps`
+- `TestConcurrentSignIns`
+- `TestEmailVerificationFlow`
+- `TestPasswordResetFlow`
+- `TestPasswordChangeFlow`
+- `TestRateLimitingApplied`
+- `TestMaxSessionsPerUser`
+- `TestSecurityHeaders`
+- `TestConcurrentRateLimiting`
+- `TestSessionFlow`
+- `TestSignInFlow`
+- `TestSignOutFlow`
+- `TestSignUpFlow`
+
+### Troubleshooting
+
+**"column X does not exist"**: The test migrations don't match the sqlc queries. Compare:
+- `tests/e2e/e2e.go` (CREATE TABLE statements)
+- `db/queries/postgres/*.sql` (column names in queries)
+
+**"no database available, plugin disabled"**: The store passed to `auth.New()` doesn't implement `plugin.PluginStoreProvider`. Use `db.Store` which implements both interfaces.
+
+**"pq: relation X does not exist"**: Missing table in migrations. Add the CREATE TABLE statement to `runMigrations()`.
 
 ---
 
