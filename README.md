@@ -18,21 +18,33 @@ A complete, embeddable authentication library for Go applications. Handles email
   - Secure cookie settings (HttpOnly, Secure, SameSite)
   - No user enumeration on login/reset endpoints
 - **Extensible Hooks** - React to auth events (user created, sign in, password changed, etc.)
-- **Database Agnostic** - Ships with PostgreSQL and SQLite support via Bun ORM
+- **Database Agnostic** - Ships with PostgreSQL and SQLite support
+- **Schema as Contract** - You control your database schema; SDK provides reference SQL files
 
 ## Database Setup
 
-**Quick Start (Docker):**
+The SDK uses a **"schema as contract"** approach - you manage your own database schema, and the SDK runs queries against it.
+
+**Option A: Use SDK Schema Files**
 ```bash
-docker-compose up postgres -d  # Start PostgreSQL
-go run main.go                 # Start server (auto-creates tables)
+# Copy schema files from the SDK and run with your migration tool
+db/schema/postgres/001_users.sql
+db/schema/postgres/002_accounts.sql
+db/schema/postgres/003_sessions.sql
+db/schema/postgres/004_verifications.sql
 ```
 
-**Manual Setup:**
-- PostgreSQL: `DATABASE_URL=postgres://user:pass@localhost:5432/dbname`
-- SQLite: `DATABASE_URL=file:auth.db` (default)
+**Option B: Create Schema Manually**
 
-Tables are **automatically created** on first run!
+Create tables matching the expected structure. See [SCHEMA.md](./SCHEMA.md) for complete table definitions.
+
+**Custom Columns?** Just add them to your schema. The SDK only reads/writes its own columns and ignores any additional columns you add.
+
+See [SCHEMA.md](./SCHEMA.md) for full documentation on:
+- Core and plugin table schemas
+- Adding custom columns
+- Version upgrade migrations
+- PostgreSQL vs SQLite differences
 
 ## Installation
 
@@ -46,24 +58,33 @@ go get github.com/webdeveloperben/BetterAuthGoServer
 package main
 
 import (
-    "context"
+    "database/sql"
     "log"
     "net/http"
 
-    "github.com/uptrace/bun"
+    _ "github.com/lib/pq"           // PostgreSQL driver
+    _ "github.com/mattn/go-sqlite3" // SQLite driver
+
     "github.com/webdeveloperben/BetterAuthGoServer/auth"
     "github.com/webdeveloperben/BetterAuthGoServer/auth/config"
-    "github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
-    "github.com/webdeveloperben/BetterAuthGoServer/auth/store"
+    "github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
 func main() {
     // 1. Connect to database (PostgreSQL or SQLite)
-    bunDB := connectToDatabase() // your database connection
+    // NOTE: Run migrations first using golang-migrate or your preferred tool:
+    //   migrate -path db/migrations/sqlite -database "sqlite3://auth.db" up
+    sqlDB, err := sql.Open("sqlite3", "file:auth.db?_foreign_keys=on")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer sqlDB.Close()
 
-    // 2. Create store and run migrations
-    dbStore := store.New(bunDB)
-    dbStore.Migrate(context.Background())
+    // 2. Create sqlc-based store
+    dbStore, err := db.New(sqlDB, db.DialectSQLite)
+    if err != nil {
+        log.Fatal(err)
+    }
 
     // 3. Create auth instance with config options
     authService, err := auth.New(dbStore,
@@ -77,7 +98,7 @@ func main() {
 
     // 4. Mount auth handler
     mux := http.NewServeMux()
-    mux.Handle("/auth/", http.StripPrefix("/auth", handlers.NewRouter(authService)))
+    mux.Handle("/auth/", http.StripPrefix("/auth", authService.Handler()))
 
     // 5. Protect your routes
     mux.Handle("GET /api/profile", authService.AuthMiddleware()(profileHandler()))
@@ -483,16 +504,25 @@ auth/                  # Main package - public API
 ├── csrf/              # CSRF protection plugin
 ├── ratelimit/         # Rate limiting plugin
 ├── jwt/               # JWT authentication plugin
+│   └── db/            # Plugin's own database schema & queries
 ├── oauth/             # OAuth2 plugin
-│   └── providers/     # OAuth provider implementations
+│   ├── providers/     # OAuth provider implementations
+│   └── db/            # Plugin's own database schema & queries
+├── organization/      # Multi-tenancy plugin
+│   └── db/            # Plugin's own database schema & queries
 ├── admin/             # Admin functionality plugin
 ├── token/             # Token generation and verification
 ├── kv/                # Key-value stores (memory, Redis)
-├── otel/              # OpenTelemetry observability
-└── store/             # Database store implementation (Bun ORM)
-    └── migrations/    # SQL migrations
+└── otel/              # OpenTelemetry observability
+db/                    # Core database (sqlc-generated)
+├── schema/            # SQL schema definitions
+├── queries/           # SQL query definitions
+├── pgstore/           # PostgreSQL generated code
+└── sqlitestore/       # SQLite generated code
 tests/e2e/             # End-to-end tests
 ```
+
+Each plugin owns its own database schema and queries. Core tables (users, sessions, accounts, verifications) are in the central `db/` package.
 
 ## License
 

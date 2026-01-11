@@ -4,34 +4,34 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/sqlitedialect"
+	_ "github.com/lib/pq"           // PostgreSQL driver
+	_ "github.com/mattn/go-sqlite3" // SQLite driver
+
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
-
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
 func main() {
 	// 1. Set up database
+	// NOTE: Run migrations first using golang-migrate or your preferred tool:
+	//   migrate -path db/migrations/sqlite -database "sqlite3://auth.db" up
 	sqldb, err := sql.Open("sqlite3", "file:auth.db?_foreign_keys=on")
 	if err != nil {
 		log.Fatal(err)
 	}
-	bunDB := bun.NewDB(sqldb, sqlitedialect.New())
-	defer func() { _ = bunDB.Close() }()
+	defer func() { _ = sqldb.Close() }()
 
-	// 2. Create store and run migrations
-	dbStore := store.New(bunDB)
-	if err := dbStore.Migrate(context.Background()); err != nil {
+	// 2. Create sqlc-based store
+	dbStore, err := db.New(sqldb, db.DialectSQLite)
+	if err != nil {
 		log.Fatal(err)
 	}
 
@@ -116,4 +116,32 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 		"user_id": session.UserID,
 		"message": "Hello from minimal auth setup!",
 	})
+}
+
+// connectDB creates a standard sql.DB connection based on the DATABASE_URL scheme
+func connectDB(dbURL string) (*sql.DB, db.Dialect, error) {
+	switch {
+	case strings.HasPrefix(dbURL, "postgres://"), strings.HasPrefix(dbURL, "postgresql://"):
+		sqldb, err := sql.Open("postgres", dbURL)
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectPostgres, nil
+
+	case strings.HasPrefix(dbURL, "sqlite://"):
+		path := strings.TrimPrefix(dbURL, "sqlite://")
+		sqldb, err := sql.Open("sqlite3", path+"?_foreign_keys=on")
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectSQLite, nil
+
+	default:
+		// Assume SQLite file path
+		sqldb, err := sql.Open("sqlite3", dbURL+"?_foreign_keys=on")
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectSQLite, nil
+	}
 }

@@ -1,10 +1,8 @@
 // Package main demonstrates using the sqlc-based store.
-// This is an example of how the auth package can be used with
-// standard database/sql instead of Bun ORM.
+// This example shows how to connect to a database and use the store.
 package main
 
 import (
-	"context"
 	"database/sql"
 	"log"
 	"log/slog"
@@ -38,27 +36,16 @@ func main() {
 		log.Fatal("Failed to create store:", err)
 	}
 
-	// Run migrations
-	if err := store.Migrate(context.Background()); err != nil {
-		log.Fatal("Failed to migrate database:", err)
-	}
+	// NOTE: Migrations are managed separately using golang-migrate or your preferred tool.
+	// See db/migrations/ for migration files.
+	// Example: migrate -path db/migrations/postgres -database $DATABASE_URL up
 
-	logger.Info("Database connected and migrated",
+	logger.Info("Database connected",
 		"dialect", dialect,
 	)
 
-	// Example: Create a user
-	// user := &models.User{
-	// 	ID:        uuid.New().String(),
-	// 	Email:     "test@example.com",
-	// 	Name:      "Test User",
-	// 	Role:      "user",
-	// 	CreatedAt: time.Now(),
-	// 	UpdatedAt: time.Now(),
-	// }
-	// if err := store.CreateUser(context.Background(), user); err != nil {
-	// 	log.Fatal("Failed to create user:", err)
-	// }
+	// The store is ready to use with auth.New()
+	_ = store
 
 	logger.Info("sqlc store is ready for use")
 }

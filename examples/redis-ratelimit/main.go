@@ -10,6 +10,9 @@
 //	# Start Redis
 //	docker run -d -p 6379:6379 redis:alpine
 //
+//	# Run migrations
+//	migrate -path db/migrations/sqlite -database "sqlite3://auth.db" up
+//
 //	# Run the example
 //	go run ./examples/redis-ratelimit
 package main
@@ -21,19 +24,19 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/sqlitedialect"
+
+	_ "github.com/lib/pq"           // PostgreSQL driver
+	_ "github.com/mattn/go-sqlite3" // SQLite driver
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
 	kvredis "github.com/webdeveloperben/BetterAuthGoServer/auth/kv/redis"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/ratelimit"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
-
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
 func main() {
@@ -42,12 +45,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	bunDB := bun.NewDB(sqldb, sqlitedialect.New())
-	defer func() { _ = bunDB.Close() }()
+	defer func() { _ = sqldb.Close() }()
 
-	// 2. Create store and run migrations
-	dbStore := store.New(bunDB)
-	if err := dbStore.Migrate(context.Background()); err != nil {
+	// 2. Create sqlc-based store
+	dbStore, err := db.New(sqldb, db.DialectSQLite)
+	if err != nil {
 		log.Fatal(err)
 	}
 
@@ -155,4 +157,32 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 		"session_id": session.ID,
 		"message":    "Hello from protected endpoint!",
 	})
+}
+
+// connectDB creates a standard sql.DB connection based on the DATABASE_URL scheme
+func connectDB(dbURL string) (*sql.DB, db.Dialect, error) {
+	switch {
+	case strings.HasPrefix(dbURL, "postgres://"), strings.HasPrefix(dbURL, "postgresql://"):
+		sqldb, err := sql.Open("postgres", dbURL)
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectPostgres, nil
+
+	case strings.HasPrefix(dbURL, "sqlite://"):
+		path := strings.TrimPrefix(dbURL, "sqlite://")
+		sqldb, err := sql.Open("sqlite3", path+"?_foreign_keys=on")
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectSQLite, nil
+
+	default:
+		// Assume SQLite file path
+		sqldb, err := sql.Open("sqlite3", dbURL+"?_foreign_keys=on")
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectSQLite, nil
+	}
 }

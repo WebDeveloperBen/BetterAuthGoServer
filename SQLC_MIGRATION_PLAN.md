@@ -274,19 +274,20 @@ type CoreStore interface {
 
 ## Migration Phases
 
-### Phase 1: Update plugin.Context
+### Phase 1: Update plugin.Context ✅
 
 **Goal:** Change plugin.Context to provide raw DB access instead of centralized store.
 
+**Status:** Complete. plugin.Context now has RawDB and Dialect fields.
+
 #### Tasks
 
-- [ ] Update `auth/plugin/context.go`:
-  - [ ] Add `DB *sql.DB` field
-  - [ ] Add `Dialect string` field
-  - [ ] Add `CoreStore` interface for core entity access
-  - [ ] Deprecate `Store db.PluginStore` field
-- [ ] Update `auth/auth.go` to populate new context fields
-- [ ] Ensure backwards compatibility during migration
+- [x] Update `auth/plugin/context.go`:
+  - [x] Add `RawDB db.DBTX` field (raw database connection)
+  - [x] Add `Dialect db.Dialect` field
+  - [x] Keep `Store` for backwards compatibility
+- [x] Update `auth/auth.go` to populate new context fields
+- [x] Plugins now use `ctx.RawDB` and `ctx.Dialect` to create their own stores
 
 ### Phase 2: Migrate OAuth Plugin (Prototype) ✅
 
@@ -416,43 +417,94 @@ type CoreStore interface {
 - [x] Remove plugin methods from `db/store.go`
 - [x] All tests pass
 
-### Phase 5: Atlas HCL Setup
+### ~~Phase 5: Atlas HCL Setup~~ - SKIPPED
 
-**Goal:** Replace bun auto-migrations with Atlas HCL.
+**Decision:** Skip Atlas. Plain SQL schemas work fine and provide more flexibility for SDK consumers.
+
+**Migration Philosophy:**
+- **No auto-migrations** - SDK never modifies database schema automatically
+- **Schema as contract** - SDK expects tables/columns to exist, runs queries against them
+- **Migrations as optional** - Provide migration SQL for version transitions
+
+**For SDK Consumers:**
+```
+Option A: "I'll manage my own schema"
+- Copy schema from SDK's schema/ directories or documentation
+- Integrate into your own migration system (goose, golang-migrate, etc.)
+- SDK works if schema matches expected structure
+
+Option B: "Give me the migrations"
+- Use SDK-provided migration files from migrations/ directories
+- Run with your preferred migration tool
+- Get easy version upgrades when SDK schema changes
+```
+
+**File Structure:**
+```
+db/
+├── schema/           # Reference schemas (current table definitions)
+│   ├── postgres/
+│   └── sqlite/
+└── migrations/       # golang-migrate format migrations
+    ├── postgres/
+    │   ├── 000001_initial_schema.up.sql
+    │   └── 000001_initial_schema.down.sql
+    └── sqlite/
+        ├── 000001_initial_schema.up.sql
+        └── 000001_initial_schema.down.sql
+
+auth/{plugin}/db/
+├── schema/           # Plugin's reference schema
+└── migrations/       # Plugin's migrations (golang-migrate format)
+    ├── postgres/
+    │   ├── 000001_{plugin}_tables.up.sql
+    │   └── 000001_{plugin}_tables.down.sql
+    └── sqlite/
+        ├── 000001_{plugin}_tables.up.sql
+        └── 000001_{plugin}_tables.down.sql
+```
+
+**Migrations Created:** ✅
+- Core: `db/migrations/{postgres,sqlite}/000001_initial_schema.{up,down}.sql`
+- OAuth: `auth/oauth/db/migrations/{postgres,sqlite}/000001_oauth_tables.{up,down}.sql`
+- OTP: `auth/otp/db/migrations/{postgres,sqlite}/000001_otp_tables.{up,down}.sql`
+- JWT: `auth/jwt/db/migrations/{postgres,sqlite}/000001_jwt_tables.{up,down}.sql`
+- WebAuthn: `auth/webauthn/db/migrations/{postgres,sqlite}/000001_webauthn_tables.{up,down}.sql`
+- APIKey: `auth/apikey/db/migrations/{postgres,sqlite}/000001_apikey_tables.{up,down}.sql`
+- DeviceAuth: `auth/deviceauth/db/migrations/{postgres,sqlite}/000001_deviceauth_tables.{up,down}.sql`
+- Organization: `auth/organization/db/migrations/{postgres,sqlite}/000001_organization_tables.{up,down}.sql`
+
+### Phase 5: Update Application Code ✅
+
+**Goal:** Update main.go and examples to use sqlc-based db.Store.
+
+**Status:** Complete. All application code now uses database/sql with db.Store.
 
 #### Tasks
 
-- [ ] Create `atlas.hcl` in project root (for core tables)
-- [ ] Create `auth/{plugin}/db/atlas.hcl` for each plugin
-- [ ] Convert SQL schemas to HCL format
-- [ ] Test `atlas schema apply` for each
-- [ ] Remove `Migrations()` method from all plugins
-- [ ] Delete remaining bun model files
+- [x] Update `main.go`:
+  - [x] Replace bun.DB with *sql.DB
+  - [x] Create core db.Store
+  - [x] Pass DB and dialect to auth.New()
+- [x] Update all examples (basic, minimal, with-oauth, redis-ratelimit, azure-full)
+- [x] Remove `cmd/migrate/main.go` (bun-based migration tool no longer needed)
+- [x] Update `cmd/sqlc-example/main.go` to use database/sql pattern
+- [x] Tests verified passing
 
-### Phase 6: Update Application Code
-
-**Goal:** Update main.go and examples.
-
-#### Tasks
-
-- [ ] Update `main.go`:
-  - [ ] Replace bun.DB with *sql.DB
-  - [ ] Create core db.Store
-  - [ ] Pass DB and dialect to auth.New()
-- [ ] Update all examples
-- [ ] Update `cmd/migrate/main.go` to use Atlas
-- [ ] Update tests
-
-### Phase 7: Final Cleanup
+### Phase 6: Final Cleanup ✅
 
 **Goal:** Remove bun dependency entirely.
 
+**Status:** Complete. Bun has been completely removed from the project.
+
 #### Tasks
 
-- [ ] Delete `auth/store/` directory
-- [ ] Remove bun from `go.mod`
-- [ ] Verify build and tests pass
-- [ ] Update documentation
+- [x] Delete `auth/store/` directory
+- [x] Remove bun from `go.mod`
+- [x] Run `go mod tidy`
+- [x] Verify build passes (`go build ./...`)
+- [x] Verify all tests pass (`go test ./...`)
+- [ ] Update documentation (README.md, plugin-development.md)
 
 ---
 

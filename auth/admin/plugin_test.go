@@ -61,7 +61,6 @@ func TestPlugin_Init_WithoutDatabase(t *testing.T) {
 
 	p := NewPlugin()
 	err := p.Init(ctx)
-
 	// Should not error, but should disable plugin
 	if err != nil {
 		t.Errorf("Init() should not error without database, got: %v", err)
@@ -77,7 +76,7 @@ func TestPlugin_Init_WithoutDatabase(t *testing.T) {
 func TestPlugin_Init_WithoutUserProvider(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	// Mock context with nil DB (since we can't mock bun.DB easily)
+	// Mock context with nil DB
 	ctx := plugin.Context{
 		Logger:  logger,
 		DB:      nil, // We'll skip the DB check for this test

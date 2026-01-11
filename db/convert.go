@@ -215,8 +215,3 @@ func sqliteVerificationToModel(v *sqlitestore.Verification) *models.Verification
 		CreatedAt:  stringToTime(v.CreatedAt),
 	}
 }
-
-// parseTime is an alias for stringToTime for clearer code in adapters
-func parseTime(s string) time.Time {
-	return stringToTime(s)
-}

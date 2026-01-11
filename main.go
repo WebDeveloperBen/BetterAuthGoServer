@@ -16,12 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/pgdialect"
-	"github.com/uptrace/bun/dialect/sqlitedialect"
-	"github.com/uptrace/bun/driver/pgdriver"
-
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/lib/pq"           // PostgreSQL driver
+	_ "github.com/mattn/go-sqlite3" // SQLite driver
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/admin"
@@ -41,8 +37,8 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/password"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/ratelimit"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/webauthn"
+	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
 func main() {
@@ -72,21 +68,24 @@ func main() {
 	// ============================================================================
 	// DATABASE CONNECTION
 	// ============================================================================
-	bunDB, err := connectDB(dbURL)
+	sqlDB, dialect, err := connectDB(dbURL)
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
-	defer func() { _ = bunDB.Close() }()
+	defer func() { _ = sqlDB.Close() }()
 
 	// ============================================================================
 	// DATABASE SETUP
 	// ============================================================================
-	dbStore := store.New(bunDB)
-
-	// Run basic migrations first
-	if err := dbStore.Migrate(context.Background()); err != nil {
-		log.Fatal("Failed to migrate database:", err)
+	// Create the sqlc-based store
+	dbStore, err := db.New(sqlDB, dialect)
+	if err != nil {
+		log.Fatal("Failed to create store:", err)
 	}
+
+	// NOTE: Migrations are managed separately using golang-migrate or your preferred tool.
+	// See db/migrations/ and auth/*/db/migrations/ for migration files.
+	// Example: migrate -path db/migrations/postgres -database $DATABASE_URL up
 
 	// ============================================================================
 	// AUTH SERVICE - BASIC CONFIGURATION
@@ -154,7 +153,7 @@ func main() {
 	}
 
 	// ============================================================================
-	// PLUGIN MIGRATIONS - Run before plugin registration
+	// REGISTER PLUGINS
 	// ============================================================================
 
 	// Build OAuth providers dynamically based on environment
@@ -183,107 +182,6 @@ func main() {
 			baseURL+"/auth/oauth/discord/callback",
 		))
 	}
-
-	// Create plugins to collect their migrations
-	pluginList := []plugin.Plugin{
-		// ----- CORS Plugin -----
-		cors.NewPlugin(
-			cors.WithOrigins("http://localhost:3000", "http://localhost:3001"),
-			cors.WithCredentials(true),
-		),
-		// ----- OTP Plugin (Email/Password Reset Tokens) -----
-		otp.NewPlugin(
-			otp.WithPasswordResetExpiry(1*time.Hour),
-			otp.WithEmailVerificationExpiry(24*time.Hour),
-			otp.WithEmailChangeExpiry(1*time.Hour),
-		),
-		// ----- Password Plugin (Email/Password Authentication) -----
-		password.NewPlugin(
-			password.WithMinLength(8),
-			password.WithMaxLength(128),
-			password.WithComplexity(true),
-			password.WithResetExpiry(1*time.Hour),
-			password.WithAutoSignIn(true),
-			password.WithLockoutThreshold(5),
-			password.WithLockoutDuration(15*time.Minute),
-		),
-		// ----- Rate Limiting Plugin -----
-		ratelimit.NewPlugin(
-			ratelimit.WithLimit(100, 1*time.Minute),
-			ratelimit.WithKeyFunc(func(r *http.Request) string {
-				if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-					return strings.Split(xff, ",")[0]
-				}
-				return strings.Split(r.RemoteAddr, ":")[0]
-			}),
-			ratelimit.WithTrustedProxies([]string{"127.0.0.1", "::1"}),
-		),
-		// ----- CSRF Plugin -----
-		csrf.NewPlugin(
-			csrf.WithCookieName("csrf_token"),
-			csrf.WithHeaderName("X-CSRF-Token"),
-		),
-		// ----- Admin Plugin -----
-		admin.NewPlugin(
-			admin.WithDefaultRole("user"),
-			admin.WithAdminRoles([]string{"admin", "superadmin"}),
-			admin.WithAdminUserIDs([]string{}),
-			admin.WithImpersonationSessionDuration(1*time.Hour),
-			admin.WithDefaultBanReason("Violation of terms of service"),
-			admin.WithDefaultBanExpiresIn(0),
-			admin.WithBannedUserMessage("Your account has been suspended."),
-			admin.WithAllowImpersonatingAdmins(false),
-		),
-		// ----- JWT Plugin -----
-		jwt.NewPlugin(
-			jwt.WithAlgorithm(jwt.AlgorithmES256),        // ECDSA P-256 (recommended)
-			jwt.WithKeySource(jwt.KeySourceDatabase),     // Store keys in DB (encrypted)
-			jwt.WithKeyRotationGracePeriod(24*time.Hour), // Old keys valid for 24h after rotation
-			jwt.WithAccessTTL(15*time.Minute),            // Short-lived access tokens
-			jwt.WithRefreshTTL(7*24*time.Hour),           // Long-lived refresh tokens
-			jwt.WithIssuer(baseURL),
-			jwt.WithAudience(baseURL),
-		),
-		// ----- WebAuthn Plugin (Passwordless/2FA) -----
-		webauthn.NewPlugin(
-			webauthn.WithRPID(parsedURL.Hostname()),
-			webauthn.WithRPDisplayName("BetterAuth Demo"),
-			webauthn.WithRPOrigins([]string{baseURL, frontendURL}),
-			webauthn.WithTimeout(5*time.Minute),
-			webauthn.WithAllowResidentKey(true),
-			webauthn.WithAllowPasswordlessAccounts(true),
-			webauthn.WithAllowSecondFactor(true),
-			webauthn.WithUserVerification("preferred"),
-		),
-	}
-
-	// Add OAuth providers if configured
-	if len(oauthProviders) > 0 {
-		pluginList = append(pluginList, oauth.NewPlugin(oauthProviders...))
-	}
-
-	// Collect all plugin migrations
-	var pluginMigrations []any
-	for _, p := range pluginList {
-		if mp, ok := p.(plugin.MigrationsProvider); ok {
-			pluginMigrations = append(pluginMigrations, mp.Migrations()...)
-		}
-	}
-
-	// Run plugin migrations
-	for _, model := range pluginMigrations {
-		_, err := bunDB.NewCreateTable().
-			Model(model).
-			IfNotExists().
-			Exec(context.Background())
-		if err != nil {
-			log.Fatal("Failed to migrate plugin table:", err)
-		}
-	}
-
-	// ============================================================================
-	// REGISTER PLUGINS - Now that migrations are complete
-	// ============================================================================
 
 	// Register all plugins using builder pattern with chained Use() calls
 	authService.
@@ -661,28 +559,31 @@ func main() {
 // HELPER FUNCTIONS
 // ============================================================================
 
-// connectDB creates a Bun DB connection based on the DATABASE_URL scheme
-func connectDB(dbURL string) (*bun.DB, error) {
+// connectDB creates a standard sql.DB connection based on the DATABASE_URL scheme
+func connectDB(dbURL string) (*sql.DB, db.Dialect, error) {
 	switch {
 	case strings.HasPrefix(dbURL, "postgres://"), strings.HasPrefix(dbURL, "postgresql://"):
-		sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dbURL)))
-		return bun.NewDB(sqldb, pgdialect.New()), nil
+		sqldb, err := sql.Open("postgres", dbURL)
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectPostgres, nil
 
 	case strings.HasPrefix(dbURL, "sqlite://"):
 		path := strings.TrimPrefix(dbURL, "sqlite://")
 		sqldb, err := sql.Open("sqlite3", path+"?_foreign_keys=on")
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		return bun.NewDB(sqldb, sqlitedialect.New()), nil
+		return sqldb, db.DialectSQLite, nil
 
 	default:
 		// Assume SQLite file path
 		sqldb, err := sql.Open("sqlite3", dbURL+"?_foreign_keys=on")
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		return bun.NewDB(sqldb, sqlitedialect.New()), nil
+		return sqldb, db.DialectSQLite, nil
 	}
 }
 
