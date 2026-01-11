@@ -9,8 +9,9 @@ import (
 	"os"
 	"strings"
 
-	_ "github.com/lib/pq"           // PostgreSQL driver
-	_ "github.com/mattn/go-sqlite3" // SQLite driver
+	_ "github.com/go-sql-driver/mysql" // MySQL driver
+	_ "github.com/lib/pq"              // PostgreSQL driver
+	_ "github.com/mattn/go-sqlite3"    // SQLite driver
 
 	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
@@ -63,6 +64,13 @@ func connectDB(dbURL string) (*sql.DB, db.Dialect, error) {
 			return nil, "", err
 		}
 		return sqldb, db.DialectPostgres, nil
+
+	case strings.HasPrefix(dbURL, "mysql://"):
+		sqldb, err := sql.Open("mysql", strings.TrimPrefix(dbURL, "mysql://"))
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectMySQL, nil
 
 	case strings.HasPrefix(dbURL, "sqlite://"):
 		path := strings.TrimPrefix(dbURL, "sqlite://")

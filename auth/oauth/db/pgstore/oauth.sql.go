@@ -12,9 +12,20 @@ import (
 )
 
 const createOAuthAccount = `-- name: CreateOAuthAccount :exec
-
-INSERT INTO oauth_accounts (id, user_id, provider, provider_account_id, access_token, refresh_token, access_token_expires_at, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO
+  oauth_accounts (
+    id,
+    user_id,
+    provider,
+    provider_account_id,
+    access_token,
+    refresh_token,
+    access_token_expires_at,
+    created_at,
+    updated_at
+  )
+VALUES
+  ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 `
 
 type CreateOAuthAccountParams struct {
@@ -46,9 +57,17 @@ func (q *Queries) CreateOAuthAccount(ctx context.Context, arg CreateOAuthAccount
 }
 
 const createOAuthState = `-- name: CreateOAuthState :exec
-
-INSERT INTO oauth_states (state, provider, verifier, redirect_to, created_at, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO
+  oauth_states (
+    state,
+    provider,
+    verifier,
+    redirect_to,
+    created_at,
+    expires_at
+  )
+VALUES
+  ($1, $2, $3, $4, $5, $6)
 `
 
 type CreateOAuthStateParams struct {
@@ -74,7 +93,9 @@ func (q *Queries) CreateOAuthState(ctx context.Context, arg CreateOAuthStatePara
 }
 
 const deleteExpiredOAuthStates = `-- name: DeleteExpiredOAuthStates :exec
-DELETE FROM oauth_states WHERE expires_at < $1
+DELETE FROM oauth_states
+WHERE
+  expires_at < $1
 `
 
 func (q *Queries) DeleteExpiredOAuthStates(ctx context.Context, expiresAt time.Time) error {
@@ -83,7 +104,9 @@ func (q *Queries) DeleteExpiredOAuthStates(ctx context.Context, expiresAt time.T
 }
 
 const deleteOAuthAccount = `-- name: DeleteOAuthAccount :exec
-DELETE FROM oauth_accounts WHERE id = $1
+DELETE FROM oauth_accounts
+WHERE
+  id = $1
 `
 
 func (q *Queries) DeleteOAuthAccount(ctx context.Context, id string) error {
@@ -92,7 +115,9 @@ func (q *Queries) DeleteOAuthAccount(ctx context.Context, id string) error {
 }
 
 const deleteOAuthState = `-- name: DeleteOAuthState :exec
-DELETE FROM oauth_states WHERE state = $1
+DELETE FROM oauth_states
+WHERE
+  state = $1
 `
 
 func (q *Queries) DeleteOAuthState(ctx context.Context, state string) error {
@@ -101,7 +126,13 @@ func (q *Queries) DeleteOAuthState(ctx context.Context, state string) error {
 }
 
 const getOAuthAccountByProvider = `-- name: GetOAuthAccountByProvider :one
-SELECT id, user_id, provider, provider_account_id, access_token, refresh_token, access_token_expires_at, created_at, updated_at FROM oauth_accounts WHERE provider = $1 AND provider_account_id = $2
+SELECT
+  id, user_id, provider, provider_account_id, access_token, refresh_token, access_token_expires_at, created_at, updated_at
+FROM
+  oauth_accounts
+WHERE
+  provider = $1
+  AND provider_account_id = $2
 `
 
 type GetOAuthAccountByProviderParams struct {
@@ -127,7 +158,12 @@ func (q *Queries) GetOAuthAccountByProvider(ctx context.Context, arg GetOAuthAcc
 }
 
 const getOAuthAccountsByUserID = `-- name: GetOAuthAccountsByUserID :many
-SELECT id, user_id, provider, provider_account_id, access_token, refresh_token, access_token_expires_at, created_at, updated_at FROM oauth_accounts WHERE user_id = $1
+SELECT
+  id, user_id, provider, provider_account_id, access_token, refresh_token, access_token_expires_at, created_at, updated_at
+FROM
+  oauth_accounts
+WHERE
+  user_id = $1
 `
 
 func (q *Queries) GetOAuthAccountsByUserID(ctx context.Context, userID string) ([]OauthAccount, error) {
@@ -164,7 +200,12 @@ func (q *Queries) GetOAuthAccountsByUserID(ctx context.Context, userID string) (
 }
 
 const getOAuthState = `-- name: GetOAuthState :one
-SELECT state, provider, verifier, redirect_to, created_at, expires_at FROM oauth_states WHERE state = $1
+SELECT
+  state, provider, verifier, redirect_to, created_at, expires_at
+FROM
+  oauth_states
+WHERE
+  state = $1
 `
 
 func (q *Queries) GetOAuthState(ctx context.Context, state string) (OauthState, error) {
@@ -183,8 +224,13 @@ func (q *Queries) GetOAuthState(ctx context.Context, state string) (OauthState, 
 
 const updateOAuthAccount = `-- name: UpdateOAuthAccount :exec
 UPDATE oauth_accounts
-SET access_token = $2, refresh_token = $3, access_token_expires_at = $4, updated_at = $5
-WHERE id = $1
+SET
+  access_token = $2,
+  refresh_token = $3,
+  access_token_expires_at = $4,
+  updated_at = $5
+WHERE
+  id = $1
 `
 
 type UpdateOAuthAccountParams struct {

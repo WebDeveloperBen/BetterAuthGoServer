@@ -30,3 +30,16 @@ sql:
         emit_json_tags: true
         emit_interface: true
         emit_empty_slices: true
+
+  # MySQL
+  - engine: "mysql"
+    queries: "queries/mysql/"
+    schema: "schema/mysql/"
+    gen:
+      go:
+        package: "mysqlstore"
+        out: "mysqlstore"
+        sql_package: "database/sql"
+        emit_json_tags: true
+        emit_interface: true
+        emit_empty_slices: true

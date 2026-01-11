@@ -31,6 +31,8 @@ func New(db DBTX, dialect Dialect) (*Store, error) {
 		q = newPgAdapter(db)
 	case DialectSQLite:
 		q = newSqliteAdapter(db)
+	case DialectMySQL:
+		q = newMysqlAdapter(db)
 	default:
 		return nil, fmt.Errorf("unsupported dialect: %s", dialect)
 	}

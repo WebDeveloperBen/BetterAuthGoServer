@@ -8,9 +8,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
-	_ "github.com/lib/pq"           // PostgreSQL driver
-	_ "github.com/mattn/go-sqlite3" // SQLite driver
+	_ "github.com/go-sql-driver/mysql" // MySQL driver
+	_ "github.com/lib/pq"              // PostgreSQL driver
+	_ "github.com/mattn/go-sqlite3"    // SQLite driver
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
@@ -20,20 +22,76 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
+// connectDB creates a standard sql.DB connection based on the DATABASE_URL scheme
+func connectDB(dbURL string) (*sql.DB, db.Dialect, error) {
+	switch {
+	case strings.HasPrefix(dbURL, "postgres://"), strings.HasPrefix(dbURL, "postgresql://"):
+		sqldb, err := sql.Open("postgres", dbURL)
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectPostgres, nil
+
+	case strings.HasPrefix(dbURL, "mysql://"):
+		sqldb, err := sql.Open("mysql", strings.TrimPrefix(dbURL, "mysql://"))
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectMySQL, nil
+
+	case strings.HasPrefix(dbURL, "sqlite3://"):
+		path := strings.TrimPrefix(dbURL, "sqlite3://")
+		sqldb, err := sql.Open("sqlite3", path)
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectSQLite, nil
+
+	default:
+		// Assume SQLite file path
+		sqldb, err := sql.Open("sqlite3", dbURL)
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectSQLite, nil
+	}
+}
+
 func main() {
 	// 1. Set up database
 	// NOTE: Run migrations first using golang-migrate or your preferred tool:
 	//   migrate -path db/migrations/sqlite -database "sqlite3://auth.db" up
 	//   migrate -path auth/oauth/db/migrations/sqlite -database "sqlite3://auth.db" up
 	//   migrate -path auth/jwt/db/migrations/sqlite -database "sqlite3://auth.db" up
-	sqldb, err := sql.Open("sqlite3", "file:auth.db?_foreign_keys=on")
-	if err != nil {
-		log.Fatal(err)
+	//   migrate -path db/migrations/postgres -database "postgres://..." up
+	//   migrate -path auth/oauth/db/migrations/postgres -database "postgres://..." up
+	//   migrate -path auth/jwt/db/migrations/postgres -database "postgres://..." up
+	//   migrate -path db/migrations/mysql -database "mysql://..." up
+	//   migrate -path auth/oauth/db/migrations/mysql -database "mysql://..." up
+	//   migrate -path auth/jwt/db/migrations/mysql -database "mysql://..." up
+	//
+	// Set DATABASE_URL environment variable for different databases:
+	//   SQLite:  DATABASE_URL="sqlite3://file:auth.db?_foreign_keys=on"
+	//   MySQL:   DATABASE_URL="mysql://user:pass@localhost/dbname"
+	//   PG:      DATABASE_URL="postgres://user:pass@localhost/dbname"
+
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "sqlite3://file:auth.db?_foreign_keys=on"
 	}
-	defer func() { _ = sqldb.Close() }()
+
+	sqldb, dialect, err := connectDB(dbURL)
+	if err != nil {
+		log.Fatal("Failed to connect to database:", err)
+	}
+	defer func() {
+		if err := sqldb.Close(); err != nil {
+			log.Printf("Error closing database connection: %v", err)
+		}
+	}()
 
 	// 2. Create sqlc-based store
-	dbStore, err := db.New(sqldb, db.DialectSQLite)
+	dbStore, err := db.New(sqldb, dialect)
 	if err != nil {
 		log.Fatal(err)
 	}

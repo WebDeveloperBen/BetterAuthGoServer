@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/db/mysqlstore"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/db/pgstore"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/db/sqlitestore"
 	coredb "github.com/webdeveloperben/BetterAuthGoServer/db"
@@ -18,14 +19,18 @@ type Store struct {
 	dialect coredb.Dialect
 	pgQ     *pgstore.Queries
 	sqliteQ *sqlitestore.Queries
+	mysqlQ  *mysqlstore.Queries
 }
 
 // New creates a new OAuth store.
 func New(db coredb.DBTX, dialect coredb.Dialect) *Store {
 	s := &Store{dialect: dialect}
-	if dialect == coredb.DialectPostgres {
+	switch dialect {
+	case coredb.DialectPostgres:
 		s.pgQ = pgstore.New(db)
-	} else {
+	case coredb.DialectMySQL:
+		s.mysqlQ = mysqlstore.New(db)
+	default:
 		s.sqliteQ = sqlitestore.New(db)
 	}
 	return s
@@ -74,6 +79,16 @@ func (s *Store) CreateOAuthState(ctx context.Context, state *State) error {
 			ExpiresAt:  state.ExpiresAt,
 		})
 	}
+	if s.dialect == coredb.DialectMySQL {
+		return s.mysqlQ.CreateOAuthState(ctx, mysqlstore.CreateOAuthStateParams{
+			State:      state.State,
+			Provider:   state.Provider,
+			Verifier:   toNullString(state.Verifier),
+			RedirectTo: toNullString(state.RedirectTo),
+			CreatedAt:  state.CreatedAt,
+			ExpiresAt:  state.ExpiresAt,
+		})
+	}
 	return s.sqliteQ.CreateOAuthState(ctx, sqlitestore.CreateOAuthStateParams{
 		State:      state.State,
 		Provider:   state.Provider,
@@ -88,6 +103,23 @@ func (s *Store) CreateOAuthState(ctx context.Context, state *State) error {
 func (s *Store) GetOAuthState(ctx context.Context, stateValue string) (*State, error) {
 	if s.dialect == coredb.DialectPostgres {
 		row, err := s.pgQ.GetOAuthState(ctx, stateValue)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return nil, nil
+			}
+			return nil, err
+		}
+		return &State{
+			State:      row.State,
+			Provider:   row.Provider,
+			Verifier:   fromNullString(row.Verifier),
+			RedirectTo: fromNullString(row.RedirectTo),
+			CreatedAt:  row.CreatedAt,
+			ExpiresAt:  row.ExpiresAt,
+		}, nil
+	}
+	if s.dialect == coredb.DialectMySQL {
+		row, err := s.mysqlQ.GetOAuthState(ctx, stateValue)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				return nil, nil
@@ -130,6 +162,9 @@ func (s *Store) DeleteOAuthState(ctx context.Context, stateValue string) error {
 	if s.dialect == coredb.DialectPostgres {
 		return s.pgQ.DeleteOAuthState(ctx, stateValue)
 	}
+	if s.dialect == coredb.DialectMySQL {
+		return s.mysqlQ.DeleteOAuthState(ctx, stateValue)
+	}
 	return s.sqliteQ.DeleteOAuthState(ctx, stateValue)
 }
 
@@ -138,6 +173,9 @@ func (s *Store) DeleteExpiredOAuthStates(ctx context.Context) error {
 	now := time.Now()
 	if s.dialect == coredb.DialectPostgres {
 		return s.pgQ.DeleteExpiredOAuthStates(ctx, now)
+	}
+	if s.dialect == coredb.DialectMySQL {
+		return s.mysqlQ.DeleteExpiredOAuthStates(ctx, now)
 	}
 	return s.sqliteQ.DeleteExpiredOAuthStates(ctx, now.Format(time.RFC3339))
 }
@@ -150,6 +188,19 @@ func (s *Store) DeleteExpiredOAuthStates(ctx context.Context) error {
 func (s *Store) CreateAccount(ctx context.Context, account *Account) error {
 	if s.dialect == coredb.DialectPostgres {
 		return s.pgQ.CreateOAuthAccount(ctx, pgstore.CreateOAuthAccountParams{
+			ID:                   account.ID,
+			UserID:               account.UserID,
+			Provider:             account.Provider,
+			ProviderAccountID:    account.ProviderAccountID,
+			AccessToken:          toNullString(&account.AccessToken),
+			RefreshToken:         toNullString(&account.RefreshToken),
+			AccessTokenExpiresAt: toNullTime(account.AccessTokenExpiresAt),
+			CreatedAt:            account.CreatedAt,
+			UpdatedAt:            account.UpdatedAt,
+		})
+	}
+	if s.dialect == coredb.DialectMySQL {
+		return s.mysqlQ.CreateOAuthAccount(ctx, mysqlstore.CreateOAuthAccountParams{
 			ID:                   account.ID,
 			UserID:               account.UserID,
 			Provider:             account.Provider,

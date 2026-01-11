@@ -18,7 +18,7 @@ A complete, embeddable authentication library for Go applications. Handles email
   - Secure cookie settings (HttpOnly, Secure, SameSite)
   - No user enumeration on login/reset endpoints
 - **Extensible Hooks** - React to auth events (user created, sign in, password changed, etc.)
-- **Database Agnostic** - Ships with PostgreSQL and SQLite support
+- **Database Agnostic** - Ships with PostgreSQL, MySQL, and SQLite support
 - **Schema as Contract** - You control your database schema; SDK provides reference SQL files
 
 ## Database Setup
@@ -28,10 +28,23 @@ The SDK uses a **"schema as contract"** approach - you manage your own database 
 **Option A: Use SDK Schema Files**
 ```bash
 # Copy schema files from the SDK and run with your migration tool
+# PostgreSQL:
 db/schema/postgres/001_users.sql
 db/schema/postgres/002_accounts.sql
 db/schema/postgres/003_sessions.sql
 db/schema/postgres/004_verifications.sql
+
+# MySQL:
+db/schema/mysql/001_users.sql
+db/schema/mysql/002_accounts.sql
+db/schema/mysql/003_sessions.sql
+db/schema/mysql/004_verifications.sql
+
+# SQLite:
+db/schema/sqlite/001_users.sql
+db/schema/sqlite/002_accounts.sql
+db/schema/sqlite/003_sessions.sql
+db/schema/sqlite/004_verifications.sql
 ```
 
 **Option B: Create Schema Manually**
@@ -44,7 +57,7 @@ See [SCHEMA.md](./SCHEMA.md) for full documentation on:
 - Core and plugin table schemas
 - Adding custom columns
 - Version upgrade migrations
-- PostgreSQL vs SQLite differences
+- PostgreSQL vs MySQL vs SQLite differences
 
 ## Installation
 

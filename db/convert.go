@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
+	"github.com/webdeveloperben/BetterAuthGoServer/db/mysqlstore"
 	"github.com/webdeveloperben/BetterAuthGoServer/db/pgstore"
 	"github.com/webdeveloperben/BetterAuthGoServer/db/sqlitestore"
 )
@@ -213,5 +214,75 @@ func sqliteVerificationToModel(v *sqlitestore.Verification) *models.Verification
 		Identifier: fromNullString(v.Identifier),
 		ExpiresAt:  stringToTime(v.ExpiresAt),
 		CreatedAt:  stringToTime(v.CreatedAt),
+	}
+}
+
+// =============================================================================
+// MySQL to Model conversions
+// =============================================================================
+
+func mysqlUserToModel(u *mysqlstore.User) *models.User {
+	if u == nil {
+		return nil
+	}
+	return &models.User{
+		ID:            u.ID,
+		Email:         u.Email,
+		EmailVerified: u.EmailVerified,
+		Name:          u.Name,
+		Image:         fromNullString(u.Image),
+		Banned:        u.Banned,
+		BannedAt:      fromNullTime(u.BannedAt),
+		BanReason:     fromNullString(u.BanReason),
+		Role:          u.Role,
+		CreatedAt:     u.CreatedAt,
+		UpdatedAt:     u.UpdatedAt,
+	}
+}
+
+func mysqlAccountToModel(a *mysqlstore.Account) *models.Account {
+	if a == nil {
+		return nil
+	}
+	return &models.Account{
+		ID:                a.ID,
+		UserID:            a.UserID,
+		Provider:          models.ProviderType(a.Provider),
+		ProviderAccountID: fromNullString(a.ProviderAccountID),
+		PasswordHash:      fromNullString(a.PasswordHash),
+		CreatedAt:         a.CreatedAt,
+		UpdatedAt:         a.UpdatedAt,
+	}
+}
+
+func mysqlSessionToModel(s *mysqlstore.Session) *models.Session {
+	if s == nil {
+		return nil
+	}
+	return &models.Session{
+		ID:             s.ID,
+		UserID:         s.UserID,
+		TokenHash:      s.TokenHash,
+		IPAddress:      fromNullString(s.IpAddress),
+		UserAgent:      fromNullString(s.UserAgent),
+		CreatedAt:      s.CreatedAt,
+		ExpiresAt:      s.ExpiresAt,
+		LastUsed:       s.LastUsed,
+		ImpersonatedBy: fromNullString(s.ImpersonatedBy),
+	}
+}
+
+func mysqlVerificationToModel(v *mysqlstore.Verification) *models.Verification {
+	if v == nil {
+		return nil
+	}
+	return &models.Verification{
+		ID:         v.ID,
+		UserID:     v.UserID,
+		TokenHash:  v.TokenHash,
+		Type:       models.VerificationType(v.Type),
+		Identifier: fromNullString(v.Identifier),
+		ExpiresAt:  v.ExpiresAt,
+		CreatedAt:  v.CreatedAt,
 	}
 }

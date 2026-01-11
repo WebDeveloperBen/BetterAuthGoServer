@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/jwt/db/mysqlstore"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/jwt/db/pgstore"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/jwt/db/sqlitestore"
 	coredb "github.com/webdeveloperben/BetterAuthGoServer/db"
@@ -39,14 +40,18 @@ type Store struct {
 	dialect coredb.Dialect
 	pgQ     *pgstore.Queries
 	sqliteQ *sqlitestore.Queries
+	mysqlQ  *mysqlstore.Queries
 }
 
 // New creates a new Store for JWT operations.
 func New(db coredb.DBTX, dialect coredb.Dialect) *Store {
 	s := &Store{dialect: dialect}
-	if dialect == coredb.DialectPostgres {
+	switch dialect {
+	case coredb.DialectPostgres:
 		s.pgQ = pgstore.New(db)
-	} else {
+	case coredb.DialectMySQL:
+		s.mysqlQ = mysqlstore.New(db)
+	default:
 		s.sqliteQ = sqlitestore.New(db)
 	}
 	return s

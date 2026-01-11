@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/otp/db/mysqlstore"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/otp/db/pgstore"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/otp/db/sqlitestore"
 	coredb "github.com/webdeveloperben/BetterAuthGoServer/db"
@@ -18,14 +19,18 @@ type Store struct {
 	dialect coredb.Dialect
 	pgQ     *pgstore.Queries
 	sqliteQ *sqlitestore.Queries
+	mysqlQ  *mysqlstore.Queries
 }
 
 // New creates a new OTP store.
 func New(db coredb.DBTX, dialect coredb.Dialect) *Store {
 	s := &Store{dialect: dialect}
-	if dialect == coredb.DialectPostgres {
+	switch dialect {
+	case coredb.DialectPostgres:
 		s.pgQ = pgstore.New(db)
-	} else {
+	case coredb.DialectMySQL:
+		s.mysqlQ = mysqlstore.New(db)
+	default:
 		s.sqliteQ = sqlitestore.New(db)
 	}
 	return s
@@ -59,6 +64,17 @@ func (t *Token) IsExpired() bool {
 func (s *Store) CreateToken(ctx context.Context, token *Token) error {
 	if s.dialect == coredb.DialectPostgres {
 		return s.pgQ.CreateOTPToken(ctx, pgstore.CreateOTPTokenParams{
+			ID:         token.ID,
+			UserID:     token.UserID,
+			TokenHash:  token.TokenHash,
+			Type:       token.Type,
+			Identifier: toNullString(token.Identifier),
+			ExpiresAt:  token.ExpiresAt,
+			CreatedAt:  token.CreatedAt,
+		})
+	}
+	if s.dialect == coredb.DialectMySQL {
+		return s.mysqlQ.CreateOTPToken(ctx, mysqlstore.CreateOTPTokenParams{
 			ID:         token.ID,
 			UserID:     token.UserID,
 			TokenHash:  token.TokenHash,
