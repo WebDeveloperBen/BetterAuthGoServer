@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 
 	_ "github.com/lib/pq"           // PostgreSQL driver
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
@@ -158,29 +157,3 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // connectDB creates a standard sql.DB connection based on the DATABASE_URL scheme
-func connectDB(dbURL string) (*sql.DB, db.Dialect, error) {
-	switch {
-	case strings.HasPrefix(dbURL, "postgres://"), strings.HasPrefix(dbURL, "postgresql://"):
-		sqldb, err := sql.Open("postgres", dbURL)
-		if err != nil {
-			return nil, "", err
-		}
-		return sqldb, db.DialectPostgres, nil
-
-	case strings.HasPrefix(dbURL, "sqlite://"):
-		path := strings.TrimPrefix(dbURL, "sqlite://")
-		sqldb, err := sql.Open("sqlite3", path+"?_foreign_keys=on")
-		if err != nil {
-			return nil, "", err
-		}
-		return sqldb, db.DialectSQLite, nil
-
-	default:
-		// Assume SQLite file path
-		sqldb, err := sql.Open("sqlite3", dbURL+"?_foreign_keys=on")
-		if err != nil {
-			return nil, "", err
-		}
-		return sqldb, db.DialectSQLite, nil
-	}
-}

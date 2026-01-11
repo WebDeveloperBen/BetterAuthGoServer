@@ -17,8 +17,8 @@ import (
 	"context"
 	"errors"
 
-	otpdb "github.com/webdeveloperben/BetterAuthGoServer/auth/otp/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
+	otpdb "github.com/webdeveloperben/BetterAuthGoServer/auth/otp/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 

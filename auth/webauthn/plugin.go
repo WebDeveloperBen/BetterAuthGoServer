@@ -1,8 +1,8 @@
 package webauthn
 
 import (
-	webauthndb "github.com/webdeveloperben/BetterAuthGoServer/auth/webauthn/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
+	webauthndb "github.com/webdeveloperben/BetterAuthGoServer/auth/webauthn/db"
 )
 
 const (

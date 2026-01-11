@@ -1,3 +1,4 @@
+// Package db provides database storage implementations for API key management.
 package db
 
 import (

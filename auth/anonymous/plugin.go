@@ -94,8 +94,6 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	return nil
 }
 
-
-
 // Close cleans up plugin resources
 func (p *Plugin) Close() error {
 	if p.service != nil {

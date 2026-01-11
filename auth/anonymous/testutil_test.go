@@ -120,12 +120,6 @@ func (m *mockAnonymousStore) getUser(id string) *mockUserRecord {
 	return m.users[id]
 }
 
-func (m *mockAnonymousStore) userCount() int {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return len(m.users)
-}
-
 // mockAuthProvider implements the AuthProvider interface for testing
 type mockAuthProvider struct {
 	mu               sync.RWMutex

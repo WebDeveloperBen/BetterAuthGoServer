@@ -1,3 +1,4 @@
+// Package db provides database storage implementations for WebAuthn authentication.
 package db
 
 import (

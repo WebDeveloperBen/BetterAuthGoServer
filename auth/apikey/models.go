@@ -8,10 +8,10 @@ import (
 type APIKey struct {
 	ID        string  `json:"id"`
 	Name      *string `json:"name,omitempty"`
-	Start     string  `json:"start"`              // First 6 chars of raw key for UI display
-	Prefix    *string `json:"prefix,omitempty"`   // Optional user prefix (e.g., "myapp")
-	Key       string  `json:"-"`                  // Full HMAC-SHA256 hash (never exposed)
-	KeyPrefix string  `json:"-"`                  // First 8 chars of hash for indexed lookup
+	Start     string  `json:"start"`            // First 6 chars of raw key for UI display
+	Prefix    *string `json:"prefix,omitempty"` // Optional user prefix (e.g., "myapp")
+	Key       string  `json:"-"`                // Full HMAC-SHA256 hash (never exposed)
+	KeyPrefix string  `json:"-"`                // First 8 chars of hash for indexed lookup
 	UserID    string  `json:"userId"`
 
 	// Rate limiting (fixed window)

@@ -2,7 +2,6 @@ package apikey
 
 import (
 	"context"
-	"encoding/json"
 
 	apikeydb "github.com/webdeveloperben/BetterAuthGoServer/auth/apikey/db"
 )
@@ -186,32 +185,6 @@ func int32PtrToIntPtr(i *int32) *int {
 	}
 	v := int(*i)
 	return &v
-}
-
-// Helper to serialize permissions if needed
-func serializePermissions(perms Permissions) *string {
-	if perms == nil {
-		return nil
-	}
-	b, err := json.Marshal(perms)
-	if err != nil {
-		return nil
-	}
-	s := string(b)
-	return &s
-}
-
-// Helper to serialize metadata if needed
-func serializeMetadata(meta Metadata) *string {
-	if meta == nil {
-		return nil
-	}
-	b, err := json.Marshal(meta)
-	if err != nil {
-		return nil
-	}
-	s := string(b)
-	return &s
 }
 
 // Ensure StoreAdapter implements KeyStore

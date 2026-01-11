@@ -377,19 +377,3 @@ func generateUserCode(length int) string {
 	mid := len(code) / 2
 	return code[:mid] + "-" + code[mid:]
 }
-
-// normalizeUserCode removes hyphens and converts to uppercase.
-func normalizeUserCode(code string) string {
-	result := make([]byte, 0, len(code))
-	for i := 0; i < len(code); i++ {
-		c := code[i]
-		if c != '-' && c != ' ' {
-			// Convert to uppercase
-			if c >= 'a' && c <= 'z' {
-				c = c - 'a' + 'A'
-			}
-			result = append(result, c)
-		}
-	}
-	return string(result)
-}

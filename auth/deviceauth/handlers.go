@@ -94,10 +94,7 @@ func (h *handlers) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.CreateDeviceCode(r.Context(), CreateDeviceCodeRequest{
-		ClientID: req.ClientID,
-		Scope:    req.Scope,
-	})
+	result, err := h.service.CreateDeviceCode(r.Context(), CreateDeviceCodeRequest(req))
 
 	if err != nil {
 		if errors.Is(err, ErrInvalidClient) {

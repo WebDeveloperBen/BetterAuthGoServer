@@ -188,25 +188,3 @@ func createTestService(t *testing.T, store deviceauth.DeviceCodeStore, opts ...d
 }
 
 // createTestPlugin creates a plugin for testing
-func createTestPlugin(t *testing.T, store deviceauth.DeviceCodeStore, auth *mockAuthProvider, opts ...deviceauth.Option) *deviceauth.Plugin {
-	t.Helper()
-
-	p := deviceauth.NewPlugin(opts...)
-
-	hasher := token.NewHasher("test-secret-key-32-chars-long!!!")
-
-	ctx := plugin.Context{
-		Store:   nil, // Store is not used directly in tests with mock
-		BaseURL: "https://example.com",
-		Secret:  "test-secret-key-32-chars-long!!!",
-		Auth:    auth,
-		Hasher:  hasher,
-		Logger:  slog.Default(),
-	}
-
-	if err := p.Init(ctx); err != nil {
-		t.Fatalf("Failed to initialize plugin: %v", err)
-	}
-
-	return p
-}

@@ -1,3 +1,4 @@
+// Package db provides database storage implementations for JWT token management.
 package db
 
 import (

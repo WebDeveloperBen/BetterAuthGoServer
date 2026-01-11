@@ -1,3 +1,4 @@
+// Package db provides database storage implementations for device authentication.
 package db
 
 import (

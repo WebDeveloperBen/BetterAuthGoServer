@@ -35,8 +35,8 @@ type Invitation struct {
 	Email          string
 	OrganizationID string
 	InviterID      string
-	Role           string     // owner, admin, member
-	Status         string     // pending, accepted, rejected, cancelled
+	Role           string // owner, admin, member
+	Status         string // pending, accepted, rejected, cancelled
 	ExpiresAt      *time.Time
 	CreatedAt      time.Time
 

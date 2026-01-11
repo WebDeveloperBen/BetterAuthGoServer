@@ -24,7 +24,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -157,32 +156,4 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 		"session_id": session.ID,
 		"message":    "Hello from protected endpoint!",
 	})
-}
-
-// connectDB creates a standard sql.DB connection based on the DATABASE_URL scheme
-func connectDB(dbURL string) (*sql.DB, db.Dialect, error) {
-	switch {
-	case strings.HasPrefix(dbURL, "postgres://"), strings.HasPrefix(dbURL, "postgresql://"):
-		sqldb, err := sql.Open("postgres", dbURL)
-		if err != nil {
-			return nil, "", err
-		}
-		return sqldb, db.DialectPostgres, nil
-
-	case strings.HasPrefix(dbURL, "sqlite://"):
-		path := strings.TrimPrefix(dbURL, "sqlite://")
-		sqldb, err := sql.Open("sqlite3", path+"?_foreign_keys=on")
-		if err != nil {
-			return nil, "", err
-		}
-		return sqldb, db.DialectSQLite, nil
-
-	default:
-		// Assume SQLite file path
-		sqldb, err := sql.Open("sqlite3", dbURL+"?_foreign_keys=on")
-		if err != nil {
-			return nil, "", err
-		}
-		return sqldb, db.DialectSQLite, nil
-	}
 }
