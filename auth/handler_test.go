@@ -292,9 +292,12 @@ func TestOAuthProviders(t *testing.T) {
 	defer a.Close()
 
 	// OAuth is now a plugin - register it with a provider to test
-	oauthPlugin := oauth.NewPlugin(
+	oauthPlugin, err := oauth.NewPlugin(
 		providers.NewGoogle("test-client-id", "test-client-secret", "http://localhost/oauth/google/callback"),
 	)
+	if err != nil {
+		t.Fatalf("Failed to create OAuth plugin: %v", err)
+	}
 	a.Use(oauthPlugin)
 	if err := a.Err(); err != nil {
 		t.Fatalf("Failed to register OAuth plugin: %v", err)

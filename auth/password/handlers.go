@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
@@ -137,6 +138,8 @@ func (p *Plugin) handleSignIn() http.HandlerFunc {
 		if err != nil {
 			if errors.Is(err, ErrInvalidCredentials) {
 				writeError(w, http.StatusUnauthorized, err)
+			} else if errors.Is(err, models.ErrEmailNotVerified) {
+				writeError(w, http.StatusForbidden, err)
 			} else {
 				writeError(w, http.StatusInternalServerError, err)
 			}
@@ -316,8 +319,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
+	message := err.Error()
+	if status >= http.StatusInternalServerError {
+		message = http.StatusText(status)
+	}
 	writeJSON(w, status, map[string]any{
 		"error":   http.StatusText(status),
-		"message": err.Error(),
+		"message": message,
 	})
 }

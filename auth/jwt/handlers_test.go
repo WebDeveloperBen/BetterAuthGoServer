@@ -87,13 +87,18 @@ func (m *mockAuthCore) GetUserFromRequest(r *http.Request) (*plugin.User, error)
 }
 
 func createTestPlugin(t *testing.T) *Plugin {
-	authCore := newMockAuthCore()
-
-	authCore.users["user-123"] = &plugin.User{
+	return createTestPluginWithUser(t, &plugin.User{
 		ID:    "user-123",
 		Email: "test@example.com",
 		Name:  "Test User",
-	}
+	})
+}
+
+func createTestPluginWithUser(t *testing.T, user *plugin.User, opts ...Option) *Plugin {
+	t.Helper()
+
+	authCore := newMockAuthCore()
+	authCore.users[user.ID] = user
 
 	ctx := plugin.Context{
 		BaseURL: "http://localhost:3000",
@@ -102,8 +107,10 @@ func createTestPlugin(t *testing.T) *Plugin {
 	}
 
 	plugin := NewPlugin(
-		WithAccessTTL(15*time.Minute),
-		WithRefreshTTL(7*24*time.Hour),
+		append([]Option{
+			WithAccessTTL(15 * time.Minute),
+			WithRefreshTTL(7 * 24 * time.Hour),
+		}, opts...)...,
 	)
 
 	err := plugin.Init(ctx)
@@ -149,5 +156,72 @@ func TestTokenHandler_PasswordGrant(t *testing.T) {
 
 	if resp.TokenType != "Bearer" {
 		t.Errorf("Expected token type 'Bearer', got %s", resp.TokenType)
+	}
+}
+
+func TestTokenRefreshHandler_BlockedForBannedUser(t *testing.T) {
+	user := &plugin.User{
+		ID:            "user-999",
+		Email:         "banned@example.com",
+		Name:          "Banned",
+		EmailVerified: true,
+		Banned:        true,
+	}
+	plugin := createTestPluginWithUser(t, user)
+	defer func() { _ = plugin.Close() }()
+
+	pair, err := plugin.service.GenerateTokenPair(context.Background(), UserInfo{
+		ID:            user.ID,
+		Email:         user.Email,
+		Name:          user.Name,
+		EmailVerified: user.EmailVerified,
+	}, "session-999")
+	if err != nil {
+		t.Fatalf("GenerateTokenPair() error: %v", err)
+	}
+
+	handler := plugin.TokenRefreshHandler()
+	reqBody := refreshTokenRequest{RefreshToken: pair.RefreshToken}
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("POST", "/token/refresh", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("Expected status 403, got %d", rec.Code)
+	}
+}
+
+func TestTokenRefreshHandler_BlockedForUnverifiedUser(t *testing.T) {
+	user := &plugin.User{
+		ID:            "user-555",
+		Email:         "unverified@example.com",
+		Name:          "Unverified",
+		EmailVerified: false,
+	}
+	plugin := createTestPluginWithUser(t, user, WithRequireEmailVerification(true))
+	defer func() { _ = plugin.Close() }()
+
+	pair, err := plugin.service.GenerateTokenPair(context.Background(), UserInfo{
+		ID:            user.ID,
+		Email:         user.Email,
+		Name:          user.Name,
+		EmailVerified: user.EmailVerified,
+	}, "session-555")
+	if err != nil {
+		t.Fatalf("GenerateTokenPair() error: %v", err)
+	}
+
+	handler := plugin.TokenRefreshHandler()
+	reqBody := refreshTokenRequest{RefreshToken: pair.RefreshToken}
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("POST", "/token/refresh", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("Expected status 403, got %d", rec.Code)
 	}
 }

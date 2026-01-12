@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/kv"
 )
 
 // Algorithm represents the JWT signing algorithm
@@ -74,6 +75,19 @@ type Config struct {
 	// TokenBlocklist is used to check if tokens are revoked (optional)
 	TokenBlocklist TokenBlocklist
 
+	// RequireEmailVerification blocks token issuance for unverified users.
+	RequireEmailVerification bool
+
+	// LockoutThreshold is the number of failed login attempts before lockout.
+	// Set to 0 to disable.
+	LockoutThreshold int
+
+	// LockoutDuration is how long an account remains locked after failures.
+	LockoutDuration time.Duration
+
+	// LockoutStore is used for tracking failed attempts. If nil, in-memory is used.
+	LockoutStore kv.Store
+
 	// KeyRotationGracePeriod is how long rotated keys remain valid for verification.
 	// Only used when KeySource is KeySourceDatabase.
 	// Default is 24 hours.
@@ -83,6 +97,19 @@ type Config struct {
 	// Only applies to RSA algorithms (RS256/384/512).
 	// Default is 2048.
 	KeySize int
+
+	// RotateKeyRateLimitMax is the max number of rotate requests per window.
+	// Set to 0 to disable.
+	RotateKeyRateLimitMax int
+
+	// RotateKeyRateLimitWindow is the window for rotate rate limiting.
+	RotateKeyRateLimitWindow time.Duration
+
+	// RotateKeyRateLimiter is the limiter used for rotate requests.
+	RotateKeyRateLimiter kv.RateLimiter
+
+	// KeyRotationRoles are allowed roles for key rotation.
+	KeyRotationRoles []string
 }
 
 // TokenBlocklist is an interface for checking if tokens are revoked
@@ -100,6 +127,12 @@ func DefaultConfig() Config {
 		Algorithm:       AlgorithmHS256,
 		AccessTokenTTL:  15 * time.Minute,
 		RefreshTokenTTL: 7 * 24 * time.Hour,
+		RequireEmailVerification: false,
+		LockoutThreshold:         10,
+		LockoutDuration:          15 * time.Minute,
+		RotateKeyRateLimitMax:    5,
+		RotateKeyRateLimitWindow: time.Minute,
+		KeyRotationRoles:         []string{"admin"},
 	}
 }
 

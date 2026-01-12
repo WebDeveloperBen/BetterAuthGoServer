@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
@@ -17,6 +18,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.SessionCookie != "session" {
 		t.Errorf("SessionCookie = %s, want session", cfg.SessionCookie)
 	}
+	if cfg.SessionCookieSameSite != http.SameSiteLaxMode {
+		t.Errorf("SessionCookieSameSite = %v, want Lax", cfg.SessionCookieSameSite)
+	}
 
 	// Password defaults
 	if cfg.PasswordMinLength != 8 {
@@ -32,6 +36,9 @@ func TestDefaultConfig(t *testing.T) {
 	// Email verification defaults
 	if cfg.RequireEmailVerification {
 		t.Error("RequireEmailVerification should default to false")
+	}
+	if cfg.EmitRawTokensInEvents {
+		t.Error("EmitRawTokensInEvents should default to false")
 	}
 	if cfg.EmailVerificationExpiry != 24*time.Hour {
 		t.Errorf("EmailVerificationExpiry = %v, want %v", cfg.EmailVerificationExpiry, 24*time.Hour)
@@ -201,6 +208,15 @@ func TestWithEmailVerification(t *testing.T) {
 	}
 	if cfg.EmailVerificationExpiry != 48*time.Hour {
 		t.Errorf("EmailVerificationExpiry = %v, want %v", cfg.EmailVerificationExpiry, 48*time.Hour)
+	}
+}
+
+func TestWithEmitRawTokensInEvents(t *testing.T) {
+	cfg := config.DefaultConfig()
+	config.WithEmitRawTokensInEvents(true)(&cfg)
+
+	if !cfg.EmitRawTokensInEvents {
+		t.Error("EmitRawTokensInEvents should be true")
 	}
 }
 

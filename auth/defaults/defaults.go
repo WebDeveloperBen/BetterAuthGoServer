@@ -40,6 +40,7 @@ func Plugins(cfg *config.Config) []plugin.Plugin {
 			password.WithComplexity(cfg.RequirePasswordComplexity),
 			password.WithResetExpiry(cfg.PasswordResetExpiry),
 			password.WithAutoSignIn(cfg.AutoSignIn),
+			password.WithRequireEmailVerification(cfg.RequireEmailVerification),
 		))
 	}
 

@@ -5,7 +5,6 @@ package plugin
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
 	"net/http"
 
@@ -57,15 +56,21 @@ type Context struct {
 	// Dialect indicates the database type (postgres, sqlite, mysql).
 	Dialect db.Dialect
 
-	// DB is deprecated: use Store or RawDB instead.
-	// This field is kept for backwards compatibility during migration.
-	DB *sql.DB
-
 	// BaseURL is the base URL of the auth service
 	BaseURL string
 
 	// Secret is the auth secret (for token generation, etc.)
 	Secret string
+
+	// TrustedOrigins contains allowed origins for redirects and CORS.
+	TrustedOrigins []string
+
+	// TrustedProxies contains allowed proxy IPs for client IP extraction.
+	TrustedProxies []string
+
+	// RequireEmailVerification indicates whether email verification is required
+	// before allowing sign-in or session issuance.
+	RequireEmailVerification bool
 
 	// Auth provides access to core authentication operations.
 	// This allows plugins to perform user lookups, session validation, etc.

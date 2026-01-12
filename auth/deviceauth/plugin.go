@@ -1,6 +1,8 @@
 package deviceauth
 
 import (
+	"fmt"
+
 	deviceauthdb "github.com/webdeveloperben/BetterAuthGoServer/auth/deviceauth/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
@@ -72,7 +74,11 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 
 	// Create plugin's own store
-	p.dbStore = deviceauthdb.New(ctx.RawDB, ctx.Dialect)
+	store, err := deviceauthdb.New(ctx.RawDB, ctx.Dialect)
+	if err != nil {
+		return fmt.Errorf("deviceauth plugin: failed to create store: %w", err)
+	}
+	p.dbStore = store
 
 	// Create store adapter
 	storeAdapter := NewStoreAdapter(p.dbStore)

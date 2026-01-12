@@ -23,6 +23,9 @@ type Config struct {
 	// AutoSignIn automatically signs in the user after sign-up (default: true)
 	AutoSignIn bool
 
+	// RequireEmailVerification blocks sign-in until email is verified.
+	RequireEmailVerification bool
+
 	// LockoutThreshold is the number of failed login attempts before account lockout (default: 10)
 	// Set to 0 to disable lockout.
 	LockoutThreshold int
@@ -44,6 +47,7 @@ func DefaultConfig() Config {
 		RequireComplexity: true,
 		ResetTokenExpiry:  time.Hour,
 		AutoSignIn:        true,
+		RequireEmailVerification: false,
 		LockoutThreshold:  10,
 		LockoutDuration:   15 * time.Minute,
 		// LockoutStore: nil means use in-memory (created in Init)
@@ -85,6 +89,13 @@ func WithResetExpiry(d time.Duration) Option {
 func WithAutoSignIn(enabled bool) Option {
 	return func(c *Config) {
 		c.AutoSignIn = enabled
+	}
+}
+
+// WithRequireEmailVerification enforces email verification before sign-in.
+func WithRequireEmailVerification(required bool) Option {
+	return func(c *Config) {
+		c.RequireEmailVerification = required
 	}
 }
 

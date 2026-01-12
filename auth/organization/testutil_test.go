@@ -272,7 +272,10 @@ func createTestService(t *testing.T, sqlDB *sql.DB, opts ...organization.Option)
 	}
 
 	// Create the plugin's own store using the SQLite dialect
-	store := orgdb.New(sqlDB, db.DialectSQLite)
+	store, err := orgdb.New(sqlDB, db.DialectSQLite)
+	if err != nil {
+		return nil
+	}
 
 	return organization.NewService(store, sqlDB, db.DialectSQLite, slog.Default(), &config)
 }

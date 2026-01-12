@@ -1,6 +1,8 @@
 package webauthn
 
 import (
+	"fmt"
+
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 	webauthndb "github.com/webdeveloperben/BetterAuthGoServer/auth/webauthn/db"
 )
@@ -69,7 +71,11 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 
 	// Create plugin's own store using ctx.RawDB
-	p.dbStore = webauthndb.New(ctx.RawDB, ctx.Dialect)
+	dbStore, err := webauthndb.New(ctx.RawDB, ctx.Dialect)
+	if err != nil {
+		return fmt.Errorf("webauthn plugin: failed to create store: %w", err)
+	}
+	p.dbStore = dbStore
 	store := NewStoreAdapter(p.dbStore)
 	service, err := NewService(store, ctx.Encryptor, config, ctx.Logger)
 	if err != nil {

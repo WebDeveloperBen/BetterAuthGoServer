@@ -157,13 +157,14 @@ func (a *Auth) publishEvent(ctx context.Context, eventType string, payload any) 
 func (a *Auth) runCleanup() {
 	ticker := time.NewTicker(a.config.SessionCleanupInterval)
 	defer ticker.Stop()
+	const cleanupTimeout = 10 * time.Second
 
 	for {
 		select {
 		case <-a.stopCleanup:
 			return
 		case <-ticker.C:
-			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 
 			// Clean up expired sessions
 			if err := a.store.DeleteExpiredSessions(ctx); err != nil {
@@ -175,6 +176,7 @@ func (a *Auth) runCleanup() {
 				a.config.Logger.Error("failed to cleanup expired verifications", "error", err)
 			}
 
+			cancel()
 			a.config.Logger.Debug("completed cleanup of expired data")
 		}
 	}
@@ -259,7 +261,11 @@ func (a *Auth) SendVerificationEmail(ctx context.Context, userID string) error {
 		return err
 	}
 
-	a.publishEvent(ctx, models.EventEmailVerificationSent, models.EmailVerificationSentPayload{User: user, Token: rawToken})
+	token := ""
+	if a.config.EmitRawTokensInEvents {
+		token = rawToken
+	}
+	a.publishEvent(ctx, models.EventEmailVerificationSent, models.EmailVerificationSentPayload{User: user, Token: token})
 	return nil
 }
 
@@ -369,14 +375,17 @@ func (a *Auth) Err() error {
 // buildPluginContext creates a plugin.Context with access to auth internals
 func (a *Auth) buildPluginContext() plugin.Context {
 	ctx := plugin.Context{
-		BaseURL:   a.config.BaseURL,
-		Secret:    a.config.Secret,
-		Auth:      a, // Auth implements plugin.AuthCore
-		Sessions:  &sessionManager{auth: a},
-		Hasher:    a.tokenHasher,
-		Encryptor: a.tokenEncryptor,
-		Logger:    a.config.Logger,
-		EventBus:  a.eventBus,
+		BaseURL:                  a.config.BaseURL,
+		Secret:                   a.config.Secret,
+		TrustedOrigins:           a.config.TrustedOrigins,
+		TrustedProxies:           a.config.TrustedProxies,
+		RequireEmailVerification: a.config.RequireEmailVerification,
+		Auth:                     a, // Auth implements plugin.AuthCore
+		Sessions:                 &sessionManager{auth: a},
+		Hasher:                   a.tokenHasher,
+		Encryptor:                a.tokenEncryptor,
+		Logger:                   a.config.Logger,
+		EventBus:                 a.eventBus,
 	}
 
 	// Check if store provides the new PluginStore interface (preferred)

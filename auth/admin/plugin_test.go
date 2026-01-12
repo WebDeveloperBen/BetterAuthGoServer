@@ -54,7 +54,6 @@ func TestPlugin_Init_WithoutDatabase(t *testing.T) {
 	// Mock context without database
 	ctx := plugin.Context{
 		Logger:  logger,
-		DB:      nil,
 		BaseURL: "http://localhost:8080",
 		Secret:  "test-secret",
 	}
@@ -79,7 +78,6 @@ func TestPlugin_Init_WithoutUserProvider(t *testing.T) {
 	// Mock context with nil DB
 	ctx := plugin.Context{
 		Logger:  logger,
-		DB:      nil, // We'll skip the DB check for this test
 		Auth:    &mockAuthWithoutUserProvider{},
 		BaseURL: "http://localhost:8080",
 		Secret:  "test-secret",

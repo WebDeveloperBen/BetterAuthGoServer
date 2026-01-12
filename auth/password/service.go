@@ -95,9 +95,9 @@ func (s *Service) SignUp(ctx context.Context, email, password, name string, r *h
 		return nil, nil, err
 	}
 
-	// Auto sign-in if enabled
+	// Auto sign-in if enabled and verification is not required
 	var session *plugin.Session
-	if s.config.AutoSignIn {
+	if s.config.AutoSignIn && !s.config.RequireEmailVerification {
 		session, err = s.auth.CreateSessionForUser(ctx, user.ID, r)
 		if err != nil {
 			s.logger.Error("failed to create session after signup",
@@ -134,6 +134,14 @@ func (s *Service) SignIn(ctx context.Context, email, password string, r *http.Re
 			return nil, nil, ErrInvalidCredentials
 		}
 		return nil, nil, err
+	}
+
+	if s.config.RequireEmailVerification && !user.EmailVerified {
+		// Record failure to slow down brute-force on unverified accounts
+		if _, lockErr := s.lockout.RecordFailure(ctx, email); lockErr != nil {
+			s.logger.Error("failed to record login failure", "email", email, "error", lockErr)
+		}
+		return nil, nil, models.ErrEmailNotVerified
 	}
 
 	// Get email account

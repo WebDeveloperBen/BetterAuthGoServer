@@ -37,6 +37,14 @@ type Config struct {
 	// ignored and only RemoteAddr is used (secure by default).
 	// If set, headers from trusted proxies are used to determine client IP.
 	TrustedProxies []string
+
+	// FailClosed determines behaviour when the backend errors.
+	// If true, requests are denied on backend error.
+	FailClosed bool
+
+	// BackendTimeout sets a timeout for backend operations.
+	// If zero, a default is used.
+	BackendTimeout time.Duration
 }
 
 // DefaultConfig returns default rate limit configuration.
@@ -46,6 +54,8 @@ func DefaultConfig() Config {
 		MaxRequests: 100,
 		// KeyFunc is nil by default; Limiter.init() will set RemoteAddrKeyFunc
 		// unless TrustedProxies is configured
+		FailClosed:    true,
+		BackendTimeout: 2 * time.Second,
 	}
 }
 
@@ -104,5 +114,19 @@ func WithBackend(backend kv.RateLimiter) Option {
 func WithTrustedProxies(proxies []string) Option {
 	return func(c *Config) {
 		c.TrustedProxies = proxies
+	}
+}
+
+// WithFailClosed sets whether to deny requests on backend errors.
+func WithFailClosed(failClosed bool) Option {
+	return func(c *Config) {
+		c.FailClosed = failClosed
+	}
+}
+
+// WithBackendTimeout sets the timeout for backend operations.
+func WithBackendTimeout(d time.Duration) Option {
+	return func(c *Config) {
+		c.BackendTimeout = d
 	}
 }

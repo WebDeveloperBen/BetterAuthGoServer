@@ -2,6 +2,7 @@ package apikey
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -82,7 +83,11 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.config = config
 
 	// Create plugin's own store
-	p.dbStore = apikeydb.New(ctx.RawDB, ctx.Dialect)
+	dbStore, err := apikeydb.New(ctx.RawDB, ctx.Dialect)
+	if err != nil {
+		return fmt.Errorf("apikey plugin: failed to create store: %w", err)
+	}
+	p.dbStore = dbStore
 
 	// Create store adapter using sqlc-based store
 	store := NewStoreAdapter(p.dbStore)

@@ -4,12 +4,18 @@ package db
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/apikey/db/mysqlstore"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/apikey/db/pgstore"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/apikey/db/sqlitestore"
 	coredb "github.com/webdeveloperben/BetterAuthGoServer/db"
 )
+
+// =============================================================================
+// Domain types
+// =============================================================================
 
 // APIKey represents an API key for programmatic access.
 type APIKey struct {
@@ -37,53 +43,341 @@ type APIKey struct {
 	UpdatedAt           time.Time
 }
 
+// =============================================================================
+// Querier interface - each dialect implements this
+// =============================================================================
+
+// Querier defines all API key database operations.
+// Each dialect implements this interface, handling type conversions internally.
+type Querier interface {
+	CreateAPIKey(ctx context.Context, key *APIKey) error
+	GetAPIKeyByID(ctx context.Context, id string) (*APIKey, error)
+	GetAPIKeyByKeyPrefix(ctx context.Context, keyPrefix string) ([]*APIKey, error)
+	ListAPIKeysByUserID(ctx context.Context, userID string) ([]*APIKey, error)
+	UpdateAPIKey(ctx context.Context, key *APIKey) error
+	UpdateAPIKeyUsage(ctx context.Context, key *APIKey) error
+	DeleteAPIKey(ctx context.Context, id string) error
+	DeleteAPIKeysByUserID(ctx context.Context, userID string) error
+	DeleteExpiredAPIKeys(ctx context.Context) (int64, error)
+}
+
+// =============================================================================
+// Store - delegates to dialect-specific Querier
+// =============================================================================
+
 // Store wraps the sqlc-generated queries for API key operations.
 type Store struct {
-	dialect coredb.Dialect
-	pgQ     *pgstore.Queries
-	sqliteQ *sqlitestore.Queries
+	q Querier
 }
 
 // New creates a new Store for API key operations.
-func New(db coredb.DBTX, dialect coredb.Dialect) *Store {
-	s := &Store{dialect: dialect}
-	if dialect == coredb.DialectPostgres {
-		s.pgQ = pgstore.New(db)
-	} else {
-		s.sqliteQ = sqlitestore.New(db)
+func New(db coredb.DBTX, dialect coredb.Dialect) (*Store, error) {
+	var q Querier
+
+	switch dialect {
+	case coredb.DialectPostgres:
+		q = newPgAdapter(db)
+	case coredb.DialectMySQL:
+		q = newMysqlAdapter(db)
+	case coredb.DialectSQLite:
+		q = newSqliteAdapter(db)
+	default:
+		return nil, fmt.Errorf("unsupported dialect: %s", dialect)
 	}
-	return s
+
+	return &Store{q: q}, nil
 }
 
-// CreateAPIKey stores a new API key.
+// Delegate to Querier
+
 func (s *Store) CreateAPIKey(ctx context.Context, key *APIKey) error {
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.CreateAPIKey(ctx, pgstore.CreateAPIKeyParams{
-			ID:                  key.ID,
-			Name:                toNullString(key.Name),
-			Start:               key.Start,
-			Prefix:              toNullString(key.Prefix),
-			Key:                 key.Key,
-			KeyPrefix:           key.KeyPrefix,
-			UserID:              key.UserID,
-			RateLimitEnabled:    key.RateLimitEnabled,
-			RateLimitTimeWindow: toNullInt64(key.RateLimitTimeWindow),
-			RateLimitMax:        toNullInt32(key.RateLimitMax),
-			RequestCount:        key.RequestCount,
-			Remaining:           toNullInt32(key.Remaining),
-			RefillInterval:      toNullInt64(key.RefillInterval),
-			RefillAmount:        toNullInt32(key.RefillAmount),
-			LastRefillAt:        toNullTime(key.LastRefillAt),
-			Enabled:             key.Enabled,
-			LastRequest:         toNullTime(key.LastRequest),
-			ExpiresAt:           toNullTime(key.ExpiresAt),
-			Permissions:         toNullString(key.Permissions),
-			Metadata:            toNullString(key.Metadata),
-			CreatedAt:           key.CreatedAt,
-			UpdatedAt:           key.UpdatedAt,
-		})
+	return s.q.CreateAPIKey(ctx, key)
+}
+
+func (s *Store) GetAPIKeyByID(ctx context.Context, id string) (*APIKey, error) {
+	return s.q.GetAPIKeyByID(ctx, id)
+}
+
+func (s *Store) GetAPIKeyByKeyPrefix(ctx context.Context, keyPrefix string) ([]*APIKey, error) {
+	return s.q.GetAPIKeyByKeyPrefix(ctx, keyPrefix)
+}
+
+func (s *Store) ListAPIKeysByUserID(ctx context.Context, userID string) ([]*APIKey, error) {
+	return s.q.ListAPIKeysByUserID(ctx, userID)
+}
+
+func (s *Store) UpdateAPIKey(ctx context.Context, key *APIKey) error {
+	return s.q.UpdateAPIKey(ctx, key)
+}
+
+func (s *Store) UpdateAPIKeyUsage(ctx context.Context, key *APIKey) error {
+	return s.q.UpdateAPIKeyUsage(ctx, key)
+}
+
+func (s *Store) DeleteAPIKey(ctx context.Context, id string) error {
+	return s.q.DeleteAPIKey(ctx, id)
+}
+
+func (s *Store) DeleteAPIKeysByUserID(ctx context.Context, userID string) error {
+	return s.q.DeleteAPIKeysByUserID(ctx, userID)
+}
+
+func (s *Store) DeleteExpiredAPIKeys(ctx context.Context) (int64, error) {
+	return s.q.DeleteExpiredAPIKeys(ctx)
+}
+
+// =============================================================================
+// PostgreSQL adapter
+// =============================================================================
+
+type pgAdapter struct {
+	q *pgstore.Queries
+}
+
+func newPgAdapter(db coredb.DBTX) *pgAdapter {
+	return &pgAdapter{q: pgstore.New(db)}
+}
+
+func (a *pgAdapter) CreateAPIKey(ctx context.Context, key *APIKey) error {
+	return a.q.CreateAPIKey(ctx, pgstore.CreateAPIKeyParams{
+		ID:                  key.ID,
+		Name:                toNullString(key.Name),
+		Start:               key.Start,
+		Prefix:              toNullString(key.Prefix),
+		Key:                 key.Key,
+		KeyPrefix:           key.KeyPrefix,
+		UserID:              key.UserID,
+		RateLimitEnabled:    key.RateLimitEnabled,
+		RateLimitTimeWindow: toNullInt64(key.RateLimitTimeWindow),
+		RateLimitMax:        toNullInt32(key.RateLimitMax),
+		RequestCount:        key.RequestCount,
+		Remaining:           toNullInt32(key.Remaining),
+		RefillInterval:      toNullInt64(key.RefillInterval),
+		RefillAmount:        toNullInt32(key.RefillAmount),
+		LastRefillAt:        toNullTime(key.LastRefillAt),
+		Enabled:             key.Enabled,
+		LastRequest:         toNullTime(key.LastRequest),
+		ExpiresAt:           toNullTime(key.ExpiresAt),
+		Permissions:         toNullString(key.Permissions),
+		Metadata:            toNullString(key.Metadata),
+		CreatedAt:           key.CreatedAt,
+		UpdatedAt:           key.UpdatedAt,
+	})
+}
+
+func (a *pgAdapter) GetAPIKeyByID(ctx context.Context, id string) (*APIKey, error) {
+	row, err := a.q.GetAPIKeyByID(ctx, id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
 	}
-	return s.sqliteQ.CreateAPIKey(ctx, sqlitestore.CreateAPIKeyParams{
+	return pgKeyToDomain(&row), nil
+}
+
+func (a *pgAdapter) GetAPIKeyByKeyPrefix(ctx context.Context, keyPrefix string) ([]*APIKey, error) {
+	rows, err := a.q.GetAPIKeyByKeyPrefix(ctx, keyPrefix)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]*APIKey, len(rows))
+	for i, row := range rows {
+		r := row
+		keys[i] = pgKeyToDomain(&r)
+	}
+	return keys, nil
+}
+
+func (a *pgAdapter) ListAPIKeysByUserID(ctx context.Context, userID string) ([]*APIKey, error) {
+	rows, err := a.q.ListAPIKeysByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]*APIKey, len(rows))
+	for i, row := range rows {
+		r := row
+		keys[i] = pgKeyToDomain(&r)
+	}
+	return keys, nil
+}
+
+func (a *pgAdapter) UpdateAPIKey(ctx context.Context, key *APIKey) error {
+	return a.q.UpdateAPIKey(ctx, pgstore.UpdateAPIKeyParams{
+		ID:                  key.ID,
+		Name:                toNullString(key.Name),
+		RateLimitEnabled:    key.RateLimitEnabled,
+		RateLimitTimeWindow: toNullInt64(key.RateLimitTimeWindow),
+		RateLimitMax:        toNullInt32(key.RateLimitMax),
+		Remaining:           toNullInt32(key.Remaining),
+		RefillInterval:      toNullInt64(key.RefillInterval),
+		RefillAmount:        toNullInt32(key.RefillAmount),
+		Enabled:             key.Enabled,
+		ExpiresAt:           toNullTime(key.ExpiresAt),
+		Permissions:         toNullString(key.Permissions),
+		Metadata:            toNullString(key.Metadata),
+		UpdatedAt:           key.UpdatedAt,
+	})
+}
+
+func (a *pgAdapter) UpdateAPIKeyUsage(ctx context.Context, key *APIKey) error {
+	return a.q.UpdateAPIKeyUsage(ctx, pgstore.UpdateAPIKeyUsageParams{
+		ID:           key.ID,
+		RequestCount: key.RequestCount,
+		Remaining:    toNullInt32(key.Remaining),
+		LastRequest:  toNullTime(key.LastRequest),
+		LastRefillAt: toNullTime(key.LastRefillAt),
+		UpdatedAt:    key.UpdatedAt,
+	})
+}
+
+func (a *pgAdapter) DeleteAPIKey(ctx context.Context, id string) error {
+	return a.q.DeleteAPIKey(ctx, id)
+}
+
+func (a *pgAdapter) DeleteAPIKeysByUserID(ctx context.Context, userID string) error {
+	return a.q.DeleteAPIKeysByUserID(ctx, userID)
+}
+
+func (a *pgAdapter) DeleteExpiredAPIKeys(ctx context.Context) (int64, error) {
+	return a.q.DeleteExpiredAPIKeys(ctx, sql.NullTime{Time: time.Now(), Valid: true})
+}
+
+var _ Querier = (*pgAdapter)(nil)
+
+// =============================================================================
+// MySQL adapter
+// =============================================================================
+
+type mysqlAdapter struct {
+	q *mysqlstore.Queries
+}
+
+func newMysqlAdapter(db coredb.DBTX) *mysqlAdapter {
+	return &mysqlAdapter{q: mysqlstore.New(db)}
+}
+
+func (a *mysqlAdapter) CreateAPIKey(ctx context.Context, key *APIKey) error {
+	return a.q.CreateAPIKey(ctx, mysqlstore.CreateAPIKeyParams{
+		ID:                  key.ID,
+		Name:                toNullString(key.Name),
+		Start:               key.Start,
+		Prefix:              toNullString(key.Prefix),
+		Key:                 key.Key,
+		KeyPrefix:           key.KeyPrefix,
+		UserID:              key.UserID,
+		RateLimitEnabled:    key.RateLimitEnabled,
+		RateLimitTimeWindow: toNullInt64(key.RateLimitTimeWindow),
+		RateLimitMax:        toNullInt32(key.RateLimitMax),
+		RequestCount:        key.RequestCount,
+		Remaining:           toNullInt32(key.Remaining),
+		RefillInterval:      toNullInt64(key.RefillInterval),
+		RefillAmount:        toNullInt32(key.RefillAmount),
+		LastRefillAt:        toNullTime(key.LastRefillAt),
+		Enabled:             key.Enabled,
+		LastRequest:         toNullTime(key.LastRequest),
+		ExpiresAt:           toNullTime(key.ExpiresAt),
+		Permissions:         toNullString(key.Permissions),
+		Metadata:            toNullString(key.Metadata),
+		CreatedAt:           key.CreatedAt,
+		UpdatedAt:           key.UpdatedAt,
+	})
+}
+
+func (a *mysqlAdapter) GetAPIKeyByID(ctx context.Context, id string) (*APIKey, error) {
+	row, err := a.q.GetAPIKeyByID(ctx, id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return mysqlKeyToDomain(&row), nil
+}
+
+func (a *mysqlAdapter) GetAPIKeyByKeyPrefix(ctx context.Context, keyPrefix string) ([]*APIKey, error) {
+	rows, err := a.q.GetAPIKeyByKeyPrefix(ctx, keyPrefix)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]*APIKey, len(rows))
+	for i, row := range rows {
+		r := row
+		keys[i] = mysqlKeyToDomain(&r)
+	}
+	return keys, nil
+}
+
+func (a *mysqlAdapter) ListAPIKeysByUserID(ctx context.Context, userID string) ([]*APIKey, error) {
+	rows, err := a.q.ListAPIKeysByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]*APIKey, len(rows))
+	for i, row := range rows {
+		r := row
+		keys[i] = mysqlKeyToDomain(&r)
+	}
+	return keys, nil
+}
+
+func (a *mysqlAdapter) UpdateAPIKey(ctx context.Context, key *APIKey) error {
+	return a.q.UpdateAPIKey(ctx, mysqlstore.UpdateAPIKeyParams{
+		ID:                  key.ID,
+		Name:                toNullString(key.Name),
+		RateLimitEnabled:    key.RateLimitEnabled,
+		RateLimitTimeWindow: toNullInt64(key.RateLimitTimeWindow),
+		RateLimitMax:        toNullInt32(key.RateLimitMax),
+		Remaining:           toNullInt32(key.Remaining),
+		RefillInterval:      toNullInt64(key.RefillInterval),
+		RefillAmount:        toNullInt32(key.RefillAmount),
+		Enabled:             key.Enabled,
+		ExpiresAt:           toNullTime(key.ExpiresAt),
+		Permissions:         toNullString(key.Permissions),
+		Metadata:            toNullString(key.Metadata),
+		UpdatedAt:           key.UpdatedAt,
+	})
+}
+
+func (a *mysqlAdapter) UpdateAPIKeyUsage(ctx context.Context, key *APIKey) error {
+	return a.q.UpdateAPIKeyUsage(ctx, mysqlstore.UpdateAPIKeyUsageParams{
+		ID:           key.ID,
+		RequestCount: key.RequestCount,
+		Remaining:    toNullInt32(key.Remaining),
+		LastRequest:  toNullTime(key.LastRequest),
+		LastRefillAt: toNullTime(key.LastRefillAt),
+		UpdatedAt:    key.UpdatedAt,
+	})
+}
+
+func (a *mysqlAdapter) DeleteAPIKey(ctx context.Context, id string) error {
+	return a.q.DeleteAPIKey(ctx, id)
+}
+
+func (a *mysqlAdapter) DeleteAPIKeysByUserID(ctx context.Context, userID string) error {
+	return a.q.DeleteAPIKeysByUserID(ctx, userID)
+}
+
+func (a *mysqlAdapter) DeleteExpiredAPIKeys(ctx context.Context) (int64, error) {
+	return a.q.DeleteExpiredAPIKeys(ctx, sql.NullTime{Time: time.Now(), Valid: true})
+}
+
+var _ Querier = (*mysqlAdapter)(nil)
+
+// =============================================================================
+// SQLite adapter
+// =============================================================================
+
+type sqliteAdapter struct {
+	q *sqlitestore.Queries
+}
+
+func newSqliteAdapter(db coredb.DBTX) *sqliteAdapter {
+	return &sqliteAdapter{q: sqlitestore.New(db)}
+}
+
+func (a *sqliteAdapter) CreateAPIKey(ctx context.Context, key *APIKey) error {
+	return a.q.CreateAPIKey(ctx, sqlitestore.CreateAPIKeyParams{
 		ID:                  key.ID,
 		Name:                toNullString(key.Name),
 		Start:               key.Start,
@@ -109,19 +403,8 @@ func (s *Store) CreateAPIKey(ctx context.Context, key *APIKey) error {
 	})
 }
 
-// GetAPIKeyByID retrieves an API key by ID.
-func (s *Store) GetAPIKeyByID(ctx context.Context, id string) (*APIKey, error) {
-	if s.dialect == coredb.DialectPostgres {
-		row, err := s.pgQ.GetAPIKeyByID(ctx, id)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				return nil, nil
-			}
-			return nil, err
-		}
-		return pgKeyToDomain(&row), nil
-	}
-	row, err := s.sqliteQ.GetAPIKeyByID(ctx, id)
+func (a *sqliteAdapter) GetAPIKeyByID(ctx context.Context, id string) (*APIKey, error) {
+	row, err := a.q.GetAPIKeyByID(ctx, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -131,21 +414,8 @@ func (s *Store) GetAPIKeyByID(ctx context.Context, id string) (*APIKey, error) {
 	return sqliteKeyToDomain(&row), nil
 }
 
-// GetAPIKeyByKeyPrefix retrieves API keys by key prefix.
-func (s *Store) GetAPIKeyByKeyPrefix(ctx context.Context, keyPrefix string) ([]*APIKey, error) {
-	if s.dialect == coredb.DialectPostgres {
-		rows, err := s.pgQ.GetAPIKeyByKeyPrefix(ctx, keyPrefix)
-		if err != nil {
-			return nil, err
-		}
-		keys := make([]*APIKey, len(rows))
-		for i, row := range rows {
-			r := row
-			keys[i] = pgKeyToDomain(&r)
-		}
-		return keys, nil
-	}
-	rows, err := s.sqliteQ.GetAPIKeyByKeyPrefix(ctx, keyPrefix)
+func (a *sqliteAdapter) GetAPIKeyByKeyPrefix(ctx context.Context, keyPrefix string) ([]*APIKey, error) {
+	rows, err := a.q.GetAPIKeyByKeyPrefix(ctx, keyPrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -157,21 +427,8 @@ func (s *Store) GetAPIKeyByKeyPrefix(ctx context.Context, keyPrefix string) ([]*
 	return keys, nil
 }
 
-// ListAPIKeysByUserID retrieves all API keys for a user.
-func (s *Store) ListAPIKeysByUserID(ctx context.Context, userID string) ([]*APIKey, error) {
-	if s.dialect == coredb.DialectPostgres {
-		rows, err := s.pgQ.ListAPIKeysByUserID(ctx, userID)
-		if err != nil {
-			return nil, err
-		}
-		keys := make([]*APIKey, len(rows))
-		for i, row := range rows {
-			r := row
-			keys[i] = pgKeyToDomain(&r)
-		}
-		return keys, nil
-	}
-	rows, err := s.sqliteQ.ListAPIKeysByUserID(ctx, userID)
+func (a *sqliteAdapter) ListAPIKeysByUserID(ctx context.Context, userID string) ([]*APIKey, error) {
+	rows, err := a.q.ListAPIKeysByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -183,26 +440,8 @@ func (s *Store) ListAPIKeysByUserID(ctx context.Context, userID string) ([]*APIK
 	return keys, nil
 }
 
-// UpdateAPIKey updates an API key.
-func (s *Store) UpdateAPIKey(ctx context.Context, key *APIKey) error {
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.UpdateAPIKey(ctx, pgstore.UpdateAPIKeyParams{
-			ID:                  key.ID,
-			Name:                toNullString(key.Name),
-			RateLimitEnabled:    key.RateLimitEnabled,
-			RateLimitTimeWindow: toNullInt64(key.RateLimitTimeWindow),
-			RateLimitMax:        toNullInt32(key.RateLimitMax),
-			Remaining:           toNullInt32(key.Remaining),
-			RefillInterval:      toNullInt64(key.RefillInterval),
-			RefillAmount:        toNullInt32(key.RefillAmount),
-			Enabled:             key.Enabled,
-			ExpiresAt:           toNullTime(key.ExpiresAt),
-			Permissions:         toNullString(key.Permissions),
-			Metadata:            toNullString(key.Metadata),
-			UpdatedAt:           key.UpdatedAt,
-		})
-	}
-	return s.sqliteQ.UpdateAPIKey(ctx, sqlitestore.UpdateAPIKeyParams{
+func (a *sqliteAdapter) UpdateAPIKey(ctx context.Context, key *APIKey) error {
+	return a.q.UpdateAPIKey(ctx, sqlitestore.UpdateAPIKeyParams{
 		ID:                  key.ID,
 		Name:                toNullString(key.Name),
 		RateLimitEnabled:    boolToInt64(key.RateLimitEnabled),
@@ -219,19 +458,8 @@ func (s *Store) UpdateAPIKey(ctx context.Context, key *APIKey) error {
 	})
 }
 
-// UpdateAPIKeyUsage updates the usage stats of an API key.
-func (s *Store) UpdateAPIKeyUsage(ctx context.Context, key *APIKey) error {
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.UpdateAPIKeyUsage(ctx, pgstore.UpdateAPIKeyUsageParams{
-			ID:           key.ID,
-			RequestCount: key.RequestCount,
-			Remaining:    toNullInt32(key.Remaining),
-			LastRequest:  toNullTime(key.LastRequest),
-			LastRefillAt: toNullTime(key.LastRefillAt),
-			UpdatedAt:    key.UpdatedAt,
-		})
-	}
-	return s.sqliteQ.UpdateAPIKeyUsage(ctx, sqlitestore.UpdateAPIKeyUsageParams{
+func (a *sqliteAdapter) UpdateAPIKeyUsage(ctx context.Context, key *APIKey) error {
+	return a.q.UpdateAPIKeyUsage(ctx, sqlitestore.UpdateAPIKeyUsageParams{
 		ID:           key.ID,
 		RequestCount: int64(key.RequestCount),
 		Remaining:    toNullInt64FromInt32(key.Remaining),
@@ -241,32 +469,23 @@ func (s *Store) UpdateAPIKeyUsage(ctx context.Context, key *APIKey) error {
 	})
 }
 
-// DeleteAPIKey deletes an API key by ID.
-func (s *Store) DeleteAPIKey(ctx context.Context, id string) error {
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.DeleteAPIKey(ctx, id)
-	}
-	return s.sqliteQ.DeleteAPIKey(ctx, id)
+func (a *sqliteAdapter) DeleteAPIKey(ctx context.Context, id string) error {
+	return a.q.DeleteAPIKey(ctx, id)
 }
 
-// DeleteAPIKeysByUserID deletes all API keys for a user.
-func (s *Store) DeleteAPIKeysByUserID(ctx context.Context, userID string) error {
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.DeleteAPIKeysByUserID(ctx, userID)
-	}
-	return s.sqliteQ.DeleteAPIKeysByUserID(ctx, userID)
+func (a *sqliteAdapter) DeleteAPIKeysByUserID(ctx context.Context, userID string) error {
+	return a.q.DeleteAPIKeysByUserID(ctx, userID)
 }
 
-// DeleteExpiredAPIKeys deletes all expired API keys.
-func (s *Store) DeleteExpiredAPIKeys(ctx context.Context) (int64, error) {
-	now := time.Now()
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.DeleteExpiredAPIKeys(ctx, sql.NullTime{Time: now, Valid: true})
-	}
-	return s.sqliteQ.DeleteExpiredAPIKeys(ctx, sql.NullString{String: now.Format(time.RFC3339), Valid: true})
+func (a *sqliteAdapter) DeleteExpiredAPIKeys(ctx context.Context) (int64, error) {
+	return a.q.DeleteExpiredAPIKeys(ctx, sql.NullString{String: time.Now().Format(time.RFC3339), Valid: true})
 }
 
-// ---- Conversion helpers ----
+var _ Querier = (*sqliteAdapter)(nil)
+
+// =============================================================================
+// Conversion helpers
+// =============================================================================
 
 func toNullString(s *string) sql.NullString {
 	if s == nil {
@@ -368,7 +587,38 @@ func int64ToBool(i int64) bool {
 	return i != 0
 }
 
+// =============================================================================
+// Domain conversion helpers
+// =============================================================================
+
 func pgKeyToDomain(row *pgstore.ApiKey) *APIKey {
+	return &APIKey{
+		ID:                  row.ID,
+		Name:                fromNullString(row.Name),
+		Start:               row.Start,
+		Prefix:              fromNullString(row.Prefix),
+		Key:                 row.Key,
+		KeyPrefix:           row.KeyPrefix,
+		UserID:              row.UserID,
+		RateLimitEnabled:    row.RateLimitEnabled,
+		RateLimitTimeWindow: fromNullInt64(row.RateLimitTimeWindow),
+		RateLimitMax:        fromNullInt32(row.RateLimitMax),
+		RequestCount:        row.RequestCount,
+		Remaining:           fromNullInt32(row.Remaining),
+		RefillInterval:      fromNullInt64(row.RefillInterval),
+		RefillAmount:        fromNullInt32(row.RefillAmount),
+		LastRefillAt:        fromNullTime(row.LastRefillAt),
+		Enabled:             row.Enabled,
+		LastRequest:         fromNullTime(row.LastRequest),
+		ExpiresAt:           fromNullTime(row.ExpiresAt),
+		Permissions:         fromNullString(row.Permissions),
+		Metadata:            fromNullString(row.Metadata),
+		CreatedAt:           row.CreatedAt,
+		UpdatedAt:           row.UpdatedAt,
+	}
+}
+
+func mysqlKeyToDomain(row *mysqlstore.ApiKey) *APIKey {
 	return &APIKey{
 		ID:                  row.ID,
 		Name:                fromNullString(row.Name),

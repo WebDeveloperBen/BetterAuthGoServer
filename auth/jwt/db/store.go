@@ -4,6 +4,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/jwt/db/mysqlstore"
@@ -11,6 +12,10 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/jwt/db/sqlitestore"
 	coredb "github.com/webdeveloperben/BetterAuthGoServer/db"
 )
+
+// =============================================================================
+// Domain types
+// =============================================================================
 
 // JWTKey represents a JWT signing/verification key.
 type JWTKey struct {
@@ -35,87 +40,380 @@ type RevokedToken struct {
 	RevokedAt time.Time
 }
 
+// =============================================================================
+// Querier interface - each dialect implements this
+// =============================================================================
+
+// Querier defines all JWT database operations.
+// Each dialect implements this interface, handling type conversions internally.
+type Querier interface {
+	// Blocklist operations
+	RevokeJWTToken(ctx context.Context, jti string, expiresAt time.Time) error
+	IsJWTTokenRevoked(ctx context.Context, jti string) (bool, error)
+	DeleteExpiredRevokedTokens(ctx context.Context) error
+
+	// Key management operations
+	CreateJWTKey(ctx context.Context, key *JWTKey) error
+	GetJWTKeyByID(ctx context.Context, id string) (*JWTKey, error)
+	GetActiveJWTKey(ctx context.Context, algorithm string) (*JWTKey, error)
+	GetJWTKeysForVerification(ctx context.Context, algorithm string) ([]*JWTKey, error)
+	GetJWTKeyForVerification(ctx context.Context, id string) (*JWTKey, error)
+	RotateActiveJWTKeys(ctx context.Context, algorithm string, expiresAt time.Time) error
+	RetireExpiredJWTKeys(ctx context.Context) (int64, error)
+	DeleteJWTKey(ctx context.Context, id string) error
+}
+
+// =============================================================================
+// Store - delegates to dialect-specific Querier
+// =============================================================================
+
 // Store wraps the sqlc-generated queries for JWT operations.
 type Store struct {
-	dialect coredb.Dialect
-	pgQ     *pgstore.Queries
-	sqliteQ *sqlitestore.Queries
-	mysqlQ  *mysqlstore.Queries
+	q Querier
 }
 
 // New creates a new Store for JWT operations.
-func New(db coredb.DBTX, dialect coredb.Dialect) *Store {
-	s := &Store{dialect: dialect}
+func New(db coredb.DBTX, dialect coredb.Dialect) (*Store, error) {
+	var q Querier
+
 	switch dialect {
 	case coredb.DialectPostgres:
-		s.pgQ = pgstore.New(db)
+		q = newPgAdapter(db)
 	case coredb.DialectMySQL:
-		s.mysqlQ = mysqlstore.New(db)
+		q = newMysqlAdapter(db)
+	case coredb.DialectSQLite:
+		q = newSqliteAdapter(db)
 	default:
-		s.sqliteQ = sqlitestore.New(db)
+		return nil, fmt.Errorf("unsupported dialect: %s", dialect)
 	}
-	return s
+
+	return &Store{q: q}, nil
 }
 
-// ---- Blocklist operations ----
+// Blocklist operations - delegate to Querier
 
-// RevokeJWTToken adds a token to the blocklist.
 func (s *Store) RevokeJWTToken(ctx context.Context, jti string, expiresAt time.Time) error {
-	now := time.Now()
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.RevokeJWTToken(ctx, pgstore.RevokeJWTTokenParams{
-			ID:        jti,
-			ExpiresAt: expiresAt,
-			RevokedAt: now,
-		})
-	}
-	return s.sqliteQ.RevokeJWTToken(ctx, sqlitestore.RevokeJWTTokenParams{
+	return s.q.RevokeJWTToken(ctx, jti, expiresAt)
+}
+
+func (s *Store) IsJWTTokenRevoked(ctx context.Context, jti string) (bool, error) {
+	return s.q.IsJWTTokenRevoked(ctx, jti)
+}
+
+func (s *Store) DeleteExpiredRevokedTokens(ctx context.Context) error {
+	return s.q.DeleteExpiredRevokedTokens(ctx)
+}
+
+// Key management operations - delegate to Querier
+
+func (s *Store) CreateJWTKey(ctx context.Context, key *JWTKey) error {
+	return s.q.CreateJWTKey(ctx, key)
+}
+
+func (s *Store) GetJWTKeyByID(ctx context.Context, id string) (*JWTKey, error) {
+	return s.q.GetJWTKeyByID(ctx, id)
+}
+
+func (s *Store) GetActiveJWTKey(ctx context.Context, algorithm string) (*JWTKey, error) {
+	return s.q.GetActiveJWTKey(ctx, algorithm)
+}
+
+func (s *Store) GetJWTKeysForVerification(ctx context.Context, algorithm string) ([]*JWTKey, error) {
+	return s.q.GetJWTKeysForVerification(ctx, algorithm)
+}
+
+func (s *Store) GetJWTKeyForVerification(ctx context.Context, id string) (*JWTKey, error) {
+	return s.q.GetJWTKeyForVerification(ctx, id)
+}
+
+func (s *Store) RotateActiveJWTKeys(ctx context.Context, algorithm string, expiresAt time.Time) error {
+	return s.q.RotateActiveJWTKeys(ctx, algorithm, expiresAt)
+}
+
+func (s *Store) RetireExpiredJWTKeys(ctx context.Context) (int64, error) {
+	return s.q.RetireExpiredJWTKeys(ctx)
+}
+
+func (s *Store) DeleteJWTKey(ctx context.Context, id string) error {
+	return s.q.DeleteJWTKey(ctx, id)
+}
+
+// =============================================================================
+// PostgreSQL adapter
+// =============================================================================
+
+type pgAdapter struct {
+	q *pgstore.Queries
+}
+
+func newPgAdapter(db coredb.DBTX) *pgAdapter {
+	return &pgAdapter{q: pgstore.New(db)}
+}
+
+func (a *pgAdapter) RevokeJWTToken(ctx context.Context, jti string, expiresAt time.Time) error {
+	return a.q.RevokeJWTToken(ctx, pgstore.RevokeJWTTokenParams{
 		ID:        jti,
-		ExpiresAt: expiresAt.Format(time.RFC3339),
-		RevokedAt: now.Format(time.RFC3339),
+		ExpiresAt: expiresAt,
+		RevokedAt: time.Now(),
 	})
 }
 
-// IsJWTTokenRevoked checks if a token is in the blocklist.
-func (s *Store) IsJWTTokenRevoked(ctx context.Context, jti string) (bool, error) {
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.IsJWTTokenRevoked(ctx, jti)
+func (a *pgAdapter) IsJWTTokenRevoked(ctx context.Context, jti string) (bool, error) {
+	return a.q.IsJWTTokenRevoked(ctx, jti)
+}
+
+func (a *pgAdapter) DeleteExpiredRevokedTokens(ctx context.Context) error {
+	return a.q.DeleteExpiredRevokedTokens(ctx, time.Now())
+}
+
+func (a *pgAdapter) CreateJWTKey(ctx context.Context, key *JWTKey) error {
+	return a.q.CreateJWTKey(ctx, pgstore.CreateJWTKeyParams{
+		ID:            key.ID,
+		Algorithm:     key.Algorithm,
+		Use:           key.Use,
+		Kty:           key.KeyType,
+		Status:        key.Status,
+		PrivateKeyEnc: key.PrivateKeyEnc,
+		PublicKeyJwk:  key.PublicKeyJWK,
+		ActivatedAt:   key.ActivatedAt,
+		CreatedAt:     key.CreatedAt,
+		UpdatedAt:     key.UpdatedAt,
+	})
+}
+
+func (a *pgAdapter) GetJWTKeyByID(ctx context.Context, id string) (*JWTKey, error) {
+	row, err := a.q.GetJWTKeyByID(ctx, id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
 	}
-	revoked, err := s.sqliteQ.IsJWTTokenRevoked(ctx, jti)
+	return pgKeyToDomain(&row), nil
+}
+
+func (a *pgAdapter) GetActiveJWTKey(ctx context.Context, algorithm string) (*JWTKey, error) {
+	row, err := a.q.GetActiveJWTKey(ctx, algorithm)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return pgKeyToDomain(&row), nil
+}
+
+func (a *pgAdapter) GetJWTKeysForVerification(ctx context.Context, algorithm string) ([]*JWTKey, error) {
+	now := time.Now()
+	rows, err := a.q.GetJWTKeysForVerification(ctx, pgstore.GetJWTKeysForVerificationParams{
+		Algorithm: algorithm,
+		ExpiresAt: sql.NullTime{Time: now, Valid: true},
+	})
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]*JWTKey, len(rows))
+	for i, row := range rows {
+		r := row
+		keys[i] = pgKeyToDomain(&r)
+	}
+	return keys, nil
+}
+
+func (a *pgAdapter) GetJWTKeyForVerification(ctx context.Context, id string) (*JWTKey, error) {
+	now := time.Now()
+	row, err := a.q.GetJWTKeyForVerification(ctx, pgstore.GetJWTKeyForVerificationParams{
+		ID:        id,
+		ExpiresAt: sql.NullTime{Time: now, Valid: true},
+	})
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return pgKeyToDomain(&row), nil
+}
+
+func (a *pgAdapter) RotateActiveJWTKeys(ctx context.Context, algorithm string, expiresAt time.Time) error {
+	now := time.Now()
+	return a.q.RotateActiveJWTKeys(ctx, pgstore.RotateActiveJWTKeysParams{
+		RotatedAt: sql.NullTime{Time: now, Valid: true},
+		ExpiresAt: sql.NullTime{Time: expiresAt, Valid: true},
+		UpdatedAt: now,
+		Algorithm: algorithm,
+	})
+}
+
+func (a *pgAdapter) RetireExpiredJWTKeys(ctx context.Context) (int64, error) {
+	now := time.Now()
+	return a.q.RetireExpiredJWTKeys(ctx, pgstore.RetireExpiredJWTKeysParams{
+		UpdatedAt: now,
+		ExpiresAt: sql.NullTime{Time: now, Valid: true},
+	})
+}
+
+func (a *pgAdapter) DeleteJWTKey(ctx context.Context, id string) error {
+	return a.q.DeleteJWTKey(ctx, id)
+}
+
+var _ Querier = (*pgAdapter)(nil)
+
+// =============================================================================
+// MySQL adapter
+// =============================================================================
+
+type mysqlAdapter struct {
+	q *mysqlstore.Queries
+}
+
+func newMysqlAdapter(db coredb.DBTX) *mysqlAdapter {
+	return &mysqlAdapter{q: mysqlstore.New(db)}
+}
+
+func (a *mysqlAdapter) RevokeJWTToken(ctx context.Context, jti string, expiresAt time.Time) error {
+	return a.q.RevokeJWTToken(ctx, mysqlstore.RevokeJWTTokenParams{
+		ID:        jti,
+		ExpiresAt: expiresAt,
+		RevokedAt: time.Now(),
+	})
+}
+
+func (a *mysqlAdapter) IsJWTTokenRevoked(ctx context.Context, jti string) (bool, error) {
+	return a.q.IsJWTTokenRevoked(ctx, jti)
+}
+
+func (a *mysqlAdapter) DeleteExpiredRevokedTokens(ctx context.Context) error {
+	return a.q.DeleteExpiredRevokedTokens(ctx, time.Now())
+}
+
+func (a *mysqlAdapter) CreateJWTKey(ctx context.Context, key *JWTKey) error {
+	return a.q.CreateJWTKey(ctx, mysqlstore.CreateJWTKeyParams{
+		ID:            key.ID,
+		Algorithm:     key.Algorithm,
+		Use:           key.Use,
+		Kty:           key.KeyType,
+		Status:        key.Status,
+		PrivateKeyEnc: key.PrivateKeyEnc,
+		PublicKeyJwk:  key.PublicKeyJWK,
+		ActivatedAt:   key.ActivatedAt,
+		CreatedAt:     key.CreatedAt,
+		UpdatedAt:     key.UpdatedAt,
+	})
+}
+
+func (a *mysqlAdapter) GetJWTKeyByID(ctx context.Context, id string) (*JWTKey, error) {
+	row, err := a.q.GetJWTKeyByID(ctx, id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return mysqlKeyToDomain(&row), nil
+}
+
+func (a *mysqlAdapter) GetActiveJWTKey(ctx context.Context, algorithm string) (*JWTKey, error) {
+	row, err := a.q.GetActiveJWTKey(ctx, algorithm)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return mysqlKeyToDomain(&row), nil
+}
+
+func (a *mysqlAdapter) GetJWTKeysForVerification(ctx context.Context, algorithm string) ([]*JWTKey, error) {
+	now := time.Now()
+	rows, err := a.q.GetJWTKeysForVerification(ctx, mysqlstore.GetJWTKeysForVerificationParams{
+		Algorithm: algorithm,
+		ExpiresAt: sql.NullTime{Time: now, Valid: true},
+	})
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]*JWTKey, len(rows))
+	for i, row := range rows {
+		r := row
+		keys[i] = mysqlKeyToDomain(&r)
+	}
+	return keys, nil
+}
+
+func (a *mysqlAdapter) GetJWTKeyForVerification(ctx context.Context, id string) (*JWTKey, error) {
+	now := time.Now()
+	row, err := a.q.GetJWTKeyForVerification(ctx, mysqlstore.GetJWTKeyForVerificationParams{
+		ID:        id,
+		ExpiresAt: sql.NullTime{Time: now, Valid: true},
+	})
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return mysqlKeyToDomain(&row), nil
+}
+
+func (a *mysqlAdapter) RotateActiveJWTKeys(ctx context.Context, algorithm string, expiresAt time.Time) error {
+	now := time.Now()
+	return a.q.RotateActiveJWTKeys(ctx, mysqlstore.RotateActiveJWTKeysParams{
+		RotatedAt: sql.NullTime{Time: now, Valid: true},
+		ExpiresAt: sql.NullTime{Time: expiresAt, Valid: true},
+		UpdatedAt: now,
+		Algorithm: algorithm,
+	})
+}
+
+func (a *mysqlAdapter) RetireExpiredJWTKeys(ctx context.Context) (int64, error) {
+	now := time.Now()
+	return a.q.RetireExpiredJWTKeys(ctx, mysqlstore.RetireExpiredJWTKeysParams{
+		UpdatedAt: now,
+		ExpiresAt: sql.NullTime{Time: now, Valid: true},
+	})
+}
+
+func (a *mysqlAdapter) DeleteJWTKey(ctx context.Context, id string) error {
+	return a.q.DeleteJWTKey(ctx, id)
+}
+
+var _ Querier = (*mysqlAdapter)(nil)
+
+// =============================================================================
+// SQLite adapter
+// =============================================================================
+
+type sqliteAdapter struct {
+	q *sqlitestore.Queries
+}
+
+func newSqliteAdapter(db coredb.DBTX) *sqliteAdapter {
+	return &sqliteAdapter{q: sqlitestore.New(db)}
+}
+
+func (a *sqliteAdapter) RevokeJWTToken(ctx context.Context, jti string, expiresAt time.Time) error {
+	return a.q.RevokeJWTToken(ctx, sqlitestore.RevokeJWTTokenParams{
+		ID:        jti,
+		ExpiresAt: expiresAt.Format(time.RFC3339),
+		RevokedAt: time.Now().Format(time.RFC3339),
+	})
+}
+
+func (a *sqliteAdapter) IsJWTTokenRevoked(ctx context.Context, jti string) (bool, error) {
+	count, err := a.q.IsJWTTokenRevoked(ctx, jti)
 	if err != nil {
 		return false, err
 	}
-	return revoked > 0, nil
+	return count > 0, nil
 }
 
-// DeleteExpiredRevokedTokens removes expired tokens from the blocklist.
-func (s *Store) DeleteExpiredRevokedTokens(ctx context.Context) error {
-	now := time.Now()
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.DeleteExpiredRevokedTokens(ctx, now)
-	}
-	return s.sqliteQ.DeleteExpiredRevokedTokens(ctx, now.Format(time.RFC3339))
+func (a *sqliteAdapter) DeleteExpiredRevokedTokens(ctx context.Context) error {
+	return a.q.DeleteExpiredRevokedTokens(ctx, time.Now().Format(time.RFC3339))
 }
 
-// ---- Key management operations ----
-
-// CreateJWTKey creates a new JWT key.
-func (s *Store) CreateJWTKey(ctx context.Context, key *JWTKey) error {
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.CreateJWTKey(ctx, pgstore.CreateJWTKeyParams{
-			ID:            key.ID,
-			Algorithm:     key.Algorithm,
-			Use:           key.Use,
-			Kty:           key.KeyType,
-			Status:        key.Status,
-			PrivateKeyEnc: key.PrivateKeyEnc,
-			PublicKeyJwk:  key.PublicKeyJWK,
-			ActivatedAt:   key.ActivatedAt,
-			CreatedAt:     key.CreatedAt,
-			UpdatedAt:     key.UpdatedAt,
-		})
-	}
-	return s.sqliteQ.CreateJWTKey(ctx, sqlitestore.CreateJWTKeyParams{
+func (a *sqliteAdapter) CreateJWTKey(ctx context.Context, key *JWTKey) error {
+	return a.q.CreateJWTKey(ctx, sqlitestore.CreateJWTKeyParams{
 		ID:            key.ID,
 		Algorithm:     key.Algorithm,
 		Use:           key.Use,
@@ -129,19 +427,8 @@ func (s *Store) CreateJWTKey(ctx context.Context, key *JWTKey) error {
 	})
 }
 
-// GetJWTKeyByID retrieves a JWT key by ID.
-func (s *Store) GetJWTKeyByID(ctx context.Context, id string) (*JWTKey, error) {
-	if s.dialect == coredb.DialectPostgres {
-		row, err := s.pgQ.GetJWTKeyByID(ctx, id)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				return nil, nil
-			}
-			return nil, err
-		}
-		return pgKeyToDomain(&row), nil
-	}
-	row, err := s.sqliteQ.GetJWTKeyByID(ctx, id)
+func (a *sqliteAdapter) GetJWTKeyByID(ctx context.Context, id string) (*JWTKey, error) {
+	row, err := a.q.GetJWTKeyByID(ctx, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -151,19 +438,8 @@ func (s *Store) GetJWTKeyByID(ctx context.Context, id string) (*JWTKey, error) {
 	return sqliteKeyToDomain(&row), nil
 }
 
-// GetActiveJWTKey retrieves the active key for the given algorithm.
-func (s *Store) GetActiveJWTKey(ctx context.Context, algorithm string) (*JWTKey, error) {
-	if s.dialect == coredb.DialectPostgres {
-		row, err := s.pgQ.GetActiveJWTKey(ctx, algorithm)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				return nil, nil
-			}
-			return nil, err
-		}
-		return pgKeyToDomain(&row), nil
-	}
-	row, err := s.sqliteQ.GetActiveJWTKey(ctx, algorithm)
+func (a *sqliteAdapter) GetActiveJWTKey(ctx context.Context, algorithm string) (*JWTKey, error) {
+	row, err := a.q.GetActiveJWTKey(ctx, algorithm)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -173,25 +449,9 @@ func (s *Store) GetActiveJWTKey(ctx context.Context, algorithm string) (*JWTKey,
 	return sqliteKeyToDomain(&row), nil
 }
 
-// GetJWTKeysForVerification retrieves all keys valid for verification.
-func (s *Store) GetJWTKeysForVerification(ctx context.Context, algorithm string) ([]*JWTKey, error) {
+func (a *sqliteAdapter) GetJWTKeysForVerification(ctx context.Context, algorithm string) ([]*JWTKey, error) {
 	now := time.Now()
-	if s.dialect == coredb.DialectPostgres {
-		rows, err := s.pgQ.GetJWTKeysForVerification(ctx, pgstore.GetJWTKeysForVerificationParams{
-			Algorithm: algorithm,
-			ExpiresAt: sql.NullTime{Time: now, Valid: true},
-		})
-		if err != nil {
-			return nil, err
-		}
-		keys := make([]*JWTKey, len(rows))
-		for i, row := range rows {
-			r := row // avoid aliasing
-			keys[i] = pgKeyToDomain(&r)
-		}
-		return keys, nil
-	}
-	rows, err := s.sqliteQ.GetJWTKeysForVerification(ctx, sqlitestore.GetJWTKeysForVerificationParams{
+	rows, err := a.q.GetJWTKeysForVerification(ctx, sqlitestore.GetJWTKeysForVerificationParams{
 		Algorithm: algorithm,
 		ExpiresAt: sql.NullString{String: now.Format(time.RFC3339), Valid: true},
 	})
@@ -206,23 +466,9 @@ func (s *Store) GetJWTKeysForVerification(ctx context.Context, algorithm string)
 	return keys, nil
 }
 
-// GetJWTKeyForVerification retrieves a specific key for verification.
-func (s *Store) GetJWTKeyForVerification(ctx context.Context, id string) (*JWTKey, error) {
+func (a *sqliteAdapter) GetJWTKeyForVerification(ctx context.Context, id string) (*JWTKey, error) {
 	now := time.Now()
-	if s.dialect == coredb.DialectPostgres {
-		row, err := s.pgQ.GetJWTKeyForVerification(ctx, pgstore.GetJWTKeyForVerificationParams{
-			ID:        id,
-			ExpiresAt: sql.NullTime{Time: now, Valid: true},
-		})
-		if err != nil {
-			if err == sql.ErrNoRows {
-				return nil, nil
-			}
-			return nil, err
-		}
-		return pgKeyToDomain(&row), nil
-	}
-	row, err := s.sqliteQ.GetJWTKeyForVerification(ctx, sqlitestore.GetJWTKeyForVerificationParams{
+	row, err := a.q.GetJWTKeyForVerification(ctx, sqlitestore.GetJWTKeyForVerificationParams{
 		ID:        id,
 		ExpiresAt: sql.NullString{String: now.Format(time.RFC3339), Valid: true},
 	})
@@ -235,18 +481,9 @@ func (s *Store) GetJWTKeyForVerification(ctx context.Context, id string) (*JWTKe
 	return sqliteKeyToDomain(&row), nil
 }
 
-// RotateActiveJWTKeys moves active keys to rotating status.
-func (s *Store) RotateActiveJWTKeys(ctx context.Context, algorithm string, expiresAt time.Time) error {
+func (a *sqliteAdapter) RotateActiveJWTKeys(ctx context.Context, algorithm string, expiresAt time.Time) error {
 	now := time.Now()
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.RotateActiveJWTKeys(ctx, pgstore.RotateActiveJWTKeysParams{
-			RotatedAt: sql.NullTime{Time: now, Valid: true},
-			ExpiresAt: sql.NullTime{Time: expiresAt, Valid: true},
-			UpdatedAt: now,
-			Algorithm: algorithm,
-		})
-	}
-	return s.sqliteQ.RotateActiveJWTKeys(ctx, sqlitestore.RotateActiveJWTKeysParams{
+	return a.q.RotateActiveJWTKeys(ctx, sqlitestore.RotateActiveJWTKeysParams{
 		RotatedAt: sql.NullString{String: now.Format(time.RFC3339), Valid: true},
 		ExpiresAt: sql.NullString{String: expiresAt.Format(time.RFC3339), Valid: true},
 		UpdatedAt: now.Format(time.RFC3339),
@@ -254,32 +491,47 @@ func (s *Store) RotateActiveJWTKeys(ctx context.Context, algorithm string, expir
 	})
 }
 
-// RetireExpiredJWTKeys marks expired rotating keys as retired.
-func (s *Store) RetireExpiredJWTKeys(ctx context.Context) (int64, error) {
+func (a *sqliteAdapter) RetireExpiredJWTKeys(ctx context.Context) (int64, error) {
 	now := time.Now()
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.RetireExpiredJWTKeys(ctx, pgstore.RetireExpiredJWTKeysParams{
-			UpdatedAt: now,
-			ExpiresAt: sql.NullTime{Time: now, Valid: true},
-		})
-	}
-	return s.sqliteQ.RetireExpiredJWTKeys(ctx, sqlitestore.RetireExpiredJWTKeysParams{
+	return a.q.RetireExpiredJWTKeys(ctx, sqlitestore.RetireExpiredJWTKeysParams{
 		UpdatedAt: now.Format(time.RFC3339),
 		ExpiresAt: sql.NullString{String: now.Format(time.RFC3339), Valid: true},
 	})
 }
 
-// DeleteJWTKey deletes a JWT key by ID.
-func (s *Store) DeleteJWTKey(ctx context.Context, id string) error {
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.DeleteJWTKey(ctx, id)
-	}
-	return s.sqliteQ.DeleteJWTKey(ctx, id)
+func (a *sqliteAdapter) DeleteJWTKey(ctx context.Context, id string) error {
+	return a.q.DeleteJWTKey(ctx, id)
 }
 
-// ---- Conversion helpers ----
+var _ Querier = (*sqliteAdapter)(nil)
+
+// =============================================================================
+// Conversion helpers
+// =============================================================================
 
 func pgKeyToDomain(row *pgstore.JwtKey) *JWTKey {
+	key := &JWTKey{
+		ID:            row.ID,
+		Algorithm:     row.Algorithm,
+		Use:           row.Use,
+		KeyType:       row.Kty,
+		Status:        row.Status,
+		PrivateKeyEnc: row.PrivateKeyEnc,
+		PublicKeyJWK:  row.PublicKeyJwk,
+		ActivatedAt:   row.ActivatedAt,
+		CreatedAt:     row.CreatedAt,
+		UpdatedAt:     row.UpdatedAt,
+	}
+	if row.RotatedAt.Valid {
+		key.RotatedAt = &row.RotatedAt.Time
+	}
+	if row.ExpiresAt.Valid {
+		key.ExpiresAt = &row.ExpiresAt.Time
+	}
+	return key
+}
+
+func mysqlKeyToDomain(row *mysqlstore.JwtKey) *JWTKey {
 	key := &JWTKey{
 		ID:            row.ID,
 		Algorithm:     row.Algorithm,

@@ -93,11 +93,17 @@ func (s *Service) CreateDeviceCode(ctx context.Context, req CreateDeviceCodeRequ
 	}
 
 	// Generate device code
-	var rawDeviceCode string
+	var (
+		rawDeviceCode string
+		err           error
+	)
 	if s.config.GenerateDeviceCode != nil {
 		rawDeviceCode = s.config.GenerateDeviceCode()
 	} else {
-		rawDeviceCode = generateRandomString(s.config.DeviceCodeLength, deviceCodeCharset)
+		rawDeviceCode, err = generateRandomString(s.config.DeviceCodeLength, deviceCodeCharset)
+		if err != nil {
+		return nil, err
+	}
 	}
 
 	// Generate user code
@@ -105,7 +111,10 @@ func (s *Service) CreateDeviceCode(ctx context.Context, req CreateDeviceCodeRequ
 	if s.config.GenerateUserCode != nil {
 		userCode = s.config.GenerateUserCode()
 	} else {
-		userCode = generateUserCode(s.config.UserCodeLength)
+		userCode, err = generateUserCode(s.config.UserCodeLength)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Hash the device code for storage
@@ -358,22 +367,25 @@ func (s *Service) cleanupLoop() {
 // Helper functions
 
 // generateRandomString generates a cryptographically secure random string.
-func generateRandomString(length int, charset string) string {
+func generateRandomString(length int, charset string) (string, error) {
 	result := make([]byte, length)
 	for i := range result {
 		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
 		if err != nil {
-			panic(err) // Should never happen with crypto/rand
+			return "", err
 		}
 		result[i] = charset[n.Int64()]
 	}
-	return string(result)
+	return string(result), nil
 }
 
 // generateUserCode generates a user-friendly code with a hyphen in the middle.
-func generateUserCode(length int) string {
-	code := generateRandomString(length, userCodeCharset)
+func generateUserCode(length int) (string, error) {
+	code, err := generateRandomString(length, userCodeCharset)
+	if err != nil {
+		return "", err
+	}
 	// Insert hyphen in the middle
 	mid := len(code) / 2
-	return code[:mid] + "-" + code[mid:]
+	return code[:mid] + "-" + code[mid:], nil
 }

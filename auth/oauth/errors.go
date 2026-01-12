@@ -13,4 +13,7 @@ var (
 	ErrMissingCode      = errors.New("oauth: missing code or state parameter")
 	ErrNoUserInfo       = errors.New("oauth: no user info in result")
 	ErrStoreRequired    = errors.New("oauth: plugin store is required")
+	ErrRedirectNotAllowed = errors.New("oauth: redirect not allowed")
+	ErrEmailNotVerified   = errors.New("oauth: email not verified")
+	ErrNoProviders        = errors.New("oauth: at least one provider is required")
 )

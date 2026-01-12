@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -148,7 +149,7 @@ func TestHasPermission_InvalidAccessControl(t *testing.T) {
 
 	// Create handlers with nil config (access control not configured)
 	config := &Config{}
-	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config, slog.Default())
 
 	// Send valid JSON request
 	reqBody := hasPermissionRequest{
@@ -175,7 +176,7 @@ func TestHasPermission_UserNotFound(t *testing.T) {
 	// Create access control
 	ac, _ := access.CreateDefaultAccessControl()
 	config := &Config{AccessControl: ac}
-	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config, slog.Default())
 
 	// Create request for non-existent user
 	reqBody := hasPermissionRequest{
@@ -210,7 +211,7 @@ func TestHasPermission_ValidUser(t *testing.T) {
 	// Create access control
 	ac, _ := access.CreateDefaultAccessControl()
 	config := &Config{AccessControl: ac}
-	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config, slog.Default())
 
 	// Create request
 	reqBody := hasPermissionRequest{
@@ -247,7 +248,7 @@ func TestHasPermission_InvalidRole(t *testing.T) {
 	// Create access control
 	ac, _ := access.CreateDefaultAccessControl()
 	config := &Config{AccessControl: ac}
-	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config, slog.Default())
 
 	// Create request with invalid role
 	reqBody := hasPermissionRequest{
@@ -275,7 +276,7 @@ func TestHasPermission_NoUserOrRole(t *testing.T) {
 	// Create access control
 	ac, _ := access.CreateDefaultAccessControl()
 	config := &Config{AccessControl: ac}
-	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config, slog.Default())
 
 	// Create request with neither userId nor role
 	reqBody := hasPermissionRequest{
@@ -301,7 +302,7 @@ func TestCheckRolePermission_InvalidAccessControl(t *testing.T) {
 
 	// Create handlers with nil config
 	config := &Config{}
-	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config, slog.Default())
 
 	// Send valid JSON request
 	reqBody := checkRolePermissionRequest{
@@ -328,7 +329,7 @@ func TestCheckRolePermission_InvalidRole(t *testing.T) {
 	// Create access control
 	ac, _ := access.CreateDefaultAccessControl()
 	config := &Config{AccessControl: ac}
-	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config, slog.Default())
 
 	// Create request with invalid role
 	reqBody := checkRolePermissionRequest{
@@ -356,7 +357,7 @@ func TestCheckRolePermission_ValidRole(t *testing.T) {
 	// Create access control
 	ac, _ := access.CreateDefaultAccessControl()
 	config := &Config{AccessControl: ac}
-	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config)
+	handlers := newHandlers(service, &mockAuth{}, &mockSessionManager{}, &mockHandlersUserProvider{}, config, slog.Default())
 
 	// Create request for admin role
 	reqBody := checkRolePermissionRequest{

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/organization/access"
 	orgdb "github.com/webdeveloperben/BetterAuthGoServer/auth/organization/db"
@@ -106,7 +107,11 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 
 	// Create plugin's own store using sqlc-generated code
-	p.dbStore = orgdb.New(ctx.RawDB, ctx.Dialect)
+	dbStore, err := orgdb.New(ctx.RawDB, ctx.Dialect)
+	if err != nil {
+		return fmt.Errorf("organization plugin: failed to create store: %w", err)
+	}
+	p.dbStore = dbStore
 
 	// Create service using the plugin's own store
 	p.service = NewService(p.dbStore, ctx.RawDB, ctx.Dialect, p.logger, &p.config)
@@ -284,7 +289,8 @@ func (p *Plugin) ensureSessionExtensionColumns(rawDB coredb.DBTX, dialect coredb
 		return fmt.Errorf("database connection not available")
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	switch dialect {
 	case coredb.DialectSQLite:

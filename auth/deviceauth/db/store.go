@@ -4,12 +4,18 @@ package db
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/deviceauth/db/mysqlstore"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/deviceauth/db/pgstore"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/deviceauth/db/sqlitestore"
 	coredb "github.com/webdeveloperben/BetterAuthGoServer/db"
 )
+
+// =============================================================================
+// Domain types
+// =============================================================================
 
 // DeviceCode represents a device authorization code.
 type DeviceCode struct {
@@ -28,44 +34,257 @@ type DeviceCode struct {
 	UpdatedAt       time.Time
 }
 
+// =============================================================================
+// Querier interface - each dialect implements this
+// =============================================================================
+
+// Querier defines all device code database operations.
+// Each dialect implements this interface, handling type conversions internally.
+type Querier interface {
+	CreateDeviceCode(ctx context.Context, code *DeviceCode) error
+	GetDeviceCodeByUserCode(ctx context.Context, userCode string) (*DeviceCode, error)
+	GetDeviceCodeByHash(ctx context.Context, hashPrefix, fullHash string) (*DeviceCode, error)
+	UpdateDeviceCodeStatus(ctx context.Context, id, status string, userID *string) error
+	UpdateDeviceCodeLastPolled(ctx context.Context, id string, lastPolledAt time.Time) error
+	DeleteExpiredDeviceCodes(ctx context.Context) (int64, error)
+	DeleteDeviceCode(ctx context.Context, id string) error
+}
+
+// =============================================================================
+// Store - delegates to dialect-specific Querier
+// =============================================================================
+
 // Store wraps the sqlc-generated queries for device code operations.
 type Store struct {
-	dialect coredb.Dialect
-	pgQ     *pgstore.Queries
-	sqliteQ *sqlitestore.Queries
+	q Querier
 }
 
 // New creates a new Store for device code operations.
-func New(db coredb.DBTX, dialect coredb.Dialect) *Store {
-	s := &Store{dialect: dialect}
-	if dialect == coredb.DialectPostgres {
-		s.pgQ = pgstore.New(db)
-	} else {
-		s.sqliteQ = sqlitestore.New(db)
+func New(db coredb.DBTX, dialect coredb.Dialect) (*Store, error) {
+	var q Querier
+
+	switch dialect {
+	case coredb.DialectPostgres:
+		q = newPgAdapter(db)
+	case coredb.DialectMySQL:
+		q = newMysqlAdapter(db)
+	case coredb.DialectSQLite:
+		q = newSqliteAdapter(db)
+	default:
+		return nil, fmt.Errorf("unsupported dialect: %s", dialect)
 	}
-	return s
+
+	return &Store{q: q}, nil
 }
 
-// CreateDeviceCode stores a new device authorization code.
+// Delegate to Querier
+
 func (s *Store) CreateDeviceCode(ctx context.Context, code *DeviceCode) error {
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.CreateDeviceCode(ctx, pgstore.CreateDeviceCodeParams{
-			ID:              code.ID,
-			DeviceCode:      code.DeviceCode,
-			DeviceCodeHash:  code.DeviceCodeHash,
-			UserCode:        code.UserCode,
-			ClientID:        toNullString(code.ClientID),
-			Scope:           toNullString(code.Scope),
-			UserID:          toNullString(code.UserID),
-			Status:          code.Status,
-			PollingInterval: int32(code.PollingInterval),
-			LastPolledAt:    toNullTime(code.LastPolledAt),
-			ExpiresAt:       code.ExpiresAt,
-			CreatedAt:       code.CreatedAt,
-			UpdatedAt:       code.UpdatedAt,
-		})
+	return s.q.CreateDeviceCode(ctx, code)
+}
+
+func (s *Store) GetDeviceCodeByUserCode(ctx context.Context, userCode string) (*DeviceCode, error) {
+	return s.q.GetDeviceCodeByUserCode(ctx, userCode)
+}
+
+func (s *Store) GetDeviceCodeByHash(ctx context.Context, hashPrefix, fullHash string) (*DeviceCode, error) {
+	return s.q.GetDeviceCodeByHash(ctx, hashPrefix, fullHash)
+}
+
+func (s *Store) UpdateDeviceCodeStatus(ctx context.Context, id, status string, userID *string) error {
+	return s.q.UpdateDeviceCodeStatus(ctx, id, status, userID)
+}
+
+func (s *Store) UpdateDeviceCodeLastPolled(ctx context.Context, id string, lastPolledAt time.Time) error {
+	return s.q.UpdateDeviceCodeLastPolled(ctx, id, lastPolledAt)
+}
+
+func (s *Store) DeleteExpiredDeviceCodes(ctx context.Context) (int64, error) {
+	return s.q.DeleteExpiredDeviceCodes(ctx)
+}
+
+func (s *Store) DeleteDeviceCode(ctx context.Context, id string) error {
+	return s.q.DeleteDeviceCode(ctx, id)
+}
+
+// =============================================================================
+// PostgreSQL adapter
+// =============================================================================
+
+type pgAdapter struct {
+	q *pgstore.Queries
+}
+
+func newPgAdapter(db coredb.DBTX) *pgAdapter {
+	return &pgAdapter{q: pgstore.New(db)}
+}
+
+func (a *pgAdapter) CreateDeviceCode(ctx context.Context, code *DeviceCode) error {
+	return a.q.CreateDeviceCode(ctx, pgstore.CreateDeviceCodeParams{
+		ID:              code.ID,
+		DeviceCode:      code.DeviceCode,
+		DeviceCodeHash:  code.DeviceCodeHash,
+		UserCode:        code.UserCode,
+		ClientID:        toNullString(code.ClientID),
+		Scope:           toNullString(code.Scope),
+		UserID:          toNullString(code.UserID),
+		Status:          code.Status,
+		PollingInterval: int32(code.PollingInterval),
+		LastPolledAt:    toNullTime(code.LastPolledAt),
+		ExpiresAt:       code.ExpiresAt,
+		CreatedAt:       code.CreatedAt,
+		UpdatedAt:       code.UpdatedAt,
+	})
+}
+
+func (a *pgAdapter) GetDeviceCodeByUserCode(ctx context.Context, userCode string) (*DeviceCode, error) {
+	row, err := a.q.GetDeviceCodeByUserCode(ctx, userCode)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
 	}
-	return s.sqliteQ.CreateDeviceCode(ctx, sqlitestore.CreateDeviceCodeParams{
+	return pgCodeToDomain(&row), nil
+}
+
+func (a *pgAdapter) GetDeviceCodeByHash(ctx context.Context, hashPrefix, fullHash string) (*DeviceCode, error) {
+	row, err := a.q.GetDeviceCodeByHash(ctx, pgstore.GetDeviceCodeByHashParams{
+		DeviceCodeHash: hashPrefix,
+		DeviceCode:     fullHash,
+	})
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return pgCodeToDomain(&row), nil
+}
+
+func (a *pgAdapter) UpdateDeviceCodeStatus(ctx context.Context, id, status string, userID *string) error {
+	return a.q.UpdateDeviceCodeStatus(ctx, pgstore.UpdateDeviceCodeStatusParams{
+		ID:        id,
+		Status:    status,
+		UserID:    toNullString(userID),
+		UpdatedAt: time.Now(),
+	})
+}
+
+func (a *pgAdapter) UpdateDeviceCodeLastPolled(ctx context.Context, id string, lastPolledAt time.Time) error {
+	return a.q.UpdateDeviceCodeLastPolled(ctx, pgstore.UpdateDeviceCodeLastPolledParams{
+		ID:           id,
+		LastPolledAt: sql.NullTime{Time: lastPolledAt, Valid: true},
+		UpdatedAt:    time.Now(),
+	})
+}
+
+func (a *pgAdapter) DeleteExpiredDeviceCodes(ctx context.Context) (int64, error) {
+	return a.q.DeleteExpiredDeviceCodes(ctx)
+}
+
+func (a *pgAdapter) DeleteDeviceCode(ctx context.Context, id string) error {
+	return a.q.DeleteDeviceCode(ctx, id)
+}
+
+var _ Querier = (*pgAdapter)(nil)
+
+// =============================================================================
+// MySQL adapter
+// =============================================================================
+
+type mysqlAdapter struct {
+	q *mysqlstore.Queries
+}
+
+func newMysqlAdapter(db coredb.DBTX) *mysqlAdapter {
+	return &mysqlAdapter{q: mysqlstore.New(db)}
+}
+
+func (a *mysqlAdapter) CreateDeviceCode(ctx context.Context, code *DeviceCode) error {
+	return a.q.CreateDeviceCode(ctx, mysqlstore.CreateDeviceCodeParams{
+		ID:              code.ID,
+		DeviceCode:      code.DeviceCode,
+		DeviceCodeHash:  code.DeviceCodeHash,
+		UserCode:        code.UserCode,
+		ClientID:        toNullString(code.ClientID),
+		Scope:           toNullString(code.Scope),
+		UserID:          toNullString(code.UserID),
+		Status:          code.Status,
+		PollingInterval: int32(code.PollingInterval),
+		LastPolledAt:    toNullTime(code.LastPolledAt),
+		ExpiresAt:       code.ExpiresAt,
+		CreatedAt:       code.CreatedAt,
+		UpdatedAt:       code.UpdatedAt,
+	})
+}
+
+func (a *mysqlAdapter) GetDeviceCodeByUserCode(ctx context.Context, userCode string) (*DeviceCode, error) {
+	row, err := a.q.GetDeviceCodeByUserCode(ctx, userCode)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return mysqlCodeToDomain(&row), nil
+}
+
+func (a *mysqlAdapter) GetDeviceCodeByHash(ctx context.Context, hashPrefix, fullHash string) (*DeviceCode, error) {
+	row, err := a.q.GetDeviceCodeByHash(ctx, mysqlstore.GetDeviceCodeByHashParams{
+		DeviceCodeHash: hashPrefix,
+		DeviceCode:     fullHash,
+	})
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return mysqlCodeToDomain(&row), nil
+}
+
+func (a *mysqlAdapter) UpdateDeviceCodeStatus(ctx context.Context, id, status string, userID *string) error {
+	return a.q.UpdateDeviceCodeStatus(ctx, mysqlstore.UpdateDeviceCodeStatusParams{
+		ID:        id,
+		Status:    status,
+		UserID:    toNullString(userID),
+		UpdatedAt: time.Now(),
+	})
+}
+
+func (a *mysqlAdapter) UpdateDeviceCodeLastPolled(ctx context.Context, id string, lastPolledAt time.Time) error {
+	return a.q.UpdateDeviceCodeLastPolled(ctx, mysqlstore.UpdateDeviceCodeLastPolledParams{
+		ID:           id,
+		LastPolledAt: sql.NullTime{Time: lastPolledAt, Valid: true},
+		UpdatedAt:    time.Now(),
+	})
+}
+
+func (a *mysqlAdapter) DeleteExpiredDeviceCodes(ctx context.Context) (int64, error) {
+	return a.q.DeleteExpiredDeviceCodes(ctx)
+}
+
+func (a *mysqlAdapter) DeleteDeviceCode(ctx context.Context, id string) error {
+	return a.q.DeleteDeviceCode(ctx, id)
+}
+
+var _ Querier = (*mysqlAdapter)(nil)
+
+// =============================================================================
+// SQLite adapter
+// =============================================================================
+
+type sqliteAdapter struct {
+	q *sqlitestore.Queries
+}
+
+func newSqliteAdapter(db coredb.DBTX) *sqliteAdapter {
+	return &sqliteAdapter{q: sqlitestore.New(db)}
+}
+
+func (a *sqliteAdapter) CreateDeviceCode(ctx context.Context, code *DeviceCode) error {
+	return a.q.CreateDeviceCode(ctx, sqlitestore.CreateDeviceCodeParams{
 		ID:              code.ID,
 		DeviceCode:      code.DeviceCode,
 		DeviceCodeHash:  code.DeviceCodeHash,
@@ -82,19 +301,8 @@ func (s *Store) CreateDeviceCode(ctx context.Context, code *DeviceCode) error {
 	})
 }
 
-// GetDeviceCodeByUserCode retrieves a device code by user code.
-func (s *Store) GetDeviceCodeByUserCode(ctx context.Context, userCode string) (*DeviceCode, error) {
-	if s.dialect == coredb.DialectPostgres {
-		row, err := s.pgQ.GetDeviceCodeByUserCode(ctx, userCode)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				return nil, nil
-			}
-			return nil, err
-		}
-		return pgCodeToDomain(&row), nil
-	}
-	row, err := s.sqliteQ.GetDeviceCodeByUserCode(ctx, userCode)
+func (a *sqliteAdapter) GetDeviceCodeByUserCode(ctx context.Context, userCode string) (*DeviceCode, error) {
+	row, err := a.q.GetDeviceCodeByUserCode(ctx, userCode)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -104,22 +312,8 @@ func (s *Store) GetDeviceCodeByUserCode(ctx context.Context, userCode string) (*
 	return sqliteCodeToDomain(&row), nil
 }
 
-// GetDeviceCodeByHash retrieves a device code by its hashed device code.
-func (s *Store) GetDeviceCodeByHash(ctx context.Context, hashPrefix, fullHash string) (*DeviceCode, error) {
-	if s.dialect == coredb.DialectPostgres {
-		row, err := s.pgQ.GetDeviceCodeByHash(ctx, pgstore.GetDeviceCodeByHashParams{
-			DeviceCodeHash: hashPrefix,
-			DeviceCode:     fullHash,
-		})
-		if err != nil {
-			if err == sql.ErrNoRows {
-				return nil, nil
-			}
-			return nil, err
-		}
-		return pgCodeToDomain(&row), nil
-	}
-	row, err := s.sqliteQ.GetDeviceCodeByHash(ctx, sqlitestore.GetDeviceCodeByHashParams{
+func (a *sqliteAdapter) GetDeviceCodeByHash(ctx context.Context, hashPrefix, fullHash string) (*DeviceCode, error) {
+	row, err := a.q.GetDeviceCodeByHash(ctx, sqlitestore.GetDeviceCodeByHashParams{
 		DeviceCodeHash: hashPrefix,
 		DeviceCode:     fullHash,
 	})
@@ -132,59 +326,36 @@ func (s *Store) GetDeviceCodeByHash(ctx context.Context, hashPrefix, fullHash st
 	return sqliteCodeToDomain(&row), nil
 }
 
-// UpdateDeviceCodeStatus updates the status and user ID of a device code.
-func (s *Store) UpdateDeviceCodeStatus(ctx context.Context, id, status string, userID *string) error {
-	now := time.Now()
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.UpdateDeviceCodeStatus(ctx, pgstore.UpdateDeviceCodeStatusParams{
-			ID:        id,
-			Status:    status,
-			UserID:    toNullString(userID),
-			UpdatedAt: now,
-		})
-	}
-	return s.sqliteQ.UpdateDeviceCodeStatus(ctx, sqlitestore.UpdateDeviceCodeStatusParams{
+func (a *sqliteAdapter) UpdateDeviceCodeStatus(ctx context.Context, id, status string, userID *string) error {
+	return a.q.UpdateDeviceCodeStatus(ctx, sqlitestore.UpdateDeviceCodeStatusParams{
 		ID:        id,
 		Status:    status,
 		UserID:    toNullString(userID),
-		UpdatedAt: now.Format(time.RFC3339),
+		UpdatedAt: time.Now().Format(time.RFC3339),
 	})
 }
 
-// UpdateDeviceCodeLastPolled updates the last polled timestamp.
-func (s *Store) UpdateDeviceCodeLastPolled(ctx context.Context, id string, lastPolledAt time.Time) error {
-	now := time.Now()
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.UpdateDeviceCodeLastPolled(ctx, pgstore.UpdateDeviceCodeLastPolledParams{
-			ID:           id,
-			LastPolledAt: sql.NullTime{Time: lastPolledAt, Valid: true},
-			UpdatedAt:    now,
-		})
-	}
-	return s.sqliteQ.UpdateDeviceCodeLastPolled(ctx, sqlitestore.UpdateDeviceCodeLastPolledParams{
+func (a *sqliteAdapter) UpdateDeviceCodeLastPolled(ctx context.Context, id string, lastPolledAt time.Time) error {
+	return a.q.UpdateDeviceCodeLastPolled(ctx, sqlitestore.UpdateDeviceCodeLastPolledParams{
 		ID:           id,
 		LastPolledAt: sql.NullString{String: lastPolledAt.Format(time.RFC3339), Valid: true},
-		UpdatedAt:    now.Format(time.RFC3339),
+		UpdatedAt:    time.Now().Format(time.RFC3339),
 	})
 }
 
-// DeleteExpiredDeviceCodes removes expired device codes.
-func (s *Store) DeleteExpiredDeviceCodes(ctx context.Context) (int64, error) {
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.DeleteExpiredDeviceCodes(ctx)
-	}
-	return s.sqliteQ.DeleteExpiredDeviceCodes(ctx)
+func (a *sqliteAdapter) DeleteExpiredDeviceCodes(ctx context.Context) (int64, error) {
+	return a.q.DeleteExpiredDeviceCodes(ctx)
 }
 
-// DeleteDeviceCode removes a device code by ID.
-func (s *Store) DeleteDeviceCode(ctx context.Context, id string) error {
-	if s.dialect == coredb.DialectPostgres {
-		return s.pgQ.DeleteDeviceCode(ctx, id)
-	}
-	return s.sqliteQ.DeleteDeviceCode(ctx, id)
+func (a *sqliteAdapter) DeleteDeviceCode(ctx context.Context, id string) error {
+	return a.q.DeleteDeviceCode(ctx, id)
 }
 
-// ---- Conversion helpers ----
+var _ Querier = (*sqliteAdapter)(nil)
+
+// =============================================================================
+// Conversion helpers
+// =============================================================================
 
 func toNullString(s *string) sql.NullString {
 	if s == nil {
@@ -233,6 +404,24 @@ func nullStringToTime(ns sql.NullString) *time.Time {
 }
 
 func pgCodeToDomain(row *pgstore.DeviceCode) *DeviceCode {
+	return &DeviceCode{
+		ID:              row.ID,
+		DeviceCode:      row.DeviceCode,
+		DeviceCodeHash:  row.DeviceCodeHash,
+		UserCode:        row.UserCode,
+		ClientID:        fromNullString(row.ClientID),
+		Scope:           fromNullString(row.Scope),
+		UserID:          fromNullString(row.UserID),
+		Status:          row.Status,
+		PollingInterval: int(row.PollingInterval),
+		LastPolledAt:    fromNullTime(row.LastPolledAt),
+		ExpiresAt:       row.ExpiresAt,
+		CreatedAt:       row.CreatedAt,
+		UpdatedAt:       row.UpdatedAt,
+	}
+}
+
+func mysqlCodeToDomain(row *mysqlstore.DeviceCode) *DeviceCode {
 	return &DeviceCode{
 		ID:              row.ID,
 		DeviceCode:      row.DeviceCode,

@@ -3,6 +3,7 @@ package anonymous
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
@@ -64,7 +65,9 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.store = storeAdapter
 
 	// Ensure the is_anonymous column exists on the users table
-	if err := storeAdapter.EnsureAnonymousColumn(context.Background()); err != nil {
+	ctxTimeout, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := storeAdapter.EnsureAnonymousColumn(ctxTimeout); err != nil {
 		ctx.Logger.Error("anonymous plugin: failed to ensure schema", "error", err)
 		return err
 	}

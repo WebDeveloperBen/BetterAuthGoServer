@@ -157,7 +157,11 @@ func main() {
 	}
 
 	if len(oauthProviders) > 0 {
-		authService.Use(oauth.NewPlugin(oauthProviders...))
+		oauthPlugin, err := oauth.NewPlugin(oauthProviders...)
+		if err != nil {
+			log.Fatal("Failed to create OAuth plugin:", err)
+		}
+		authService.Use(oauthPlugin)
 	} else {
 		log.Println("No OAuth providers configured. Set GOOGLE_CLIENT_ID, GITHUB_CLIENT_ID, or DISCORD_CLIENT_ID")
 	}

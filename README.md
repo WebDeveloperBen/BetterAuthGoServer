@@ -148,6 +148,7 @@ authService, err := auth.New(store,
     // Session settings
     config.WithSessionDuration(7 * 24 * time.Hour),  // Default: 7 days
     config.WithSessionCookie("session"),              // Default: "session"
+    config.WithSessionCookieSameSite(http.SameSiteLaxMode),
 
     // Password policy
     config.WithPasswordPolicy(8, 128),                // Min/max length (default: 8, 128)
@@ -168,6 +169,7 @@ authService, err := auth.New(store,
     config.WithAuthRateLimit(10),                     // Stricter limit for auth endpoints
     config.WithTrustedOrigins("http://localhost:3000"),
     config.WithTrustedProxies("127.0.0.1"),
+    config.WithEmitRawTokensInEvents(false),
 
     // Cleanup
     config.WithSessionCleanupInterval(1 * time.Hour), // Auto-cleanup expired sessions
@@ -206,13 +208,18 @@ authService, _ := auth.New(store,
     config.WithBaseURL(baseURL),
 )
 
-// Chain plugins using builder pattern
+oauthPlugin, err := oauth.NewPlugin(
+    providers.NewGoogle(clientID, clientSecret, callbackURL),
+    providers.NewGitHub(clientID, clientSecret, callbackURL),
+)
+if err != nil {
+    log.Fatal("Failed to create OAuth plugin:", err)
+}
+
+// Register plugins
 authService.
     Use(jwt.NewPlugin(jwt.WithIssuer("myapp"))).
-    Use(oauth.NewPlugin(
-        providers.NewGoogle(clientID, clientSecret, callbackURL),
-        providers.NewGitHub(clientID, clientSecret, callbackURL),
-    ))
+    Use(oauthPlugin)
 
 // Check for any plugin registration errors
 if err := authService.Err(); err != nil {
@@ -224,6 +231,16 @@ You can also register multiple plugins in a single `Use()` call:
 
 ```go
 authService.Use(plugin1, plugin2, plugin3)
+```
+
+### Rate Limiting Plugin
+
+```go
+authService.Use(ratelimit.NewPlugin(
+    ratelimit.WithLimit(100, time.Minute),
+    ratelimit.WithFailClosed(true),
+    ratelimit.WithBackendTimeout(2*time.Second),
+))
 ```
 
 ### Minimal Setup (No Defaults)
@@ -351,7 +368,7 @@ import (
 )
 
 // Register OAuth as a plugin after creating auth instance
-authService.Use(oauth.NewPlugin(
+oauthPlugin, err := oauth.NewPlugin(
     providers.NewGoogle(
         os.Getenv("GOOGLE_CLIENT_ID"),
         os.Getenv("GOOGLE_CLIENT_SECRET"),
@@ -367,7 +384,11 @@ authService.Use(oauth.NewPlugin(
         os.Getenv("DISCORD_CLIENT_SECRET"),
         "http://localhost:8080/auth/oauth/discord/callback",
     ),
-))
+)
+if err != nil {
+    log.Fatal("Failed to create OAuth plugin:", err)
+}
+authService.Use(oauthPlugin)
 
 // Check for errors after registering plugins
 if err := authService.Err(); err != nil {

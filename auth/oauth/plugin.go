@@ -3,6 +3,8 @@
 package oauth
 
 import (
+	"fmt"
+
 	oauthdb "github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
@@ -19,6 +21,9 @@ type Plugin struct {
 	auth         AuthProvider
 	store        *oauthdb.Store
 	accountStore *AccountStoreAdapter
+	trustedRedirectOrigins []string
+	allowRelativeRedirects bool
+	requireEmailVerification bool
 }
 
 // Ensure Plugin implements required interfaces
@@ -29,13 +34,33 @@ var (
 
 // NewPlugin creates a new OAuth plugin with the given providers.
 // At least one provider must be provided.
-func NewPlugin(providers ...Provider) *Plugin {
+func NewPlugin(providers ...Provider) (*Plugin, error) {
 	if len(providers) == 0 {
-		panic("OAuth plugin requires at least one provider")
+		return nil, ErrNoProviders
 	}
 	return &Plugin{
-		providers: providers,
-	}
+		providers:              providers,
+		allowRelativeRedirects: true,
+	}, nil
+}
+
+// WithTrustedRedirectOrigins configures allowed redirect origins for OAuth flows.
+// Origins should be full origins like "https://example.com".
+func (p *Plugin) WithTrustedRedirectOrigins(origins ...string) *Plugin {
+	p.trustedRedirectOrigins = origins
+	return p
+}
+
+// WithAllowRelativeRedirects enables or disables relative redirect targets.
+func (p *Plugin) WithAllowRelativeRedirects(allow bool) *Plugin {
+	p.allowRelativeRedirects = allow
+	return p
+}
+
+// WithRequireEmailVerification enforces verified emails before session issuance.
+func (p *Plugin) WithRequireEmailVerification(required bool) *Plugin {
+	p.requireEmailVerification = required
+	return p
 }
 
 // Name returns the plugin identifier
@@ -46,6 +71,12 @@ func (p *Plugin) Name() string {
 // Init initializes the OAuth plugin
 func (p *Plugin) Init(ctx plugin.Context) error {
 	p.ctx = ctx
+	if p.trustedRedirectOrigins == nil {
+		p.trustedRedirectOrigins = ctx.TrustedOrigins
+	}
+	if !p.requireEmailVerification {
+		p.requireEmailVerification = ctx.RequireEmailVerification
+	}
 
 	// Type-assert to get AuthProvider
 	auth, ok := ctx.Auth.(AuthProvider)
@@ -63,7 +94,11 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 
 	// Create the oauth store using the plugin's own sqlc-generated code
-	p.store = oauthdb.New(ctx.RawDB, ctx.Dialect)
+	store, err := oauthdb.New(ctx.RawDB, ctx.Dialect)
+	if err != nil {
+		return fmt.Errorf("oauth plugin: failed to create store: %w", err)
+	}
+	p.store = store
 
 	// Create adapters for the service
 	stateStore := NewStoreAdapter(p.store)

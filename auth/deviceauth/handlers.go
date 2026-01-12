@@ -298,7 +298,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
-	writeJSON(w, status, map[string]string{"error": err.Error()})
+	message := err.Error()
+	if status >= http.StatusInternalServerError {
+		message = http.StatusText(status)
+	}
+	writeJSON(w, status, map[string]string{"error": message})
 }
 
 func writeOAuth2Error(w http.ResponseWriter, status int, errCode, description string) {

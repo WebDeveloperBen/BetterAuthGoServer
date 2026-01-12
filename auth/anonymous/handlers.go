@@ -97,5 +97,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
-	_ = writeJSON(w, status, map[string]string{"error": err.Error()})
+	message := err.Error()
+	if status >= http.StatusInternalServerError {
+		message = http.StatusText(status)
+	}
+	_ = writeJSON(w, status, map[string]string{"error": message})
 }

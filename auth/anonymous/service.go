@@ -178,9 +178,11 @@ func (s *Service) startCleanupLoop() {
 			case <-s.stopCleanup:
 				return
 			case <-ticker.C:
-				if err := s.cleanupStaleAnonymousUsers(context.Background()); err != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				if err := s.cleanupStaleAnonymousUsers(ctx); err != nil {
 					s.logger.Error("failed to cleanup stale anonymous users", "error", err)
 				}
+				cancel()
 			}
 		}
 	}()

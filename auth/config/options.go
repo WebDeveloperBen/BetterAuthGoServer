@@ -3,6 +3,7 @@ package config
 
 import (
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
@@ -66,6 +67,13 @@ func WithSessionDuration(d time.Duration) Option {
 func WithSessionCookie(name string) Option {
 	return func(c *Config) {
 		c.SessionCookie = name
+	}
+}
+
+// WithSessionCookieSameSite sets the SameSite attribute for session cookies.
+func WithSessionCookieSameSite(sameSite http.SameSite) Option {
+	return func(c *Config) {
+		c.SessionCookieSameSite = sameSite
 	}
 }
 
@@ -247,5 +255,12 @@ func WithPlugins(registry *plugin.Registry) Option {
 func WithLogger(logger *slog.Logger) Option {
 	return func(c *Config) {
 		c.Logger = logger
+	}
+}
+
+// WithEmitRawTokensInEvents controls whether raw verification tokens are included in events.
+func WithEmitRawTokensInEvents(enabled bool) Option {
+	return func(c *Config) {
+		c.EmitRawTokensInEvents = enabled
 	}
 }

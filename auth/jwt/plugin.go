@@ -2,9 +2,12 @@ package jwt
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"time"
 
 	jwtdb "github.com/webdeveloperben/BetterAuthGoServer/auth/jwt/db"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/kv"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
@@ -53,6 +56,34 @@ func WithTokenBlocklist(blocklist TokenBlocklist) Option {
 	}
 }
 
+// WithRequireEmailVerification enforces verified emails before token issuance.
+func WithRequireEmailVerification(required bool) Option {
+	return func(c *Config) {
+		c.RequireEmailVerification = required
+	}
+}
+
+// WithLockoutThreshold sets failed attempts before lockout for JWT password grant.
+func WithLockoutThreshold(n int) Option {
+	return func(c *Config) {
+		c.LockoutThreshold = n
+	}
+}
+
+// WithLockoutDuration sets the lockout duration for JWT password grant.
+func WithLockoutDuration(d time.Duration) Option {
+	return func(c *Config) {
+		c.LockoutDuration = d
+	}
+}
+
+// WithLockoutStore sets a custom kv.Store for tracking failed attempts.
+func WithLockoutStore(store kv.Store) Option {
+	return func(c *Config) {
+		c.LockoutStore = store
+	}
+}
+
 // WithKeySource sets the key source for asymmetric algorithms.
 // Use KeySourceDatabase for database-backed keys with encryption and rotation.
 // Use KeySourceConfig (default) for config-provided PEM keys.
@@ -91,6 +122,13 @@ type Plugin struct {
 	ctx               plugin.Context
 	auth              AuthProvider
 	opts              []Option
+	lockout           *lockoutService
+	rotateKeyLimiter  kv.RateLimiter
+	ownsRotateLimiter bool
+	keyRotationRoles  []string
+	rotateKeyRateLimitMax    int
+	rotateKeyRateLimitWindow time.Duration
+	requireEmailVerification bool
 }
 
 // WithKeyRotationGracePeriod sets how long rotated keys remain valid for verification.
@@ -106,6 +144,31 @@ func WithKeyRotationGracePeriod(d time.Duration) Option {
 func WithKeySize(size int) Option {
 	return func(c *Config) {
 		c.KeySize = size
+	}
+}
+
+// WithRotateKeyRateLimit sets the rate limit for /keys/rotate.
+// Set max to 0 to disable.
+func WithRotateKeyRateLimit(max int, window time.Duration) Option {
+	return func(c *Config) {
+		c.RotateKeyRateLimitMax = max
+		c.RotateKeyRateLimitWindow = window
+	}
+}
+
+// WithRotateKeyRateLimiter sets a custom rate limiter for /keys/rotate.
+// If nil, an in-memory limiter is used.
+func WithRotateKeyRateLimiter(limiter kv.RateLimiter) Option {
+	return func(c *Config) {
+		c.RotateKeyRateLimiter = limiter
+	}
+}
+
+// WithKeyRotationRoles sets which roles can rotate keys.
+// Defaults to ["admin"].
+func WithKeyRotationRoles(roles ...string) Option {
+	return func(c *Config) {
+		c.KeyRotationRoles = roles
 	}
 }
 
@@ -148,6 +211,10 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		opt(&config)
 	}
 
+	if !config.RequireEmailVerification {
+		config.RequireEmailVerification = ctx.RequireEmailVerification
+	}
+
 	// Set defaults from context
 	if config.Issuer == "" {
 		config.Issuer = ctx.BaseURL
@@ -158,7 +225,11 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 
 	// Create plugin's own store if database is available
 	if ctx.RawDB != nil {
-		p.dbStore = jwtdb.New(ctx.RawDB, ctx.Dialect)
+		store, err := jwtdb.New(ctx.RawDB, ctx.Dialect)
+		if err != nil {
+			return fmt.Errorf("jwt plugin: failed to create store: %w", err)
+		}
+		p.dbStore = store
 	}
 
 	// Set up KeyManager for database-backed asymmetric keys
@@ -186,7 +257,9 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		config.KeyManager = km
 
 		// Ensure there's an active key (generates one if needed)
-		if _, err := km.EnsureActiveKey(context.Background()); err != nil {
+		ctxTimeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if _, err := km.EnsureActiveKey(ctxTimeout); err != nil {
 			return err
 		}
 
@@ -211,11 +284,30 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 
 	p.service = service
+	p.lockout = newLockoutService(config.LockoutStore, config.LockoutThreshold, config.LockoutDuration)
+	p.requireEmailVerification = config.RequireEmailVerification
+	p.keyRotationRoles = config.KeyRotationRoles
+	p.rotateKeyRateLimitMax = config.RotateKeyRateLimitMax
+	p.rotateKeyRateLimitWindow = config.RotateKeyRateLimitWindow
+	if config.RotateKeyRateLimitMax > 0 {
+		if config.RotateKeyRateLimiter != nil {
+			p.rotateKeyLimiter = config.RotateKeyRateLimiter
+		} else {
+			p.rotateKeyLimiter = kv.NewMemoryRateLimiter()
+			p.ownsRotateLimiter = true
+		}
+	}
 	return nil
 }
 
 // Close cleans up plugin resources
 func (p *Plugin) Close() error {
+	if p.lockout != nil {
+		_ = p.lockout.Close()
+	}
+	if p.rotateKeyLimiter != nil && p.ownsRotateLimiter {
+		_ = p.rotateKeyLimiter.Close()
+	}
 	return nil
 }
 
@@ -255,6 +347,10 @@ func (p *Plugin) Routes() []plugin.Route {
 			Method:  "POST",
 			Path:    "/keys/rotate",
 			Handler: p.KeyRotateHandler(),
+			Middleware: []func(http.Handler) http.Handler{
+				p.keyRotateAuthoriser(),
+				p.keyRotateRateLimiter(),
+			},
 		})
 	}
 

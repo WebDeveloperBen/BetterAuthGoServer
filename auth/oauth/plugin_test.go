@@ -17,7 +17,10 @@ func TestNewPlugin(t *testing.T) {
 		&mockProvider{name: "github"},
 	}
 
-	plugin := NewPlugin(providers...)
+	plugin, err := NewPlugin(providers...)
+	if err != nil {
+		t.Fatalf("NewPlugin returned error: %v", err)
+	}
 	if plugin == nil {
 		t.Fatal("NewPlugin returned nil")
 	}
@@ -27,14 +30,14 @@ func TestNewPlugin(t *testing.T) {
 	}
 }
 
-func TestNewPlugin_Panic_NoProviders(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("NewPlugin with no providers should panic")
-		}
-	}()
-
-	NewPlugin()
+func TestNewPlugin_Error_NoProviders(t *testing.T) {
+	plugin, err := NewPlugin()
+	if err == nil {
+		t.Fatal("NewPlugin with no providers should return error")
+	}
+	if plugin != nil {
+		t.Fatal("NewPlugin with no providers should return nil plugin")
+	}
 }
 
 func TestPlugin_Routes_Disabled(t *testing.T) {

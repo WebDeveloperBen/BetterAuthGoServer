@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -33,6 +34,10 @@ func (p *Plugin) ListOAuthProvidersHandler() http.HandlerFunc {
 func (p *Plugin) OAuthBeginHandler() func(http.ResponseWriter, *http.Request, string) {
 	return func(w http.ResponseWriter, r *http.Request, provider string) {
 		redirectTo := r.URL.Query().Get("redirect_to")
+		if redirectTo != "" && !p.isRedirectAllowed(redirectTo) {
+			writeError(w, http.StatusBadRequest, ErrRedirectNotAllowed)
+			return
+		}
 
 		result, err := p.service.Begin(r.Context(), provider, redirectTo)
 		if err != nil {
@@ -69,6 +74,11 @@ func (p *Plugin) OAuthCallbackHandler() func(http.ResponseWriter, *http.Request,
 			return
 		}
 
+		if p.requireEmailVerification && !user.EmailVerified {
+			writeError(w, http.StatusForbidden, ErrEmailNotVerified)
+			return
+		}
+
 		// Create session
 		session, err := p.auth.CreateSessionForUser(r.Context(), user.ID, r)
 		if err != nil {
@@ -89,6 +99,10 @@ func (p *Plugin) OAuthCallbackHandler() func(http.ResponseWriter, *http.Request,
 		}
 
 		if redirectTo != "" {
+			if !p.isRedirectAllowed(redirectTo) {
+				writeError(w, http.StatusBadRequest, ErrRedirectNotAllowed)
+				return
+			}
 			http.Redirect(w, r, redirectTo, http.StatusFound)
 			return
 		}
@@ -224,7 +238,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
-	_ = writeJSON(w, status, map[string]string{"error": err.Error()})
+	message := err.Error()
+	if status >= http.StatusInternalServerError {
+		message = http.StatusText(status)
+	}
+	_ = writeJSON(w, status, map[string]string{"error": message})
 }
 
 // OAuthDynamicHandler handles dynamic OAuth routes (/oauth/:provider and /oauth/:provider/callback)
@@ -289,6 +307,45 @@ func toSessionResponse(session *plugin.Session) map[string]any {
 
 func generateID() string {
 	return uuid.New().String()
+}
+
+func (p *Plugin) isRedirectAllowed(target string) bool {
+	if p.allowRelativeRedirects && strings.HasPrefix(target, "/") && !strings.HasPrefix(target, "//") {
+		return true
+	}
+
+	parsed, err := url.Parse(target)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return false
+	}
+
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
+
+	origin := parsed.Scheme + "://" + parsed.Host
+	for _, trusted := range p.trustedRedirectOrigins {
+		if origin == trusted {
+			return true
+		}
+	}
+
+	if p.ctx.BaseURL != "" {
+		baseOrigin := originFromBaseURL(p.ctx.BaseURL)
+		if baseOrigin != "" && origin == baseOrigin {
+			return true
+		}
+	}
+
+	return false
+}
+
+func originFromBaseURL(baseURL string) string {
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 // OAuthToken represents OAuth token information

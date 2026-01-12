@@ -16,6 +16,7 @@ package otp
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	otpdb "github.com/webdeveloperben/BetterAuthGoServer/auth/otp/db"
@@ -70,7 +71,11 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 
 	// Create the plugin's own store using raw DB access
-	p.dbStore = otpdb.New(ctx.RawDB, ctx.Dialect)
+	store, err := otpdb.New(ctx.RawDB, ctx.Dialect)
+	if err != nil {
+		return fmt.Errorf("otp plugin: failed to create store: %w", err)
+	}
+	p.dbStore = store
 	p.store = NewStoreAdapter(p.dbStore)
 	p.service = NewService(p.store, ctx.Hasher, config)
 

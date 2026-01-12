@@ -76,6 +76,9 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	for _, opt := range p.opts {
 		opt(&config)
 	}
+	if !config.RequireEmailVerification {
+		config.RequireEmailVerification = ctx.RequireEmailVerification
+	}
 
 	// Try to find a PasswordResetTokenProvider (e.g., OTP plugin)
 	var tokenProvider PasswordResetTokenProvider

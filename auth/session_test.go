@@ -67,66 +67,72 @@ func TestContextWithSession(t *testing.T) {
 	}
 }
 
-func TestGetIPAddress_XForwardedFor_Single(t *testing.T) {
+func newAuthForTest(t *testing.T, opts ...config.Option) *Auth {
+	t.Helper()
+
+	base := []config.Option{
+		config.WithSecret("test-secret-key-32-bytes-long-1234"),
+		config.WithBaseURL("http://localhost"),
+	}
+	base = append(base, opts...)
+
+	a, err := New(newMockSessionStore(), base...)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+	return a
+}
+
+func TestGetIPAddress_UntrustedHeaders(t *testing.T) {
+	a := newAuthForTest(t)
+
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("X-Forwarded-For", "203.0.113.50")
+	req.Header.Set("X-Real-IP", "198.51.100.178")
+	req.RemoteAddr = "192.168.1.1:12345"
 
-	ip := getIPAddress(req)
+	ip := a.getIPAddress(req)
+	if ip != "192.168.1.1" {
+		t.Errorf("IP = %s, want 192.168.1.1 (untrusted proxy headers ignored)", ip)
+	}
+}
+
+func TestGetIPAddress_TrustedXForwardedFor_Single(t *testing.T) {
+	a := newAuthForTest(t, config.WithTrustedProxies("192.168.1.1"))
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-Forwarded-For", "203.0.113.50")
+	req.RemoteAddr = "192.168.1.1:12345"
+
+	ip := a.getIPAddress(req)
 	if ip != "203.0.113.50" {
 		t.Errorf("IP = %s, want 203.0.113.50", ip)
 	}
 }
 
-func TestGetIPAddress_XForwardedFor_Multiple(t *testing.T) {
+func TestGetIPAddress_TrustedXForwardedFor_Multiple(t *testing.T) {
+	a := newAuthForTest(t, config.WithTrustedProxies("192.168.1.1"))
+
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("X-Forwarded-For", "203.0.113.50, 70.41.3.18, 150.172.238.178")
+	req.RemoteAddr = "192.168.1.1:12345"
 
-	ip := getIPAddress(req)
+	ip := a.getIPAddress(req)
 	if ip != "203.0.113.50" {
 		t.Errorf("IP = %s, want 203.0.113.50 (first in chain)", ip)
 	}
 }
 
-func TestGetIPAddress_XRealIP(t *testing.T) {
+func TestGetIPAddress_TrustedXRealIP(t *testing.T) {
+	a := newAuthForTest(t, config.WithTrustedProxies("192.168.1.1"))
+
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("X-Real-IP", "198.51.100.178")
+	req.RemoteAddr = "192.168.1.1:12345"
 
-	ip := getIPAddress(req)
+	ip := a.getIPAddress(req)
 	if ip != "198.51.100.178" {
 		t.Errorf("IP = %s, want 198.51.100.178", ip)
-	}
-}
-
-func TestGetIPAddress_RemoteAddr(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
-
-	ip := getIPAddress(req)
-	if ip != "192.168.1.1:12345" {
-		t.Errorf("IP = %s, want 192.168.1.1:12345", ip)
-	}
-}
-
-func TestGetIPAddress_XForwardedForPrecedence(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("X-Forwarded-For", "203.0.113.50")
-	req.Header.Set("X-Real-IP", "198.51.100.178")
-	req.RemoteAddr = "192.168.1.1:12345"
-
-	ip := getIPAddress(req)
-	if ip != "203.0.113.50" {
-		t.Errorf("IP = %s, want 203.0.113.50 (X-Forwarded-For takes precedence)", ip)
-	}
-}
-
-func TestGetIPAddress_XRealIPPrecedenceOverRemoteAddr(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("X-Real-IP", "198.51.100.178")
-	req.RemoteAddr = "192.168.1.1:12345"
-
-	ip := getIPAddress(req)
-	if ip != "198.51.100.178" {
-		t.Errorf("IP = %s, want 198.51.100.178 (X-Real-IP takes precedence)", ip)
 	}
 }
 
@@ -557,7 +563,7 @@ func TestCreateSession(t *testing.T) {
 	if session.RawToken == "" {
 		t.Error("RawToken should be set")
 	}
-	if session.IPAddress == nil || *session.IPAddress != "192.168.1.1:12345" {
+	if session.IPAddress == nil || *session.IPAddress != "192.168.1.1" {
 		t.Error("IPAddress should be set from request")
 	}
 	if session.UserAgent == nil || *session.UserAgent != "TestBrowser/1.0" {

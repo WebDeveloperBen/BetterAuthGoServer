@@ -207,7 +207,11 @@ func main() {
 			providers.WithAzureTenant(tenant),
 		)
 
-		authService.Use(oauth.NewPlugin(azureProvider))
+		oauthPlugin, err := oauth.NewPlugin(azureProvider)
+		if err != nil {
+			log.Fatal("Failed to create OAuth plugin:", err)
+		}
+		authService.Use(oauthPlugin)
 		log.Printf("Azure OAuth enabled (tenant: %s)", tenant)
 	} else {
 		log.Println("Azure OAuth not configured. Set AZURE_CLIENT_ID and AZURE_CLIENT_SECRET to enable.")

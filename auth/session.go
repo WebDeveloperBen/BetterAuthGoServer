@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -164,7 +165,7 @@ func (a *Auth) createSession(ctx context.Context, userID string, r *http.Request
 
 	var ipAddress, userAgent *string
 	if r != nil {
-		ip := getIPAddress(r)
+		ip := a.getIPAddress(r)
 		ipAddress = &ip
 
 		ua := r.UserAgent()
@@ -248,28 +249,42 @@ func sortSessionsByLastUsed(sessions []*models.Session) {
 	}
 }
 
-// getIPAddress extracts the client IP from the request
-func getIPAddress(r *http.Request) string {
-	// Check X-Forwarded-For first (may be set by proxy)
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		// Take the first IP in the list
-		for i := 0; i < len(xff); i++ {
-			if xff[i] == ',' {
-				return xff[:i]
+// getIPAddress extracts the client IP from the request, respecting trusted proxies.
+func (a *Auth) getIPAddress(r *http.Request) string {
+	if len(a.config.TrustedProxies) == 0 {
+		return remoteAddrIP(r.RemoteAddr)
+	}
+
+	trusted := make(map[string]bool, len(a.config.TrustedProxies))
+	for _, ip := range a.config.TrustedProxies {
+		trusted[ip] = true
+	}
+
+	remoteIP := remoteAddrIP(r.RemoteAddr)
+	if trusted[remoteIP] {
+		xff := r.Header.Get("X-Forwarded-For")
+		if xff != "" {
+			for i := 0; i < len(xff); i++ {
+				if xff[i] == ',' {
+					return strings.TrimSpace(xff[:i])
+				}
 			}
+			return strings.TrimSpace(xff)
 		}
-		return xff
+
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			return strings.TrimSpace(xri)
+		}
 	}
 
-	// Check X-Real-IP
-	xri := r.Header.Get("X-Real-IP")
-	if xri != "" {
-		return xri
-	}
+	return remoteIP
+}
 
-	// Fall back to RemoteAddr
-	return r.RemoteAddr
+func remoteAddrIP(remoteAddr string) string {
+	if idx := strings.LastIndex(remoteAddr, ":"); idx != -1 {
+		return remoteAddr[:idx]
+	}
+	return remoteAddr
 }
 
 // sessionManager implements plugin.SessionManager
@@ -311,7 +326,7 @@ func (sm *sessionManager) CreateWithImpersonation(ctx context.Context, targetUse
 
 	var ipAddress, userAgent *string
 	if r != nil {
-		ip := getIPAddress(r)
+		ip := sm.auth.getIPAddress(r)
 		ipAddress = &ip
 
 		ua := r.UserAgent()
@@ -386,7 +401,7 @@ func (sm *sessionManager) ClearAuthResponse(w http.ResponseWriter) {
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   sm.isSecure(),
-		SameSite: http.SameSiteLaxMode,
+		SameSite: sm.auth.sessionSameSite(),
 		MaxAge:   -1, // Delete cookie
 	})
 }
@@ -418,7 +433,7 @@ func (sm *sessionManager) setSessionCookieInternal(w http.ResponseWriter, token 
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   sm.isSecure(),
-		SameSite: http.SameSiteLaxMode,
+		SameSite: sm.auth.sessionSameSite(),
 		MaxAge:   maxAge,
 	})
 }

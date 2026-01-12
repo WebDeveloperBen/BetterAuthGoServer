@@ -74,7 +74,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.userProvider = userProvider
 
 	p.service = NewService(NewStoreAdapter(ctx.Store), p.logger)
-	p.handlers = newHandlers(p.service, ctx.Auth, ctx.Sessions, userProvider, &p.config)
+	p.handlers = newHandlers(p.service, ctx.Auth, ctx.Sessions, userProvider, &p.config, p.logger)
 
 	// Initialize access control
 	if p.config.AccessControl == nil {

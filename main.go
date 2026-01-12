@@ -39,6 +39,7 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/ratelimit"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/webauthn"
 	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	"github.com/webdeveloperben/BetterAuthGoServer/migrate"
 )
 
 func main() {
@@ -75,17 +76,35 @@ func main() {
 	defer func() { _ = sqlDB.Close() }()
 
 	// ============================================================================
-	// DATABASE SETUP
+	// DATABASE MIGRATIONS
+	// ============================================================================
+	// Run migrations for core tables and all plugins we'll be using.
+	// This uses golang-migrate under the hood with embedded SQL files.
+	ctx := context.Background()
+	err = migrate.Run(ctx, sqlDB, migrate.Dialect(dialect),
+		migrate.WithLogger(logger),
+		migrate.WithPlugins(
+			oauth.Migrations(),
+			otp.Migrations(),
+			jwt.Migrations(),
+			webauthn.Migrations(),
+			apikey.Migrations(),
+			deviceauth.Migrations(),
+			organization.Migrations(),
+		),
+	)
+	if err != nil {
+		log.Fatal("Failed to run migrations:", err)
+	}
+
+	// ============================================================================
+	// DATABASE STORE
 	// ============================================================================
 	// Create the sqlc-based store
 	dbStore, err := db.New(sqlDB, dialect)
 	if err != nil {
 		log.Fatal("Failed to create store:", err)
 	}
-
-	// NOTE: Migrations are managed separately using golang-migrate or your preferred tool.
-	// See db/migrations/ and auth/*/db/migrations/ for migration files.
-	// Example: migrate -path db/migrations/postgres -database $DATABASE_URL up
 
 	// ============================================================================
 	// AUTH SERVICE - BASIC CONFIGURATION
@@ -367,7 +386,11 @@ func main() {
 
 	// Add OAuth plugin if any providers are configured
 	if len(oauthProviders) > 0 {
-		authService.Use(oauth.NewPlugin(oauthProviders...))
+		oauthPlugin, err := oauth.NewPlugin(oauthProviders...)
+		if err != nil {
+			log.Fatal("Failed to create OAuth plugin:", err)
+		}
+		authService.Use(oauthPlugin)
 	}
 
 	// Check for any plugin registration errors
