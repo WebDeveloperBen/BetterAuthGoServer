@@ -550,7 +550,6 @@ This project uses [lefthook](https://github.com/evilmartians/lefthook) to run au
 
 **Pre-push:**
 - Run `golangci-lint`
-- Run unit tests (`go test -short`)
 
 ### Common Commands
 

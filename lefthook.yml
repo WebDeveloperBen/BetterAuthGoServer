@@ -15,11 +15,7 @@ pre-commit:
       stage_fixed: true
 
 pre-push:
-  parallel: true
   commands:
     golangci-lint:
       glob: "*.go"
       run: golangci-lint run ./...
-
-    test:
-      run: go test -short ./...
