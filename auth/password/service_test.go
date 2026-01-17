@@ -317,7 +317,7 @@ func TestService_RequestPasswordReset(t *testing.T) {
 			config,
 			nil,
 		)
-		defer service.Close()
+		defer func() { _ = service.Close() }()
 
 		err := service.RequestPasswordReset(ctx, "test@example.com")
 		if err != password.ErrPasswordResetNotAvailable {
@@ -420,7 +420,7 @@ func TestService_ConfirmPasswordReset(t *testing.T) {
 			config,
 			nil,
 		)
-		defer service.Close()
+		defer func() { _ = service.Close() }()
 
 		err := service.ConfirmPasswordReset(ctx, "some-token", "NewSecureP@ss1")
 		if err != password.ErrPasswordResetNotAvailable {

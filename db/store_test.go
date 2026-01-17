@@ -199,13 +199,6 @@ func setupSharedMySQL(ctx context.Context) (*dialectTestEnv, error) {
 	}
 
 	// Get root connection string for admin operations (creating databases)
-	// Root password is 'testpass' when using mysql.WithPassword
-	rootConnStr := replaceDBName(baseConnStr, "mysql")
-	rootConnStr = rootConnStr[:len("root:testpass@tcp")] + rootConnStr[len("testuser:testpass@tcp"):]
-
-	// Build proper root connection string
-	// Format: user:password@tcp(host:port)/dbname?params
-	// We need to replace testuser with root
 	host, err := mysqlContainer.Host(ctx)
 	if err != nil {
 		_ = mysqlContainer.Terminate(ctx)
@@ -216,7 +209,7 @@ func setupSharedMySQL(ctx context.Context) (*dialectTestEnv, error) {
 		_ = mysqlContainer.Terminate(ctx)
 		return nil, fmt.Errorf("failed to get MySQL port: %w", err)
 	}
-	rootConnStr = fmt.Sprintf("root:testpass@tcp(%s:%s)/mysql?parseTime=true&multiStatements=true", host, port.Port())
+	rootConnStr := fmt.Sprintf("root:testpass@tcp(%s:%s)/mysql?parseTime=true&multiStatements=true", host, port.Port())
 
 	// MySQL needs additional time after reporting ready - retry with backoff
 	var rootDB *sql.DB

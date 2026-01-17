@@ -81,13 +81,6 @@ func (m *mockPasswordStore) DeleteUserSessions(ctx context.Context, userID strin
 	return nil
 }
 
-// Helper to add a session for testing
-func (m *mockPasswordStore) addSession(userID, sessionID string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.sessions[userID] = append(m.sessions[userID], sessionID)
-}
-
 // mockAuthProvider implements password.AuthProvider for testing.
 type mockAuthProvider struct {
 	mu       sync.RWMutex
