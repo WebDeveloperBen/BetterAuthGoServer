@@ -6,10 +6,12 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
-	"github.com/uptrace/bun"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/organization/access"
+	orgdb "github.com/webdeveloperben/BetterAuthGoServer/auth/organization/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
+	coredb "github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
 // PluginName is the identifier for the organization plugin.
@@ -19,6 +21,7 @@ const PluginName = "organization"
 type Plugin struct {
 	ctx      plugin.Context
 	logger   *slog.Logger
+	dbStore  *orgdb.Store
 	service  *Service
 	handlers *handlers
 	config   Config
@@ -29,7 +32,6 @@ var (
 	_ plugin.Plugin             = (*Plugin)(nil)
 	_ plugin.RoutesProvider     = (*Plugin)(nil)
 	_ plugin.MiddlewareProvider = (*Plugin)(nil)
-	_ plugin.MigrationsProvider = (*Plugin)(nil)
 )
 
 // NewPlugin creates a new organization plugin with options.
@@ -60,14 +62,14 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		p.logger = slog.Default()
 	}
 
-	if ctx.DB == nil {
+	if ctx.RawDB == nil {
 		p.logger.Warn("organization plugin: no database available, plugin disabled")
 		return nil
 	}
 
 	// Add session extension columns (these extend the existing sessions table)
 	// Using ALTER TABLE since the sessions table is created by the core store
-	if err := p.ensureSessionExtensionColumns(ctx.DB); err != nil {
+	if err := p.ensureSessionExtensionColumns(ctx.RawDB, ctx.Dialect); err != nil {
 		return fmt.Errorf("failed to add session extension columns: %w", err)
 	}
 
@@ -104,8 +106,15 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		return nil
 	}
 
-	// Create service
-	p.service = NewService(ctx.DB, p.logger, &p.config)
+	// Create plugin's own store using sqlc-generated code
+	dbStore, err := orgdb.New(ctx.RawDB, ctx.Dialect)
+	if err != nil {
+		return fmt.Errorf("organization plugin: failed to create store: %w", err)
+	}
+	p.dbStore = dbStore
+
+	// Create service using the plugin's own store
+	p.service = NewService(p.dbStore, ctx.RawDB, ctx.Dialect, p.logger, &p.config)
 
 	// Create handlers
 	p.handlers = newHandlers(p.service, &p.config, userProvider, sessionInfoProvider)
@@ -275,12 +284,29 @@ func (p *Plugin) Middleware() []plugin.Middleware {
 // ensureSessionExtensionColumns adds organization-specific columns to the sessions table.
 // This extends the core sessions table with active_organization_id and active_team_id.
 // Checks if columns exist first to avoid SQL syntax errors.
-func (p *Plugin) ensureSessionExtensionColumns(db *bun.DB) error {
-	ctx := context.Background()
+func (p *Plugin) ensureSessionExtensionColumns(rawDB coredb.DBTX, dialect coredb.Dialect) error {
+	if rawDB == nil {
+		return fmt.Errorf("database connection not available")
+	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	switch dialect {
+	case coredb.DialectSQLite:
+		return p.ensureSessionColumnsForSQLite(ctx, rawDB)
+	case coredb.DialectPostgres:
+		return p.ensureSessionColumnsForPostgres(ctx, rawDB)
+	default:
+		return fmt.Errorf("unsupported dialect: %s", dialect)
+	}
+}
+
+// ensureSessionColumnsForSQLite adds columns for SQLite.
+func (p *Plugin) ensureSessionColumnsForSQLite(ctx context.Context, rawDB coredb.DBTX) error {
 	// Check if columns already exist to avoid SQL syntax issues
-	var count int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name IN ('active_organization_id', 'active_team_id')").Scan(&count); err != nil {
+	var count int64
+	if err := rawDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name IN ('active_organization_id', 'active_team_id')").Scan(&count); err != nil {
 		return fmt.Errorf("failed to check existing columns: %w", err)
 	}
 
@@ -290,20 +316,20 @@ func (p *Plugin) ensureSessionExtensionColumns(db *bun.DB) error {
 	}
 
 	// Add columns that don't exist
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'active_organization_id'").Scan(&count); err != nil {
+	if err := rawDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'active_organization_id'").Scan(&count); err != nil {
 		return fmt.Errorf("failed to check active_organization_id column: %w", err)
 	}
 	if count == 0 {
-		if _, err := db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN active_organization_id TEXT"); err != nil {
+		if _, err := rawDB.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN active_organization_id TEXT"); err != nil {
 			return fmt.Errorf("failed to add active_organization_id column: %w", err)
 		}
 	}
 
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'active_team_id'").Scan(&count); err != nil {
+	if err := rawDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'active_team_id'").Scan(&count); err != nil {
 		return fmt.Errorf("failed to check active_team_id column: %w", err)
 	}
 	if count == 0 {
-		if _, err := db.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN active_team_id TEXT"); err != nil {
+		if _, err := rawDB.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN active_team_id TEXT"); err != nil {
 			return fmt.Errorf("failed to add active_team_id column: %w", err)
 		}
 	}
@@ -311,22 +337,52 @@ func (p *Plugin) ensureSessionExtensionColumns(db *bun.DB) error {
 	return nil
 }
 
-// Migrations returns database migrations for organization tables.
-// Note: SessionExtension columns are added via ALTER TABLE in Init(),
-// not here, because they extend an existing table rather than creating a new one.
-func (p *Plugin) Migrations() []any {
-	migrations := []any{
-		(*Organization)(nil),
-		(*Member)(nil),
-		(*Invitation)(nil),
+// ensureSessionColumnsForPostgres adds columns for PostgreSQL.
+func (p *Plugin) ensureSessionColumnsForPostgres(ctx context.Context, rawDB coredb.DBTX) error {
+	// Check if columns already exist
+	var count int64
+	if err := rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_name = 'sessions'
+		AND column_name IN ('active_organization_id', 'active_team_id')
+	`).Scan(&count); err != nil {
+		return fmt.Errorf("failed to check existing columns: %w", err)
 	}
 
-	// Add team migrations if enabled
-	if p.config.Teams.Enabled {
-		migrations = append(migrations, (*Team)(nil), (*TeamMember)(nil))
+	if count == 2 {
+		// Both columns already exist
+		return nil
 	}
 
-	return migrations
+	// Add active_organization_id if it doesn't exist
+	var orgColCount int64
+	if err := rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_name = 'sessions' AND column_name = 'active_organization_id'
+	`).Scan(&orgColCount); err != nil {
+		return fmt.Errorf("failed to check active_organization_id column: %w", err)
+	}
+	if orgColCount == 0 {
+		if _, err := rawDB.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN active_organization_id TEXT"); err != nil {
+			return fmt.Errorf("failed to add active_organization_id column: %w", err)
+		}
+	}
+
+	// Add active_team_id if it doesn't exist
+	var teamColCount int64
+	if err := rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_name = 'sessions' AND column_name = 'active_team_id'
+	`).Scan(&teamColCount); err != nil {
+		return fmt.Errorf("failed to check active_team_id column: %w", err)
+	}
+	if teamColCount == 0 {
+		if _, err := rawDB.ExecContext(ctx, "ALTER TABLE sessions ADD COLUMN active_team_id TEXT"); err != nil {
+			return fmt.Errorf("failed to add active_team_id column: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // handleOrganizationRoutes handles organization-specific routes.

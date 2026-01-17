@@ -243,7 +243,7 @@ func TestRateLimiter_Basic(t *testing.T) {
 	window := time.Minute
 
 	// First 3 requests should be allowed
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		result, err := limiter.Allow(ctx, key, limit, window, 1)
 		if err != nil {
 			t.Fatalf("Allow failed: %v", err)

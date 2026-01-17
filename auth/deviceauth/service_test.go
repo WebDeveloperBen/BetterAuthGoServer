@@ -9,13 +9,9 @@ import (
 )
 
 func TestService_CreateDeviceCode(t *testing.T) {
-	tdb := setupTestDB(t)
-	defer tdb.cleanup(t)
-
 	t.Run("creates device code successfully", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB)
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store)
 		defer func() { _ = service.Close() }()
 
 		result, err := service.CreateDeviceCode(context.Background(), deviceauth.CreateDeviceCodeRequest{
@@ -54,9 +50,8 @@ func TestService_CreateDeviceCode(t *testing.T) {
 	})
 
 	t.Run("creates device code without client_id", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB)
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store)
 		defer func() { _ = service.Close() }()
 
 		result, err := service.CreateDeviceCode(context.Background(), deviceauth.CreateDeviceCodeRequest{})
@@ -71,10 +66,9 @@ func TestService_CreateDeviceCode(t *testing.T) {
 	})
 
 	t.Run("calls ValidateClient hook", func(t *testing.T) {
-		tdb.truncateTables(t)
-
+		store := newMockDeviceCodeStore()
 		validateCalled := false
-		service := createTestService(t, tdb.DB, deviceauth.WithValidateClient(func(ctx context.Context, clientID string) error {
+		service := createTestService(t, store, deviceauth.WithValidateClient(func(ctx context.Context, clientID string) error {
 			validateCalled = true
 			if clientID != "my-client" {
 				t.Errorf("clientID = %q, want %q", clientID, "my-client")
@@ -97,9 +91,8 @@ func TestService_CreateDeviceCode(t *testing.T) {
 	})
 
 	t.Run("rejects invalid client", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB, deviceauth.WithValidateClient(func(ctx context.Context, clientID string) error {
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store, deviceauth.WithValidateClient(func(ctx context.Context, clientID string) error {
 			return deviceauth.ErrInvalidClient
 		}))
 		defer func() { _ = service.Close() }()
@@ -114,10 +107,9 @@ func TestService_CreateDeviceCode(t *testing.T) {
 	})
 
 	t.Run("calls OnDeviceAuthRequest hook", func(t *testing.T) {
-		tdb.truncateTables(t)
-
+		store := newMockDeviceCodeStore()
 		hookCalled := false
-		service := createTestService(t, tdb.DB, deviceauth.WithOnDeviceAuthRequest(func(ctx context.Context, dc *deviceauth.DeviceCode) error {
+		service := createTestService(t, store, deviceauth.WithOnDeviceAuthRequest(func(ctx context.Context, dc *deviceauth.DeviceCode) error {
 			hookCalled = true
 			if dc.UserCode == "" {
 				t.Error("DeviceCode.UserCode should not be empty in hook")
@@ -139,13 +131,9 @@ func TestService_CreateDeviceCode(t *testing.T) {
 }
 
 func TestService_GetByUserCode(t *testing.T) {
-	tdb := setupTestDB(t)
-	defer tdb.cleanup(t)
-
 	t.Run("retrieves device code by user code", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB)
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store)
 		defer func() { _ = service.Close() }()
 
 		result, _ := service.CreateDeviceCode(context.Background(), deviceauth.CreateDeviceCodeRequest{
@@ -168,9 +156,8 @@ func TestService_GetByUserCode(t *testing.T) {
 	})
 
 	t.Run("normalizes user code (removes hyphens)", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB)
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store)
 		defer func() { _ = service.Close() }()
 
 		result, _ := service.CreateDeviceCode(context.Background(), deviceauth.CreateDeviceCodeRequest{})
@@ -189,9 +176,8 @@ func TestService_GetByUserCode(t *testing.T) {
 	})
 
 	t.Run("returns error for invalid user code", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB)
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store)
 		defer func() { _ = service.Close() }()
 
 		_, err := service.GetByUserCode(context.Background(), "INVALID-CODE")
@@ -202,9 +188,8 @@ func TestService_GetByUserCode(t *testing.T) {
 	})
 
 	t.Run("returns error for expired user code", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB, deviceauth.WithExpiresIn(1*time.Millisecond))
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store, deviceauth.WithExpiresIn(1*time.Millisecond))
 		defer func() { _ = service.Close() }()
 
 		result, _ := service.CreateDeviceCode(context.Background(), deviceauth.CreateDeviceCodeRequest{})
@@ -221,13 +206,9 @@ func TestService_GetByUserCode(t *testing.T) {
 }
 
 func TestService_Approve(t *testing.T) {
-	tdb := setupTestDB(t)
-	defer tdb.cleanup(t)
-
 	t.Run("approves device code successfully", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB)
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store)
 		defer func() { _ = service.Close() }()
 
 		result, _ := service.CreateDeviceCode(context.Background(), deviceauth.CreateDeviceCodeRequest{})
@@ -249,9 +230,8 @@ func TestService_Approve(t *testing.T) {
 	})
 
 	t.Run("returns error for already processed code", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB)
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store)
 		defer func() { _ = service.Close() }()
 
 		result, _ := service.CreateDeviceCode(context.Background(), deviceauth.CreateDeviceCodeRequest{})
@@ -269,13 +249,9 @@ func TestService_Approve(t *testing.T) {
 }
 
 func TestService_Deny(t *testing.T) {
-	tdb := setupTestDB(t)
-	defer tdb.cleanup(t)
-
 	t.Run("denies device code successfully", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB)
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store)
 		defer func() { _ = service.Close() }()
 
 		result, _ := service.CreateDeviceCode(context.Background(), deviceauth.CreateDeviceCodeRequest{})
@@ -295,13 +271,9 @@ func TestService_Deny(t *testing.T) {
 }
 
 func TestService_CheckToken(t *testing.T) {
-	tdb := setupTestDB(t)
-	defer tdb.cleanup(t)
-
 	t.Run("returns authorization pending for pending code", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB)
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store)
 		defer func() { _ = service.Close() }()
 
 		result, _ := service.CreateDeviceCode(context.Background(), deviceauth.CreateDeviceCodeRequest{
@@ -316,9 +288,8 @@ func TestService_CheckToken(t *testing.T) {
 	})
 
 	t.Run("returns access denied for denied code", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB)
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store)
 		defer func() { _ = service.Close() }()
 
 		result, _ := service.CreateDeviceCode(context.Background(), deviceauth.CreateDeviceCodeRequest{
@@ -335,9 +306,8 @@ func TestService_CheckToken(t *testing.T) {
 	})
 
 	t.Run("returns user ID for approved code", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB)
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store)
 		defer func() { _ = service.Close() }()
 
 		result, _ := service.CreateDeviceCode(context.Background(), deviceauth.CreateDeviceCodeRequest{
@@ -362,9 +332,8 @@ func TestService_CheckToken(t *testing.T) {
 	})
 
 	t.Run("returns slow down for rapid polling", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB, deviceauth.WithPollingInterval(5))
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store, deviceauth.WithPollingInterval(5))
 		defer func() { _ = service.Close() }()
 
 		result, _ := service.CreateDeviceCode(context.Background(), deviceauth.CreateDeviceCodeRequest{
@@ -383,9 +352,8 @@ func TestService_CheckToken(t *testing.T) {
 	})
 
 	t.Run("returns expired for expired code", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB, deviceauth.WithExpiresIn(1*time.Millisecond))
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store, deviceauth.WithExpiresIn(1*time.Millisecond))
 		defer func() { _ = service.Close() }()
 
 		result, _ := service.CreateDeviceCode(context.Background(), deviceauth.CreateDeviceCodeRequest{
@@ -403,9 +371,8 @@ func TestService_CheckToken(t *testing.T) {
 	})
 
 	t.Run("returns invalid client for mismatched client_id", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB)
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store)
 		defer func() { _ = service.Close() }()
 
 		result, _ := service.CreateDeviceCode(context.Background(), deviceauth.CreateDeviceCodeRequest{
@@ -421,13 +388,9 @@ func TestService_CheckToken(t *testing.T) {
 }
 
 func TestService_CleanupExpired(t *testing.T) {
-	tdb := setupTestDB(t)
-	defer tdb.cleanup(t)
-
 	t.Run("removes expired device codes", func(t *testing.T) {
-		tdb.truncateTables(t)
-
-		service := createTestService(t, tdb.DB, deviceauth.WithExpiresIn(1*time.Millisecond))
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store, deviceauth.WithExpiresIn(1*time.Millisecond))
 		defer func() { _ = service.Close() }()
 
 		// Create a device code that will expire
@@ -455,11 +418,9 @@ func TestService_CleanupExpired(t *testing.T) {
 }
 
 func TestService_Close(t *testing.T) {
-	tdb := setupTestDB(t)
-	defer tdb.cleanup(t)
-
 	t.Run("closes without error", func(t *testing.T) {
-		service := createTestService(t, tdb.DB)
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store)
 
 		err := service.Close()
 		if err != nil {
@@ -468,7 +429,8 @@ func TestService_Close(t *testing.T) {
 	})
 
 	t.Run("closes with cleanup running", func(t *testing.T) {
-		service := createTestService(t, tdb.DB,
+		store := newMockDeviceCodeStore()
+		service := createTestService(t, store,
 			deviceauth.WithCleanupInterval(100*time.Millisecond),
 		)
 

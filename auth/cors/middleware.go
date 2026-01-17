@@ -3,6 +3,7 @@ package cors
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -172,11 +173,22 @@ func (c *CORS) isOriginTrusted(origin string) bool {
 	}
 
 	// Also check if it matches the base URL
-	if c.config.BaseURL != "" && strings.HasPrefix(c.config.BaseURL, origin) {
-		return true
+	if c.config.BaseURL != "" {
+		baseOrigin := originFromBaseURL(c.config.BaseURL)
+		if baseOrigin != "" && origin == baseOrigin {
+			return true
+		}
 	}
 
 	return false
+}
+
+func originFromBaseURL(baseURL string) string {
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 // formatInt converts an int to string without importing strconv

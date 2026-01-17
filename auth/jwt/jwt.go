@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/kv"
 )
 
 // Algorithm represents the JWT signing algorithm
@@ -25,6 +26,15 @@ const (
 	AlgorithmES512 Algorithm = "ES512"
 	AlgorithmEdDSA Algorithm = "EdDSA"
 )
+
+// KeyProvider is an interface for database-backed JWT key management.
+// Implemented by both KeyManager (Bun) and KeyManagerAdapter (sqlc).
+type KeyProvider interface {
+	// GetActiveKey returns the current active signing key
+	GetActiveKey(ctx context.Context) (*LoadedKey, error)
+	// GetKeyForVerification returns a key by ID for token verification
+	GetKeyForVerification(ctx context.Context, kid string) (*LoadedKey, error)
+}
 
 // Config holds JWT service configuration
 type Config struct {
@@ -47,7 +57,8 @@ type Config struct {
 	KeySource KeySource
 
 	// KeyManager handles database-backed keys (set automatically when KeySource is KeySourceDatabase)
-	KeyManager *KeyManager
+	// Can be either *KeyManager (Bun) or *KeyManagerAdapter (sqlc)
+	KeyManager KeyProvider
 
 	// AccessTokenTTL is the lifetime of access tokens (default: 15 minutes)
 	AccessTokenTTL time.Duration
@@ -64,6 +75,19 @@ type Config struct {
 	// TokenBlocklist is used to check if tokens are revoked (optional)
 	TokenBlocklist TokenBlocklist
 
+	// RequireEmailVerification blocks token issuance for unverified users.
+	RequireEmailVerification bool
+
+	// LockoutThreshold is the number of failed login attempts before lockout.
+	// Set to 0 to disable.
+	LockoutThreshold int
+
+	// LockoutDuration is how long an account remains locked after failures.
+	LockoutDuration time.Duration
+
+	// LockoutStore is used for tracking failed attempts. If nil, in-memory is used.
+	LockoutStore kv.Store
+
 	// KeyRotationGracePeriod is how long rotated keys remain valid for verification.
 	// Only used when KeySource is KeySourceDatabase.
 	// Default is 24 hours.
@@ -73,6 +97,19 @@ type Config struct {
 	// Only applies to RSA algorithms (RS256/384/512).
 	// Default is 2048.
 	KeySize int
+
+	// RotateKeyRateLimitMax is the max number of rotate requests per window.
+	// Set to 0 to disable.
+	RotateKeyRateLimitMax int
+
+	// RotateKeyRateLimitWindow is the window for rotate rate limiting.
+	RotateKeyRateLimitWindow time.Duration
+
+	// RotateKeyRateLimiter is the limiter used for rotate requests.
+	RotateKeyRateLimiter kv.RateLimiter
+
+	// KeyRotationRoles are allowed roles for key rotation.
+	KeyRotationRoles []string
 }
 
 // TokenBlocklist is an interface for checking if tokens are revoked
@@ -87,9 +124,15 @@ type TokenBlocklist interface {
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() Config {
 	return Config{
-		Algorithm:       AlgorithmHS256,
-		AccessTokenTTL:  15 * time.Minute,
-		RefreshTokenTTL: 7 * 24 * time.Hour,
+		Algorithm:                AlgorithmHS256,
+		AccessTokenTTL:           15 * time.Minute,
+		RefreshTokenTTL:          7 * 24 * time.Hour,
+		RequireEmailVerification: false,
+		LockoutThreshold:         10,
+		LockoutDuration:          15 * time.Minute,
+		RotateKeyRateLimitMax:    5,
+		RotateKeyRateLimitWindow: time.Minute,
+		KeyRotationRoles:         []string{"admin"},
 	}
 }
 
@@ -99,7 +142,7 @@ type Service struct {
 	signingKey any
 	verifyKey  any
 	method     jwt.SigningMethod
-	keyManager *KeyManager
+	keyManager KeyProvider
 }
 
 // NewService creates a new JWT service
@@ -517,6 +560,6 @@ func (s *Service) Config() Config {
 }
 
 // KeyManager returns the key manager (nil if not using database-backed keys)
-func (s *Service) KeyManager() *KeyManager {
+func (s *Service) KeyManager() KeyProvider {
 	return s.keyManager
 }

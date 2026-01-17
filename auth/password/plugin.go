@@ -53,7 +53,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.ctx = ctx
 
 	// Require database access
-	if ctx.DB == nil {
+	if ctx.Store == nil {
 		ctx.Logger.Warn("password plugin: no database available, plugin disabled")
 		return nil
 	}
@@ -76,6 +76,9 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	for _, opt := range p.opts {
 		opt(&config)
 	}
+	if !config.RequireEmailVerification {
+		config.RequireEmailVerification = ctx.RequireEmailVerification
+	}
 
 	// Try to find a PasswordResetTokenProvider (e.g., OTP plugin)
 	var tokenProvider PasswordResetTokenProvider
@@ -90,7 +93,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 
 	// Create the service
 	p.service = NewService(
-		ctx.DB,
+		NewStoreAdapter(ctx.Store),
 		auth,
 		tokenProvider,
 		ctx.EventBus,

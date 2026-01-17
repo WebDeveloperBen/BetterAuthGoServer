@@ -2,43 +2,123 @@ package apikey_test
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
+	"sync"
 	"testing"
-
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/pgdialect"
-	"github.com/uptrace/bun/driver/pgdriver"
+	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/apikey"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
-// setupTestService creates a new Service with a fresh database connection.
-// The database is cleaned up after the test completes.
-func setupTestService(t *testing.T) (*apikey.Service, *bun.DB) {
+// mockKeyStore implements apikey.KeyStore for testing
+type mockKeyStore struct {
+	mu   sync.RWMutex
+	keys map[string]*apikey.APIKey
+}
+
+func newMockKeyStore() *mockKeyStore {
+	return &mockKeyStore{
+		keys: make(map[string]*apikey.APIKey),
+	}
+}
+
+func (m *mockKeyStore) Create(ctx context.Context, key *apikey.APIKey) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.keys[key.ID] = key
+	return nil
+}
+
+func (m *mockKeyStore) GetByID(ctx context.Context, id string) (*apikey.APIKey, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if key, ok := m.keys[id]; ok {
+		return key, nil
+	}
+	return nil, nil
+}
+
+func (m *mockKeyStore) GetByIDAndUser(ctx context.Context, id, userID string) (*apikey.APIKey, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if key, ok := m.keys[id]; ok && key.UserID == userID {
+		return key, nil
+	}
+	return nil, nil
+}
+
+func (m *mockKeyStore) ListByUser(ctx context.Context, userID string) ([]*apikey.APIKey, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var result []*apikey.APIKey
+	for _, key := range m.keys {
+		if key.UserID == userID {
+			result = append(result, key)
+		}
+	}
+	return result, nil
+}
+
+func (m *mockKeyStore) GetByKeyPrefix(ctx context.Context, keyPrefix string) ([]*apikey.APIKey, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var result []*apikey.APIKey
+	for _, key := range m.keys {
+		if key.KeyPrefix == keyPrefix && key.Enabled {
+			result = append(result, key)
+		}
+	}
+	return result, nil
+}
+
+func (m *mockKeyStore) Update(ctx context.Context, key *apikey.APIKey) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.keys[key.ID] = key
+	return nil
+}
+
+func (m *mockKeyStore) UpdateUsage(ctx context.Context, key *apikey.APIKey) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.keys[key.ID] = key
+	return nil
+}
+
+func (m *mockKeyStore) Delete(ctx context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.keys, id)
+	return nil
+}
+
+func (m *mockKeyStore) DeleteAllExpired(ctx context.Context) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := time.Now()
+	var count int64
+	for id, key := range m.keys {
+		if key.ExpiresAt != nil && key.ExpiresAt.Before(now) {
+			delete(m.keys, id)
+			count++
+		}
+	}
+	return count, nil
+}
+
+// setupTestService creates a new Service with mock dependencies.
+func setupTestService(t *testing.T) (*apikey.Service, *mockKeyStore) {
 	t.Helper()
 
-	if sharedConnStr == "" {
-		t.Fatal("Shared container not initialized - TestMain not called?")
-	}
-
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(sharedConnStr)))
-	bunDB := bun.NewDB(sqldb, pgdialect.New())
-
-	if err := bunDB.PingContext(context.Background()); err != nil {
-		t.Fatalf("Failed to ping database: %v", err)
-	}
-
+	store := newMockKeyStore()
 	hasher := token.NewHasher("test-secret")
 	config := apikey.DefaultConfig()
-	service := apikey.NewService(bunDB, hasher, config, slog.Default())
+	service := apikey.NewService(store, hasher, config, slog.Default())
 
 	t.Cleanup(func() {
-		// Clean up test data
-		_, _ = bunDB.NewDelete().Model((*apikey.APIKey)(nil)).Where("1=1").Exec(context.Background())
-		_ = bunDB.Close()
+		_ = service.Close()
 	})
 
-	return service, bunDB
+	return service, store
 }

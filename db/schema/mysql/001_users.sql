@@ -1,0 +1,19 @@
+-- Users table
+CREATE TABLE IF NOT EXISTS users (
+    id VARCHAR(255) PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    name VARCHAR(255) NOT NULL,
+    image LONGTEXT,
+    banned BOOLEAN NOT NULL DEFAULT FALSE,
+    banned_at TIMESTAMP(6) NULL,
+    ban_reason LONGTEXT,
+    role VARCHAR(50) NOT NULL DEFAULT 'user',
+    is_anonymous BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_banned ON users(banned);
+CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at);

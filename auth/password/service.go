@@ -7,15 +7,13 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/uptrace/bun"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
 // Service handles password authentication operations.
 type Service struct {
-	db            *bun.DB
+	store         PasswordStore
 	hasher        models.PasswordHasher
 	auth          AuthProvider
 	tokenProvider PasswordResetTokenProvider
@@ -27,7 +25,7 @@ type Service struct {
 
 // NewService creates a new password service.
 func NewService(
-	db *bun.DB,
+	store PasswordStore,
 	auth AuthProvider,
 	tokenProvider PasswordResetTokenProvider,
 	eventBus models.EventBus,
@@ -35,7 +33,7 @@ func NewService(
 	logger *slog.Logger,
 ) *Service {
 	return &Service{
-		db:            db,
+		store:         store,
 		hasher:        models.NewArgon2PasswordHasher(),
 		auth:          auth,
 		tokenProvider: tokenProvider,
@@ -97,9 +95,9 @@ func (s *Service) SignUp(ctx context.Context, email, password, name string, r *h
 		return nil, nil, err
 	}
 
-	// Auto sign-in if enabled
+	// Auto sign-in if enabled and verification is not required
 	var session *plugin.Session
-	if s.config.AutoSignIn {
+	if s.config.AutoSignIn && !s.config.RequireEmailVerification {
 		session, err = s.auth.CreateSessionForUser(ctx, user.ID, r)
 		if err != nil {
 			s.logger.Error("failed to create session after signup",
@@ -136,6 +134,14 @@ func (s *Service) SignIn(ctx context.Context, email, password string, r *http.Re
 			return nil, nil, ErrInvalidCredentials
 		}
 		return nil, nil, err
+	}
+
+	if s.config.RequireEmailVerification && !user.EmailVerified {
+		// Record failure to slow down brute-force on unverified accounts
+		if _, lockErr := s.lockout.RecordFailure(ctx, email); lockErr != nil {
+			s.logger.Error("failed to record login failure", "email", email, "error", lockErr)
+		}
+		return nil, nil, models.ErrEmailNotVerified
 	}
 
 	// Get email account
@@ -251,34 +257,12 @@ func (s *Service) ConfirmPasswordReset(ctx context.Context, token, newPassword s
 
 // createEmailAccount creates an email account for a user.
 func (s *Service) createEmailAccount(ctx context.Context, userID, passwordHash string) error {
-	now := time.Now()
-	account := &Account{
-		ID:           uuid.New().String(),
-		UserID:       userID,
-		Provider:     ProviderEmail,
-		PasswordHash: &passwordHash,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
-
-	_, err := s.db.NewInsert().
-		Model(account).
-		Exec(ctx)
-	return err
+	return s.store.CreateEmailAccount(ctx, userID, passwordHash)
 }
 
 // getEmailAccount retrieves the email account for a user.
 func (s *Service) getEmailAccount(ctx context.Context, userID string) (*Account, error) {
-	var account Account
-	err := s.db.NewSelect().
-		Model(&account).
-		Where("user_id = ?", userID).
-		Where("provider = ?", ProviderEmail).
-		Scan(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &account, nil
+	return s.store.GetEmailAccount(ctx, userID)
 }
 
 // updatePassword updates a user's password hash.
@@ -290,45 +274,22 @@ func (s *Service) updatePassword(ctx context.Context, userID, newPassword string
 	}
 
 	// Update the account
-	_, err = s.db.NewUpdate().
-		Model((*Account)(nil)).
-		Set("password_hash = ?", passwordHash).
-		Set("updated_at = ?", time.Now()).
-		Where("user_id = ?", userID).
-		Where("provider = ?", ProviderEmail).
-		Exec(ctx)
-	return err
+	return s.store.UpdatePassword(ctx, userID, passwordHash)
 }
 
 // deleteUserSessions deletes all sessions for a user.
 func (s *Service) deleteUserSessions(ctx context.Context, userID string) error {
-	_, err := s.db.NewDelete().
-		Model((*Session)(nil)).
-		Where("user_id = ?", userID).
-		Exec(ctx)
-	return err
+	return s.store.DeleteUserSessions(ctx, userID)
 }
 
 // Account represents an email account in the database.
-// This mirrors models.Account but is used for direct DB access.
 type Account struct {
-	bun.BaseModel `bun:"table:accounts,alias:a"`
-
-	ID           string    `bun:"id,pk"`
-	UserID       string    `bun:"user_id,notnull"`
-	Provider     string    `bun:"provider,notnull"`
-	PasswordHash *string   `bun:"password_hash"`
-	CreatedAt    time.Time `bun:"created_at,notnull"`
-	UpdatedAt    time.Time `bun:"updated_at,notnull"`
-}
-
-// Session represents a session in the database.
-// This mirrors models.Session but is used for direct DB access.
-type Session struct {
-	bun.BaseModel `bun:"table:sessions,alias:s"`
-
-	ID     string `bun:"id,pk"`
-	UserID string `bun:"user_id,notnull"`
+	ID           string
+	UserID       string
+	Provider     string
+	PasswordHash *string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // ProviderEmail is the provider type for email/password auth.

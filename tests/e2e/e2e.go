@@ -9,64 +9,95 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/pgdialect"
-	"github.com/uptrace/bun/driver/pgdriver"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/apikey"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/deviceauth"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/jwt"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/organization"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/otp"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/webauthn"
+	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	"github.com/webdeveloperben/BetterAuthGoServer/migrate"
 )
 
-// Shared test infrastructure - initialized once in TestMain (in main_test.go)
-var (
-	sharedContainer testcontainers.Container
-	sharedConnStr   string
-)
+// dialectEnvs holds all enabled dialect environments (set in TestMain)
+var dialectEnvs map[db.Dialect]*DialectEnv
+
+// migrationsRun tracks which dialects have had migrations run
+var migrationsRun = make(map[db.Dialect]bool)
+
+// migrationsMu protects migrationsRun for concurrent access
+var migrationsMu sync.Mutex
+
+// DialectEnv holds database connection info for a specific dialect
+type DialectEnv struct {
+	Dialect   db.Dialect
+	DB        *sql.DB
+	ConnStr   string
+	Container testcontainers.Container // nil for SQLite
+}
 
 // TestEnv holds the test environment
 type TestEnv struct {
-	Auth      *auth.Auth
-	Store     *store.Store
-	DB        *bun.DB
-	Container testcontainers.Container // nil when using shared container
-	Server    *httptest.Server
-	useShared bool
+	Auth       *auth.Auth
+	Store      *db.Store
+	DB         *sql.DB
+	Dialect    db.Dialect
+	Container  testcontainers.Container // nil when using shared container
+	Server     *httptest.Server
+	useShared  bool
+	dialectEnv *DialectEnv
 }
 
-// Setup creates a test environment using the shared PostgreSQL container.
-// Each test gets a fresh auth instance and server, but shares the database.
+// GetDialects returns all enabled dialect environments for testing
+func GetDialects() []*DialectEnv {
+	var envs []*DialectEnv
+	for _, env := range dialectEnvs {
+		envs = append(envs, env)
+	}
+	return envs
+}
+
+// SetupWithDialect creates a test environment for a specific dialect.
+// Each test gets a fresh auth instance and server.
 // Call TruncateTables at the start of each test for isolation.
-func Setup(t *testing.T) *TestEnv {
+func SetupWithDialect(t *testing.T, dialectEnv *DialectEnv) *TestEnv {
 	t.Helper()
 	ctx := context.Background()
 
-	if sharedConnStr == "" {
-		t.Fatal("Shared container not initialized - TestMain not called?")
+	if dialectEnv == nil || dialectEnv.DB == nil {
+		t.Fatal("Dialect environment not initialized")
 	}
 
-	// Connect with Bun using shared container
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(sharedConnStr)))
-	bunDB := bun.NewDB(sqldb, pgdialect.New())
+	// Run migrations only once per dialect (protected by mutex for concurrent tests)
+	migrationsMu.Lock()
+	if !migrationsRun[dialectEnv.Dialect] {
+		if err := runMigrations(ctx, dialectEnv.DB, dialectEnv.Dialect); err != nil {
+			migrationsMu.Unlock()
+			t.Fatalf("Failed to run migrations: %v", err)
+		}
+		migrationsRun[dialectEnv.Dialect] = true
+	}
+	migrationsMu.Unlock()
 
-	if err := bunDB.PingContext(ctx); err != nil {
-		t.Fatalf("Failed to ping database: %v", err)
+	// Create store using sqlc-based db.Store
+	dbStore, err := db.New(dialectEnv.DB, dialectEnv.Dialect)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
 	}
 
-	// Create store and run migrations (idempotent)
-	dbStore := store.New(bunDB)
-	if err := dbStore.Migrate(ctx); err != nil {
-		_ = bunDB.Close()
-		t.Fatalf("Failed to run migrations: %v", err)
-	}
-
-	// Create auth instance with default plugins (password, OTP, etc.)
+	// Create auth instance with default plugins
 	authInstance, err := auth.New(dbStore,
 		config.WithDefaults(),
 		config.WithSecret("test-secret-key-32-characters!!!"),
@@ -79,7 +110,6 @@ func Setup(t *testing.T) *TestEnv {
 		config.WithRateLimit(false, time.Minute, 1000),
 	)
 	if err != nil {
-		_ = bunDB.Close()
 		t.Fatalf("Failed to create auth instance: %v", err)
 	}
 
@@ -89,113 +119,78 @@ func Setup(t *testing.T) *TestEnv {
 	server := httptest.NewServer(mux)
 
 	return &TestEnv{
-		Auth:      authInstance,
-		Store:     dbStore,
-		DB:        bunDB,
-		Container: nil, // Using shared container
-		Server:    server,
-		useShared: true,
+		Auth:       authInstance,
+		Store:      dbStore,
+		DB:         dialectEnv.DB,
+		Dialect:    dialectEnv.Dialect,
+		Container:  nil,
+		Server:     server,
+		useShared:  true,
+		dialectEnv: dialectEnv,
 	}
 }
 
-// SetupIsolated creates a fully isolated test environment with its own container.
-// Use this for tests that need special configuration (e.g., rate limiting tests).
-func SetupIsolated(t *testing.T) *TestEnv {
+// Setup creates a test environment using the default dialect (PostgreSQL if available, else first available).
+// This is a convenience wrapper for backward compatibility.
+func Setup(t *testing.T) *TestEnv {
 	t.Helper()
-	ctx := context.Background()
 
-	// Start dedicated PostgreSQL container
-	pgContainer, err := postgres.Run(ctx,
-		"postgres:16-alpine",
-		postgres.WithDatabase("testdb"),
-		postgres.WithUsername("testuser"),
-		postgres.WithPassword("testpass"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(30*time.Second),
-		),
-	)
-	if err != nil {
-		t.Fatalf("Failed to start PostgreSQL container: %v", err)
+	// Prefer PostgreSQL for backward compatibility, fall back to first available
+	var dialectEnv *DialectEnv
+	if env, ok := dialectEnvs[db.DialectPostgres]; ok {
+		dialectEnv = env
+	} else {
+		for _, env := range dialectEnvs {
+			dialectEnv = env
+			break
+		}
 	}
 
-	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to get connection string: %v", err)
+	if dialectEnv == nil {
+		t.Fatal("No dialect environments available - TestMain not called?")
 	}
 
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(connStr)))
-	bunDB := bun.NewDB(sqldb, pgdialect.New())
-
-	if err := bunDB.PingContext(ctx); err != nil {
-		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to ping database: %v", err)
-	}
-
-	dbStore := store.New(bunDB)
-	if err := dbStore.Migrate(ctx); err != nil {
-		_ = bunDB.Close()
-		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to run migrations: %v", err)
-	}
-
-	authInstance, err := auth.New(dbStore,
-		config.WithDefaults(),
-		config.WithSecret("test-secret-key-32-characters!!!"),
-		config.WithBaseURL("http://localhost:3000"),
-		config.WithSessionDuration(24*time.Hour),
-		config.WithAutoSignIn(true),
-		config.WithCSRF(false),
-		config.WithPasswordComplexity(false),
-		config.WithSessionCleanupInterval(0),
-		config.WithRateLimit(false, time.Minute, 1000),
-	)
-	if err != nil {
-		_ = bunDB.Close()
-		_ = pgContainer.Terminate(ctx)
-		t.Fatalf("Failed to create auth instance: %v", err)
-	}
-
-	mux := http.NewServeMux()
-	mux.Handle("/auth/", http.StripPrefix("/auth", authInstance.Handler()))
-	server := httptest.NewServer(mux)
-
-	return &TestEnv{
-		Auth:      authInstance,
-		Store:     dbStore,
-		DB:        bunDB,
-		Container: pgContainer,
-		Server:    server,
-		useShared: false,
-	}
+	return SetupWithDialect(t, dialectEnv)
 }
 
 // SetupWithRateLimiting creates a test environment with rate limiting enabled.
-// Uses the shared container but creates a fresh auth instance with rate limiting.
+// Uses the first available dialect.
 func SetupWithRateLimiting(t *testing.T, authRateLimit int) *TestEnv {
 	t.Helper()
 	ctx := context.Background()
 
-	if sharedConnStr == "" {
-		t.Fatal("Shared container not initialized - TestMain not called?")
+	// Get first available dialect
+	var dialectEnv *DialectEnv
+	if env, ok := dialectEnvs[db.DialectPostgres]; ok {
+		dialectEnv = env
+	} else {
+		for _, env := range dialectEnvs {
+			dialectEnv = env
+			break
+		}
 	}
 
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(sharedConnStr)))
-	bunDB := bun.NewDB(sqldb, pgdialect.New())
-
-	if err := bunDB.PingContext(ctx); err != nil {
-		t.Fatalf("Failed to ping database: %v", err)
+	if dialectEnv == nil {
+		t.Fatal("No dialect environments available")
 	}
 
-	dbStore := store.New(bunDB)
-	if err := dbStore.Migrate(ctx); err != nil {
-		_ = bunDB.Close()
-		t.Fatalf("Failed to run migrations: %v", err)
+	// Run migrations only once per dialect (protected by mutex for concurrent tests)
+	migrationsMu.Lock()
+	if !migrationsRun[dialectEnv.Dialect] {
+		if err := runMigrations(ctx, dialectEnv.DB, dialectEnv.Dialect); err != nil {
+			migrationsMu.Unlock()
+			t.Fatalf("Failed to run migrations: %v", err)
+		}
+		migrationsRun[dialectEnv.Dialect] = true
+	}
+	migrationsMu.Unlock()
+
+	dbStore, err := db.New(dialectEnv.DB, dialectEnv.Dialect)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
 	}
 
-	// Create auth instance with rate limiting and default plugins
+	// Create auth instance with rate limiting enabled
 	authInstance, err := auth.New(dbStore,
 		config.WithDefaults(),
 		config.WithSecret("test-secret-key-32-characters!!!"),
@@ -208,7 +203,6 @@ func SetupWithRateLimiting(t *testing.T, authRateLimit int) *TestEnv {
 		config.WithAuthRateLimit(authRateLimit),
 	)
 	if err != nil {
-		_ = bunDB.Close()
 		t.Fatalf("Failed to create auth instance: %v", err)
 	}
 
@@ -217,17 +211,72 @@ func SetupWithRateLimiting(t *testing.T, authRateLimit int) *TestEnv {
 	server := httptest.NewServer(mux)
 
 	return &TestEnv{
-		Auth:      authInstance,
-		Store:     dbStore,
-		DB:        bunDB,
-		Container: nil,
-		Server:    server,
-		useShared: true,
+		Auth:       authInstance,
+		Store:      dbStore,
+		DB:         dialectEnv.DB,
+		Dialect:    dialectEnv.Dialect,
+		Container:  nil,
+		Server:     server,
+		useShared:  true,
+		dialectEnv: dialectEnv,
 	}
 }
 
-// Cleanup closes resources. For shared containers, only closes the connection.
-// The shared container is terminated in TestMain.
+// SetupWithRateLimitingDialect creates a test environment with rate limiting enabled for a specific dialect.
+func SetupWithRateLimitingDialect(t *testing.T, dialectEnv *DialectEnv, authRateLimit int) *TestEnv {
+	t.Helper()
+	ctx := context.Background()
+
+	// Run migrations only once per dialect (protected by mutex for concurrent tests)
+	migrationsMu.Lock()
+	if !migrationsRun[dialectEnv.Dialect] {
+		if err := runMigrations(ctx, dialectEnv.DB, dialectEnv.Dialect); err != nil {
+			migrationsMu.Unlock()
+			t.Fatalf("Failed to run migrations: %v", err)
+		}
+		migrationsRun[dialectEnv.Dialect] = true
+	}
+	migrationsMu.Unlock()
+
+	dbStore, err := db.New(dialectEnv.DB, dialectEnv.Dialect)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	// Create auth instance with rate limiting enabled
+	authInstance, err := auth.New(dbStore,
+		config.WithDefaults(),
+		config.WithSecret("test-secret-key-32-characters!!!"),
+		config.WithBaseURL("http://localhost:3000"),
+		config.WithSessionDuration(24*time.Hour),
+		config.WithAutoSignIn(true),
+		config.WithCSRF(false),
+		config.WithPasswordComplexity(false),
+		config.WithSessionCleanupInterval(0),
+		config.WithAuthRateLimit(authRateLimit),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create auth instance: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.Handle("/auth/", http.StripPrefix("/auth", authInstance.Handler()))
+	server := httptest.NewServer(mux)
+
+	return &TestEnv{
+		Auth:       authInstance,
+		Store:      dbStore,
+		DB:         dialectEnv.DB,
+		Dialect:    dialectEnv.Dialect,
+		Container:  nil,
+		Server:     server,
+		useShared:  true,
+		dialectEnv: dialectEnv,
+	}
+}
+
+// Cleanup closes resources. For shared containers, only closes the auth instance and server.
+// The shared containers are terminated in TestMain.
 func (env *TestEnv) Cleanup(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
@@ -238,9 +287,9 @@ func (env *TestEnv) Cleanup(t *testing.T) {
 	if env.Auth != nil {
 		env.Auth.Close()
 	}
-	if env.DB != nil {
-		_ = env.DB.Close()
-	}
+	// Note: We don't close env.DB here because it's shared across tests.
+	// It will be closed in TestMain cleanup.
+
 	// Only terminate container if using isolated mode
 	if !env.useShared && env.Container != nil {
 		if err := env.Container.Terminate(ctx); err != nil {
@@ -249,21 +298,48 @@ func (env *TestEnv) Cleanup(t *testing.T) {
 	}
 }
 
-// TruncateTables clears all data from tables for test isolation
+// TruncateTables clears all data from tables for test isolation.
+// Handles dialect-specific truncate syntax.
 func (env *TestEnv) TruncateTables(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
 
 	// Core tables that are always created by migrations.
-	// Note: oauth_states is created by the OAuth plugin when registered,
-	// so it's not included here. If OAuth tests are needed, register the plugin first.
+	// Note: Plugin tables (oauth_states, etc.) are also created by migrations.
 	tables := []string{"verifications", "sessions", "accounts", "users"}
+
 	for _, table := range tables {
-		_, err := env.DB.ExecContext(ctx, fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table))
-		if err != nil {
-			t.Fatalf("Failed to truncate %s: %v", table, err)
+		var query string
+		switch env.Dialect {
+		case db.DialectPostgres:
+			query = fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table)
+		case db.DialectMySQL:
+			// MySQL requires disabling FK checks for truncate
+			query = fmt.Sprintf("DELETE FROM %s", table)
+		case db.DialectSQLite:
+			query = fmt.Sprintf("DELETE FROM %s", table)
+		default:
+			query = fmt.Sprintf("DELETE FROM %s", table)
+		}
+		if _, err := env.DB.ExecContext(ctx, query); err != nil {
+			t.Logf("Warning: Failed to truncate %s: %v", table, err)
 		}
 	}
+}
+
+// runMigrations runs all schema migrations using the migrate package.
+func runMigrations(ctx context.Context, sqlDB *sql.DB, dialect db.Dialect) error {
+	return migrate.Run(ctx, sqlDB, migrate.Dialect(dialect),
+		migrate.WithPlugins(
+			oauth.Migrations(),
+			jwt.Migrations(),
+			otp.Migrations(),
+			webauthn.Migrations(),
+			apikey.Migrations(),
+			deviceauth.Migrations(),
+			organization.Migrations(),
+		),
+	)
 }
 
 // HTTP helper functions

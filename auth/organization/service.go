@@ -7,22 +7,27 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/uptrace/bun"
+	orgdb "github.com/webdeveloperben/BetterAuthGoServer/auth/organization/db"
+	coredb "github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
-// Service provides organization operations using the database directly.
+// Service provides organization operations using the store adapter.
 type Service struct {
-	db     *bun.DB
-	logger *slog.Logger
-	config *Config
+	store   *StoreAdapter
+	rawDB   coredb.DBTX // Kept for queries not yet migrated (like session updates)
+	dialect coredb.Dialect
+	logger  *slog.Logger
+	config  *Config
 }
 
 // NewService creates a new organization service.
-func NewService(db *bun.DB, logger *slog.Logger, config *Config) *Service {
+func NewService(dbStore *orgdb.Store, rawDB coredb.DBTX, dialect coredb.Dialect, logger *slog.Logger, config *Config) *Service {
 	return &Service{
-		db:     db,
-		logger: logger,
-		config: config,
+		store:   NewStoreAdapter(dbStore),
+		rawDB:   rawDB,
+		dialect: dialect,
+		logger:  logger,
+		config:  config,
 	}
 }
 
@@ -33,15 +38,16 @@ func (s *Service) CreateOrganization(ctx context.Context, name, slug string, cre
 		return nil, fmt.Errorf("user not allowed to create organizations")
 	}
 
-	// Check organization limit
-	userOrgCount, err := s.db.NewSelect().
-		Model((*Organization)(nil)).
-		Join("JOIN members m ON m.organization_id = o.id").
-		Where("m.user_id = ?", creatorID).
-		Where("m.role = ?", "owner").
-		Count(ctx)
+	// Check organization limit by counting user's owned organizations
+	members, err := s.store.ListMembersByUser(ctx, creatorID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check organization count: %w", err)
+	}
+	var userOrgCount int
+	for _, m := range members {
+		if m.Role == "owner" {
+			userOrgCount++
+		}
 	}
 
 	if userOrgCount >= s.config.OrganizationLimit(creatorID) {
@@ -49,14 +55,11 @@ func (s *Service) CreateOrganization(ctx context.Context, name, slug string, cre
 	}
 
 	// Check if slug is unique
-	exists, err := s.db.NewSelect().
-		Model((*Organization)(nil)).
-		Where("slug = ?", slug).
-		Exists(ctx)
+	slugExists, err := s.store.CheckSlugExists(ctx, slug)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check slug uniqueness: %w", err)
 	}
-	if exists {
+	if slugExists {
 		return nil, fmt.Errorf("organization slug already exists")
 	}
 
@@ -90,32 +93,25 @@ func (s *Service) CreateOrganization(ctx context.Context, name, slug string, cre
 	}
 
 	// Create organization
-	if err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		if _, err := tx.NewInsert().Model(org).Exec(ctx); err != nil {
-			return err
-		}
-
-		// Add creator as member with appropriate role
-		member := &Member{
-			ID:             generateID(),
-			UserID:         creatorID,
-			OrganizationID: org.ID,
-			Role:           s.config.CreatorRole,
-			CreatedAt:      now,
-		}
-
-		if _, err := tx.NewInsert().Model(member).Exec(ctx); err != nil {
-			return err
-		}
-
-		return nil
-	}); err != nil {
+	if err := s.store.CreateOrganization(ctx, org); err != nil {
 		return nil, fmt.Errorf("failed to create organization: %w", err)
+	}
+
+	// Add creator as member with appropriate role
+	member := &Member{
+		ID:             generateID(),
+		UserID:         creatorID,
+		OrganizationID: org.ID,
+		Role:           s.config.CreatorRole,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := s.store.CreateMember(ctx, member); err != nil {
+		return nil, fmt.Errorf("failed to add creator as member: %w", err)
 	}
 
 	// Run after hook
 	if s.config.OrganizationHooks.AfterCreateOrganization != nil {
-		member, _ := s.GetMember(ctx, org.ID, creatorID)
 		if err := s.config.OrganizationHooks.AfterCreateOrganization(org, member, creatorID); err != nil {
 			s.logger.Error("after create organization hook failed", "error", err)
 		}
@@ -126,26 +122,24 @@ func (s *Service) CreateOrganization(ctx context.Context, name, slug string, cre
 
 // GetOrganization retrieves an organization by ID.
 func (s *Service) GetOrganization(ctx context.Context, id string) (*Organization, error) {
-	org := &Organization{}
-	err := s.db.NewSelect().
-		Model(org).
-		Where("id = ?", id).
-		Scan(ctx)
+	org, err := s.store.GetOrganizationByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get organization: %w", err)
+	}
+	if org == nil {
+		return nil, fmt.Errorf("organization not found")
 	}
 	return org, nil
 }
 
 // GetOrganizationBySlug retrieves an organization by slug.
 func (s *Service) GetOrganizationBySlug(ctx context.Context, slug string) (*Organization, error) {
-	org := &Organization{}
-	err := s.db.NewSelect().
-		Model(org).
-		Where("slug = ?", slug).
-		Scan(ctx)
+	org, err := s.store.GetOrganizationBySlug(ctx, slug)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get organization by slug: %w", err)
+	}
+	if org == nil {
+		return nil, fmt.Errorf("organization not found")
 	}
 	return org, nil
 }
@@ -171,15 +165,11 @@ func (s *Service) UpdateOrganization(ctx context.Context, id string, updates map
 	if slug, ok := updates["slug"].(string); ok {
 		// Check slug uniqueness if changing
 		if slug != org.Slug {
-			exists, err := s.db.NewSelect().
-				Model((*Organization)(nil)).
-				Where("slug = ?", slug).
-				Where("id != ?", id).
-				Exists(ctx)
+			existingOrg, err := s.store.GetOrganizationBySlug(ctx, slug)
 			if err != nil {
 				return nil, fmt.Errorf("failed to check slug uniqueness: %w", err)
 			}
-			if exists {
+			if existingOrg != nil && existingOrg.ID != id {
 				return nil, fmt.Errorf("organization slug already exists")
 			}
 		}
@@ -199,11 +189,7 @@ func (s *Service) UpdateOrganization(ctx context.Context, id string, updates map
 
 	org.UpdatedAt = time.Now()
 
-	_, err = s.db.NewUpdate().
-		Model(org).
-		WherePK().
-		Exec(ctx)
-	if err != nil {
+	if err := s.store.UpdateOrganization(ctx, org); err != nil {
 		return nil, fmt.Errorf("failed to update organization: %w", err)
 	}
 
@@ -227,51 +213,50 @@ func (s *Service) DeleteOrganization(ctx context.Context, id string) error {
 		}
 	}
 
-	// Delete in transaction
-	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		// Delete team members
-		if _, err := tx.NewDelete().
-			Model((*TeamMember)(nil)).
-			Where("team_id IN (SELECT id FROM teams WHERE organization_id = ?)", id).
-			Exec(ctx); err != nil {
-			return err
-		}
-
-		// Delete teams
-		if _, err := tx.NewDelete().
-			Model((*Team)(nil)).
-			Where("organization_id = ?", id).
-			Exec(ctx); err != nil {
-			return err
-		}
-
-		// Delete invitations
-		if _, err := tx.NewDelete().
-			Model((*Invitation)(nil)).
-			Where("organization_id = ?", id).
-			Exec(ctx); err != nil {
-			return err
-		}
-
-		// Delete members
-		if _, err := tx.NewDelete().
-			Model((*Member)(nil)).
-			Where("organization_id = ?", id).
-			Exec(ctx); err != nil {
-			return err
-		}
-
-		// Delete organization
-		if _, err := tx.NewDelete().
-			Model((*Organization)(nil)).
-			Where("id = ?", id).
-			Exec(ctx); err != nil {
-			return err
-		}
-
-		return nil
-	})
+	// Delete team members for teams in this org
+	teams, err := s.store.ListTeamsByOrganization(ctx, id)
 	if err != nil {
+		return fmt.Errorf("failed to list teams: %w", err)
+	}
+	for _, team := range teams {
+		members, err := s.store.ListTeamMembersByTeam(ctx, team.ID)
+		if err != nil {
+			return fmt.Errorf("failed to list team members: %w", err)
+		}
+		for _, m := range members {
+			if err := s.store.DeleteTeamMember(ctx, team.ID, m.UserID); err != nil {
+				return fmt.Errorf("failed to delete team member: %w", err)
+			}
+		}
+		if err := s.store.DeleteTeam(ctx, team.ID); err != nil {
+			return fmt.Errorf("failed to delete team: %w", err)
+		}
+	}
+
+	// Delete invitations - use CancelPendingInvitations for all emails (or iterate)
+	invitations, err := s.store.ListInvitationsByOrganization(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to list invitations: %w", err)
+	}
+	for _, inv := range invitations {
+		if err := s.store.UpdateInvitationStatus(ctx, inv.ID, "cancelled"); err != nil {
+			s.logger.Warn("failed to cancel invitation", "id", inv.ID, "error", err)
+		}
+	}
+
+	// Delete members
+	members, err := s.store.ListMembersByOrganization(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to list members: %w", err)
+	}
+	for _, m := range members {
+		if err := s.store.DeleteMember(ctx, id, m.UserID); err != nil {
+			return fmt.Errorf("failed to delete member: %w", err)
+		}
+	}
+
+	// Delete organization
+	if err := s.store.DeleteOrganization(ctx, id); err != nil {
 		return fmt.Errorf("failed to delete organization: %w", err)
 	}
 
@@ -287,12 +272,7 @@ func (s *Service) DeleteOrganization(ctx context.Context, id string) error {
 
 // ListUserOrganizations returns organizations where the user is a member.
 func (s *Service) ListUserOrganizations(ctx context.Context, userID string) ([]*Organization, error) {
-	var orgs []*Organization
-	err := s.db.NewSelect().
-		Model(&orgs).
-		Join("JOIN members m ON m.organization_id = o.id").
-		Where("m.user_id = ?", userID).
-		Scan(ctx)
+	orgs, err := s.store.ListUserOrganizations(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user organizations: %w", err)
 	}
@@ -313,16 +293,17 @@ func (s *Service) AddMember(ctx context.Context, organizationID, userID, role st
 		}
 	}
 
+	now := time.Now()
 	member := &Member{
 		ID:             generateID(),
 		UserID:         userID,
 		OrganizationID: organizationID,
 		Role:           role,
-		CreatedAt:      time.Now(),
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
-	_, err := s.db.NewInsert().Model(member).Exec(ctx)
-	if err != nil {
+	if err := s.store.CreateMember(ctx, member); err != nil {
 		return nil, fmt.Errorf("failed to add member: %w", err)
 	}
 
@@ -346,12 +327,7 @@ func (s *Service) RemoveMember(ctx context.Context, organizationID, userID strin
 		}
 	}
 
-	_, err := s.db.NewDelete().
-		Model((*Member)(nil)).
-		Where("organization_id = ?", organizationID).
-		Where("user_id = ?", userID).
-		Exec(ctx)
-	if err != nil {
+	if err := s.store.DeleteMember(ctx, organizationID, userID); err != nil {
 		return fmt.Errorf("failed to remove member: %w", err)
 	}
 
@@ -381,15 +357,13 @@ func (s *Service) UpdateMemberRole(ctx context.Context, organizationID, userID, 
 		}
 	}
 
-	member.Role = role
-
-	_, err = s.db.NewUpdate().
-		Model(member).
-		WherePK().
-		Exec(ctx)
-	if err != nil {
+	now := time.Now()
+	if err := s.store.UpdateMemberRole(ctx, member.ID, role, now); err != nil {
 		return nil, fmt.Errorf("failed to update member role: %w", err)
 	}
+
+	member.Role = role
+	member.UpdatedAt = now
 
 	// Run after hook
 	if s.config.OrganizationHooks.AfterUpdateMemberRole != nil {
@@ -403,25 +377,19 @@ func (s *Service) UpdateMemberRole(ctx context.Context, organizationID, userID, 
 
 // GetMember retrieves a member.
 func (s *Service) GetMember(ctx context.Context, organizationID, userID string) (*Member, error) {
-	member := &Member{}
-	err := s.db.NewSelect().
-		Model(member).
-		Where("organization_id = ?", organizationID).
-		Where("user_id = ?", userID).
-		Scan(ctx)
+	member, err := s.store.GetMember(ctx, organizationID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get member: %w", err)
+	}
+	if member == nil {
+		return nil, fmt.Errorf("member not found")
 	}
 	return member, nil
 }
 
 // ListMembers lists all members of an organization.
 func (s *Service) ListMembers(ctx context.Context, organizationID string) ([]*Member, error) {
-	var members []*Member
-	err := s.db.NewSelect().
-		Model(&members).
-		Where("organization_id = ?", organizationID).
-		Scan(ctx)
+	members, err := s.store.ListMembersByOrganization(ctx, organizationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list members: %w", err)
 	}
@@ -430,18 +398,13 @@ func (s *Service) ListMembers(ctx context.Context, organizationID string) ([]*Me
 
 // GetActiveMember gets the user's active member record.
 func (s *Service) GetActiveMember(ctx context.Context, userID string) (*Member, error) {
-	// This would need session context to determine active organization
-	// For now, return the first membership or implement session-based lookup
-	member := &Member{}
-	err := s.db.NewSelect().
-		Model(member).
-		Where("user_id = ?", userID).
-		Limit(1).
-		Scan(ctx)
+	member, err := s.store.GetFirstMemberByUser(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active member: %w", err)
 	}
-
+	if member == nil {
+		return nil, fmt.Errorf("no membership found")
+	}
 	return member, nil
 }
 
@@ -467,8 +430,7 @@ func (s *Service) CreateInvitation(ctx context.Context, organizationID, email, r
 		}
 	}
 
-	_, err := s.db.NewInsert().Model(invitation).Exec(ctx)
-	if err != nil {
+	if err := s.store.CreateInvitation(ctx, invitation); err != nil {
 		return nil, fmt.Errorf("failed to create invitation: %w", err)
 	}
 
@@ -512,35 +474,24 @@ func (s *Service) AcceptInvitation(ctx context.Context, invitationID, userID str
 		}
 	}
 
-	// Add member and update invitation in transaction
-	var member *Member
-	err = s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		// Add member
-		member = &Member{
-			ID:             generateID(),
-			UserID:         userID,
-			OrganizationID: invitation.OrganizationID,
-			Role:           invitation.Role,
-			CreatedAt:      time.Now(),
-		}
+	// Add member
+	now := time.Now()
+	member := &Member{
+		ID:             generateID(),
+		UserID:         userID,
+		OrganizationID: invitation.OrganizationID,
+		Role:           invitation.Role,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
 
-		if _, err := tx.NewInsert().Model(member).Exec(ctx); err != nil {
-			return err
-		}
+	if err := s.store.CreateMember(ctx, member); err != nil {
+		return nil, fmt.Errorf("failed to add member: %w", err)
+	}
 
-		// Update invitation status
-		invitation.Status = "accepted"
-		if _, err := tx.NewUpdate().
-			Model(invitation).
-			WherePK().
-			Exec(ctx); err != nil {
-			return err
-		}
-
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to accept invitation: %w", err)
+	// Update invitation status
+	if err := s.store.UpdateInvitationStatus(ctx, invitationID, "accepted"); err != nil {
+		return nil, fmt.Errorf("failed to update invitation status: %w", err)
 	}
 
 	// Run after hook
@@ -571,12 +522,7 @@ func (s *Service) RejectInvitation(ctx context.Context, invitationID, userID str
 		}
 	}
 
-	invitation.Status = "rejected"
-	_, err = s.db.NewUpdate().
-		Model(invitation).
-		WherePK().
-		Exec(ctx)
-	if err != nil {
+	if err := s.store.UpdateInvitationStatus(ctx, invitationID, "rejected"); err != nil {
 		return fmt.Errorf("failed to reject invitation: %w", err)
 	}
 
@@ -604,12 +550,7 @@ func (s *Service) CancelInvitation(ctx context.Context, invitationID, cancelledB
 		}
 	}
 
-	invitation.Status = "cancelled"
-	_, err = s.db.NewUpdate().
-		Model(invitation).
-		WherePK().
-		Exec(ctx)
-	if err != nil {
+	if err := s.store.UpdateInvitationStatus(ctx, invitationID, "cancelled"); err != nil {
 		return fmt.Errorf("failed to cancel invitation: %w", err)
 	}
 
@@ -625,11 +566,7 @@ func (s *Service) CancelInvitation(ctx context.Context, invitationID, cancelledB
 
 // ListInvitations lists invitations for an organization.
 func (s *Service) ListInvitations(ctx context.Context, organizationID string) ([]*Invitation, error) {
-	var invitations []*Invitation
-	err := s.db.NewSelect().
-		Model(&invitations).
-		Where("organization_id = ?", organizationID).
-		Scan(ctx)
+	invitations, err := s.store.ListInvitationsByOrganization(ctx, organizationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list invitations: %w", err)
 	}
@@ -638,25 +575,19 @@ func (s *Service) ListInvitations(ctx context.Context, organizationID string) ([
 
 // GetInvitation retrieves an invitation by ID.
 func (s *Service) GetInvitation(ctx context.Context, id string) (*Invitation, error) {
-	invitation := &Invitation{}
-	err := s.db.NewSelect().
-		Model(invitation).
-		Where("id = ?", id).
-		Scan(ctx)
+	invitation, err := s.store.GetInvitationByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get invitation: %w", err)
+	}
+	if invitation == nil {
+		return nil, fmt.Errorf("invitation not found")
 	}
 	return invitation, nil
 }
 
 // ListUserInvitations lists pending invitations for a user by email.
 func (s *Service) ListUserInvitations(ctx context.Context, email string) ([]*Invitation, error) {
-	var invitations []*Invitation
-	err := s.db.NewSelect().
-		Model(&invitations).
-		Where("email = ?", email).
-		Where("status = ?", "pending").
-		Scan(ctx)
+	invitations, err := s.store.ListPendingInvitationsByEmail(ctx, email)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user invitations: %w", err)
 	}
@@ -669,16 +600,16 @@ func (s *Service) CreateTeam(ctx context.Context, organizationID, name string) (
 		return nil, fmt.Errorf("teams are not enabled")
 	}
 
+	now := time.Now()
 	team := &Team{
 		ID:             generateID(),
 		Name:           name,
 		OrganizationID: organizationID,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
-	_, err := s.db.NewInsert().Model(team).Exec(ctx)
-	if err != nil {
+	if err := s.store.CreateTeam(ctx, team); err != nil {
 		return nil, fmt.Errorf("failed to create team: %w", err)
 	}
 
@@ -687,58 +618,55 @@ func (s *Service) CreateTeam(ctx context.Context, organizationID, name string) (
 
 // GetTeam retrieves a team by ID.
 func (s *Service) GetTeam(ctx context.Context, teamID string) (*Team, error) {
-	team := &Team{}
-	err := s.db.NewSelect().
-		Model(team).
-		Where("id = ?", teamID).
-		Scan(ctx)
+	team, err := s.store.GetTeamByID(ctx, teamID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get team: %w", err)
+	}
+	if team == nil {
+		return nil, fmt.Errorf("team not found")
 	}
 	return team, nil
 }
 
 // UpdateTeam updates a team.
 func (s *Service) UpdateTeam(ctx context.Context, teamID, name string) (*Team, error) {
-	team := &Team{}
-	err := s.db.NewSelect().
-		Model(team).
-		Where("id = ?", teamID).
-		Scan(ctx)
+	team, err := s.GetTeam(ctx, teamID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get team: %w", err)
+		return nil, err
 	}
 
-	team.Name = name
-	team.UpdatedAt = time.Now()
-
-	_, err = s.db.NewUpdate().
-		Model(team).
-		WherePK().
-		Exec(ctx)
-	if err != nil {
+	now := time.Now()
+	if err := s.store.UpdateTeam(ctx, teamID, name, now); err != nil {
 		return nil, fmt.Errorf("failed to update team: %w", err)
 	}
 
+	team.Name = name
+	team.UpdatedAt = now
 	return team, nil
 }
 
 // DeleteTeam deletes a team.
 func (s *Service) DeleteTeam(ctx context.Context, teamID string) error {
-	_, err := s.db.NewDelete().
-		Model((*Team)(nil)).
-		Where("id = ?", teamID).
-		Exec(ctx)
-	return err
+	// First delete all team members
+	members, err := s.store.ListTeamMembersByTeam(ctx, teamID)
+	if err != nil {
+		return fmt.Errorf("failed to list team members: %w", err)
+	}
+	for _, m := range members {
+		if err := s.store.DeleteTeamMember(ctx, teamID, m.UserID); err != nil {
+			return fmt.Errorf("failed to delete team member: %w", err)
+		}
+	}
+
+	if err := s.store.DeleteTeam(ctx, teamID); err != nil {
+		return fmt.Errorf("failed to delete team: %w", err)
+	}
+	return nil
 }
 
 // ListTeams lists teams for an organization.
 func (s *Service) ListTeams(ctx context.Context, organizationID string) ([]*Team, error) {
-	var teams []*Team
-	err := s.db.NewSelect().
-		Model(&teams).
-		Where("organization_id = ?", organizationID).
-		Scan(ctx)
+	teams, err := s.store.ListTeamsByOrganization(ctx, organizationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list teams: %w", err)
 	}
@@ -754,8 +682,7 @@ func (s *Service) AddTeamMember(ctx context.Context, teamID, userID string) (*Te
 		CreatedAt: time.Now(),
 	}
 
-	_, err := s.db.NewInsert().Model(teamMember).Exec(ctx)
-	if err != nil {
+	if err := s.store.CreateTeamMember(ctx, teamMember); err != nil {
 		return nil, fmt.Errorf("failed to add team member: %w", err)
 	}
 
@@ -764,21 +691,15 @@ func (s *Service) AddTeamMember(ctx context.Context, teamID, userID string) (*Te
 
 // RemoveTeamMember removes a user from a team.
 func (s *Service) RemoveTeamMember(ctx context.Context, teamID, userID string) error {
-	_, err := s.db.NewDelete().
-		Model((*TeamMember)(nil)).
-		Where("team_id = ?", teamID).
-		Where("user_id = ?", userID).
-		Exec(ctx)
-	return err
+	if err := s.store.DeleteTeamMember(ctx, teamID, userID); err != nil {
+		return fmt.Errorf("failed to remove team member: %w", err)
+	}
+	return nil
 }
 
 // ListTeamMembers lists members of a team.
 func (s *Service) ListTeamMembers(ctx context.Context, teamID string) ([]*TeamMember, error) {
-	var members []*TeamMember
-	err := s.db.NewSelect().
-		Model(&members).
-		Where("team_id = ?", teamID).
-		Scan(ctx)
+	members, err := s.store.ListTeamMembersByTeam(ctx, teamID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list team members: %w", err)
 	}
@@ -786,6 +707,7 @@ func (s *Service) ListTeamMembers(ctx context.Context, teamID string) ([]*TeamMe
 }
 
 // SetActiveOrganization sets the active organization for a session.
+// Note: This still uses raw SQL as session table extensions are not yet in sqlc.
 func (s *Service) SetActiveOrganization(ctx context.Context, sessionID string, organizationID *string) error {
 	// Validate organization exists if ID is provided
 	if organizationID != nil && *organizationID != "" {
@@ -795,13 +717,7 @@ func (s *Service) SetActiveOrganization(ctx context.Context, sessionID string, o
 		}
 	}
 
-	// Update the session's active_organization_id
-	// Using a raw query since SessionExtension only has the fields we want to update
-	_, err := s.db.NewUpdate().
-		Table("sessions").
-		Set("active_organization_id = ?", organizationID).
-		Where("id = ?", sessionID).
-		Exec(ctx)
+	_, err := s.rawDB.ExecContext(ctx, `UPDATE sessions SET active_organization_id = ? WHERE id = ?`, organizationID, sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to set active organization: %w", err)
 	}
@@ -810,6 +726,7 @@ func (s *Service) SetActiveOrganization(ctx context.Context, sessionID string, o
 }
 
 // SetActiveTeam sets the active team for a session.
+// Note: This still uses raw SQL as session table extensions are not yet in sqlc.
 func (s *Service) SetActiveTeam(ctx context.Context, sessionID string, teamID *string) error {
 	if !s.config.Teams.Enabled {
 		return fmt.Errorf("teams are not enabled")
@@ -823,12 +740,7 @@ func (s *Service) SetActiveTeam(ctx context.Context, sessionID string, teamID *s
 		}
 	}
 
-	// Update the session's active_team_id
-	_, err := s.db.NewUpdate().
-		Table("sessions").
-		Set("active_team_id = ?", teamID).
-		Where("id = ?", sessionID).
-		Exec(ctx)
+	_, err := s.rawDB.ExecContext(ctx, `UPDATE sessions SET active_team_id = ? WHERE id = ?`, teamID, sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to set active team: %w", err)
 	}
@@ -837,21 +749,16 @@ func (s *Service) SetActiveTeam(ctx context.Context, sessionID string, teamID *s
 }
 
 // GetActiveOrganization gets the active organization for a session.
+// Note: This still uses raw SQL as session table extensions are not yet in sqlc.
 func (s *Service) GetActiveOrganization(ctx context.Context, sessionID string) (*string, error) {
-	var result struct {
-		ActiveOrganizationID *string `bun:"active_organization_id"`
-	}
+	var activeOrgID *string
 
-	err := s.db.NewSelect().
-		Table("sessions").
-		Column("active_organization_id").
-		Where("id = ?", sessionID).
-		Scan(ctx, &result)
+	err := s.rawDB.QueryRowContext(ctx, `SELECT active_organization_id FROM sessions WHERE id = ?`, sessionID).Scan(&activeOrgID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active organization: %w", err)
 	}
 
-	return result.ActiveOrganizationID, nil
+	return activeOrgID, nil
 }
 
 // generateID generates a unique ID (simplified implementation).

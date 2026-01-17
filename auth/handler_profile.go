@@ -40,7 +40,11 @@ func (a *Auth) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	updatedUser, err := a.UpdateProfile(r.Context(), user.ID, ProfileUpdates(req))
 	if err != nil {
-		WriteError(w, http.StatusInternalServerError, err)
+		if errors.Is(err, models.ErrInvalidProfileUpdate) {
+			WriteError(w, http.StatusBadRequest, err)
+		} else {
+			WriteError(w, http.StatusInternalServerError, err)
+		}
 		return
 	}
 

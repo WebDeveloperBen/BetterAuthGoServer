@@ -85,9 +85,13 @@ func WriteJSON(w http.ResponseWriter, status int, data any) {
 
 // WriteError writes an error response
 func WriteError(w http.ResponseWriter, status int, err error) {
+	message := err.Error()
+	if status >= http.StatusInternalServerError {
+		message = http.StatusText(status)
+	}
 	WriteJSON(w, status, ErrorResponse{
 		Error:   http.StatusText(status),
-		Message: err.Error(),
+		Message: message,
 	})
 }
 
@@ -104,7 +108,7 @@ func (a *Auth) SetSessionCookie(w http.ResponseWriter, session *models.Session) 
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   secure,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: a.sessionSameSite(),
 		Expires:  session.ExpiresAt,
 	})
 
@@ -123,7 +127,7 @@ func (a *Auth) SetPluginSessionCookie(w http.ResponseWriter, session *plugin.Ses
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   secure,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: a.sessionSameSite(),
 		Expires:  session.ExpiresAt,
 	})
 
@@ -138,8 +142,16 @@ func (a *Auth) ClearSessionCookie(w http.ResponseWriter) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		SameSite: a.sessionSameSite(),
 		MaxAge:   -1,
 	})
+}
+
+func (a *Auth) sessionSameSite() http.SameSite {
+	if a.config.SessionCookieSameSite == 0 {
+		return http.SameSiteLaxMode
+	}
+	return a.config.SessionCookieSameSite
 }
 
 // GetSessionToken extracts the session token from the request

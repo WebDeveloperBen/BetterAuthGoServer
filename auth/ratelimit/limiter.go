@@ -46,16 +46,6 @@ func NewLimiter(cfg Config, logger *slog.Logger) *Limiter {
 	}
 }
 
-// New creates a new rate limiter with options.
-// Deprecated: Use NewPlugin() for plugin usage or NewLimiter() for direct usage.
-func New(opts ...Option) *Limiter {
-	cfg := DefaultConfig()
-	for _, opt := range opts {
-		opt(&cfg)
-	}
-	return NewLimiter(cfg, slog.Default())
-}
-
 // Allow checks if a request is allowed for the given key.
 // Returns true if allowed, false if rate limit exceeded.
 func (l *Limiter) Allow(key string) bool {
@@ -64,23 +54,28 @@ func (l *Limiter) Allow(key string) bool {
 
 // AllowN checks if n requests are allowed for the given key.
 func (l *Limiter) AllowN(key string, n int) bool {
-	ctx := context.Background()
+	ctx, cancel := l.backendContext()
+	defer cancel()
 	result, err := l.limiter.Allow(ctx, key, l.config.MaxRequests, l.config.Window, n)
 	if err != nil {
-		// On error, allow the request (fail open) but log the error
+		// On error, deny if configured to fail closed
 		if l.logger != nil {
 			l.logger.Error("rate limiter backend error", "error", err, "key", key)
 		}
-		return true
+		return !l.config.FailClosed
 	}
 	return result.Allowed
 }
 
 // Remaining returns the number of requests remaining for the given key
 func (l *Limiter) Remaining(key string) int {
-	ctx := context.Background()
+	ctx, cancel := l.backendContext()
+	defer cancel()
 	result, err := l.limiter.Allow(ctx, key, l.config.MaxRequests, l.config.Window, 0)
 	if err != nil {
+		if l.config.FailClosed {
+			return 0
+		}
 		return l.config.MaxRequests
 	}
 	return result.Remaining
@@ -88,7 +83,8 @@ func (l *Limiter) Remaining(key string) int {
 
 // Reset returns when the rate limit resets for the given key
 func (l *Limiter) Reset(key string) time.Time {
-	ctx := context.Background()
+	ctx, cancel := l.backendContext()
+	defer cancel()
 	result, err := l.limiter.Allow(ctx, key, l.config.MaxRequests, l.config.Window, 0)
 	if err != nil {
 		return time.Now().Add(l.config.Window)
@@ -102,6 +98,14 @@ func (l *Limiter) Close() error {
 		_ = l.limiter.Close()
 	}
 	return nil
+}
+
+func (l *Limiter) backendContext() (context.Context, context.CancelFunc) {
+	timeout := l.config.BackendTimeout
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+	return context.WithTimeout(context.Background(), timeout)
 }
 
 // Config returns the limiter configuration

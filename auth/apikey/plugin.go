@@ -2,10 +2,12 @@ package apikey
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	apikeydb "github.com/webdeveloperben/BetterAuthGoServer/auth/apikey/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
@@ -31,6 +33,7 @@ const (
 type Plugin struct {
 	ctx      plugin.Context
 	auth     AuthProvider
+	dbStore  *apikeydb.Store
 	service  *Service
 	handlers *handlers
 	config   Config
@@ -42,7 +45,6 @@ var (
 	_ plugin.Plugin             = (*Plugin)(nil)
 	_ plugin.RoutesProvider     = (*Plugin)(nil)
 	_ plugin.MiddlewareProvider = (*Plugin)(nil)
-	_ plugin.MigrationsProvider = (*Plugin)(nil)
 )
 
 // NewPlugin creates a new API key plugin with options.
@@ -60,7 +62,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.ctx = ctx
 
 	// Database is required
-	if ctx.DB == nil {
+	if ctx.RawDB == nil {
 		ctx.Logger.Warn("apikey plugin: no database available, plugin disabled")
 		return nil
 	}
@@ -80,8 +82,18 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 	p.config = config
 
+	// Create plugin's own store
+	dbStore, err := apikeydb.New(ctx.RawDB, ctx.Dialect)
+	if err != nil {
+		return fmt.Errorf("apikey plugin: failed to create store: %w", err)
+	}
+	p.dbStore = dbStore
+
+	// Create store adapter using sqlc-based store
+	store := NewStoreAdapter(p.dbStore)
+
 	// Create service
-	p.service = NewService(ctx.DB, ctx.Hasher, config, ctx.Logger)
+	p.service = NewService(store, ctx.Hasher, config, ctx.Logger)
 
 	// Create handlers
 	p.handlers = newHandlers(p.service, auth, &config)
@@ -173,11 +185,6 @@ func (p *Plugin) Middleware() []plugin.Middleware {
 			Handler:  p.apiKeySessionMiddleware(),
 		},
 	}
-}
-
-// Migrations returns the database models for migration.
-func (p *Plugin) Migrations() []any {
-	return []any{&APIKey{}}
 }
 
 // apiKeySessionMiddleware creates synthetic sessions from valid API keys.

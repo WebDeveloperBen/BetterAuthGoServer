@@ -10,6 +10,9 @@
 //	# Start Redis
 //	docker run -d -p 6379:6379 redis:alpine
 //
+//	# Run migrations
+//	migrate -path db/migrations/sqlite -database "sqlite3://auth.db" up
+//
 //	# Run the example
 //	go run ./examples/redis-ratelimit
 package main
@@ -21,33 +24,87 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/sqlitedialect"
+
+	_ "github.com/go-sql-driver/mysql" // MySQL driver
+	_ "github.com/lib/pq"              // PostgreSQL driver
+	_ "github.com/mattn/go-sqlite3"    // SQLite driver
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
 	kvredis "github.com/webdeveloperben/BetterAuthGoServer/auth/kv/redis"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/ratelimit"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
-
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
-func main() {
-	// 1. Set up database (using SQLite for this example)
-	sqldb, err := sql.Open("sqlite3", "file:auth.db?_foreign_keys=on")
-	if err != nil {
-		log.Fatal(err)
-	}
-	bunDB := bun.NewDB(sqldb, sqlitedialect.New())
-	defer func() { _ = bunDB.Close() }()
+// connectDB creates a standard sql.DB connection based on the DATABASE_URL scheme
+func connectDB(dbURL string) (*sql.DB, db.Dialect, error) {
+	switch {
+	case strings.HasPrefix(dbURL, "postgres://"), strings.HasPrefix(dbURL, "postgresql://"):
+		sqldb, err := sql.Open("postgres", dbURL)
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectPostgres, nil
 
-	// 2. Create store and run migrations
-	dbStore := store.New(bunDB)
-	if err := dbStore.Migrate(context.Background()); err != nil {
+	case strings.HasPrefix(dbURL, "mysql://"):
+		sqldb, err := sql.Open("mysql", strings.TrimPrefix(dbURL, "mysql://"))
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectMySQL, nil
+
+	case strings.HasPrefix(dbURL, "sqlite3://"):
+		path := strings.TrimPrefix(dbURL, "sqlite3://")
+		sqldb, err := sql.Open("sqlite3", path)
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectSQLite, nil
+
+	default:
+		// Assume SQLite file path
+		sqldb, err := sql.Open("sqlite3", dbURL)
+		if err != nil {
+			return nil, "", err
+		}
+		return sqldb, db.DialectSQLite, nil
+	}
+}
+
+func main() {
+	// 1. Set up database
+	// NOTE: Run migrations first using golang-migrate or your preferred tool:
+	//   migrate -path db/migrations/sqlite -database "sqlite3://auth.db" up
+	//   migrate -path db/migrations/postgres -database "postgres://..." up
+	//   migrate -path db/migrations/mysql -database "mysql://..." up
+	//
+	// Set DATABASE_URL environment variable for different databases:
+	//   SQLite:  DATABASE_URL="sqlite3://file:auth.db?_foreign_keys=on"
+	//   MySQL:   DATABASE_URL="mysql://user:pass@localhost/dbname"
+	//   PG:      DATABASE_URL="postgres://user:pass@localhost/dbname"
+
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "sqlite3://file:auth.db?_foreign_keys=on"
+	}
+
+	sqldb, dialect, err := connectDB(dbURL)
+	if err != nil {
+		log.Fatal("Failed to connect to database:", err)
+	}
+	defer func() {
+		if err := sqldb.Close(); err != nil {
+			log.Printf("Error closing database connection: %v", err)
+		}
+	}()
+
+	// 2. Create sqlc-based store
+	dbStore, err := db.New(sqldb, dialect)
+	if err != nil {
 		log.Fatal(err)
 	}
 

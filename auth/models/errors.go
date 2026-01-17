@@ -21,6 +21,7 @@ var (
 	ErrVerificationExpired           = errors.New("auth: verification expired")
 	ErrEmailAlreadyVerified          = errors.New("auth: email already verified")
 	ErrEmailVerificationNotAvailable = errors.New("auth: email verification not available")
+	ErrEmailNotVerified              = errors.New("auth: email not verified")
 
 	// Account errors
 	ErrAccountNotFound         = errors.New("auth: account not found")
@@ -28,7 +29,8 @@ var (
 	ErrCannotUnlinkLastAccount = errors.New("auth: cannot unlink last authentication method")
 
 	// General errors
-	ErrInvalidRequest = errors.New("auth: invalid request")
-	ErrForbidden      = errors.New("auth: forbidden")
-	ErrMissingStore   = errors.New("auth: store is required")
+	ErrInvalidRequest       = errors.New("auth: invalid request")
+	ErrForbidden            = errors.New("auth: forbidden")
+	ErrMissingStore         = errors.New("auth: store is required")
+	ErrInvalidProfileUpdate = errors.New("auth: invalid profile update")
 )

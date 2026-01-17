@@ -9,11 +9,12 @@ import (
 	"reflect"
 	"time"
 
+	"log/slog"
+
 	libwebauthn "github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
-	"log/slog"
 )
 
 const (
@@ -21,17 +22,31 @@ const (
 	sessionTypeLogin    = "login"
 )
 
+// CredentialStore defines the interface for WebAuthn persistence.
+// Implemented by both Store (Bun) and StoreAdapter (sqlc).
+type CredentialStore interface {
+	CreateCredential(ctx context.Context, credential *WebAuthnCredential) error
+	GetCredentialByID(ctx context.Context, credentialID []byte) (*WebAuthnCredential, error)
+	ListCredentialsByUser(ctx context.Context, userID string) ([]*WebAuthnCredential, error)
+	UpdateCredentialSignCount(ctx context.Context, id string, signCount uint32, lastUsedAt time.Time) error
+	DeleteCredential(ctx context.Context, id string) error
+	CreateSession(ctx context.Context, session *WebAuthnSession) error
+	GetSession(ctx context.Context, id string) (*WebAuthnSession, error)
+	DeleteSession(ctx context.Context, id string) error
+	DeleteExpiredSessions(ctx context.Context) error
+}
+
 // Service handles WebAuthn flows and persistence.
 type Service struct {
 	webauthn  *libwebauthn.WebAuthn
-	store     *Store
+	store     CredentialStore
 	encryptor *token.Encryptor
 	config    Config
 	logger    *slog.Logger
 }
 
 // NewService creates a new WebAuthn service.
-func NewService(store *Store, encryptor *token.Encryptor, config Config, logger *slog.Logger) (*Service, error) {
+func NewService(store CredentialStore, encryptor *token.Encryptor, config Config, logger *slog.Logger) (*Service, error) {
 	waConfig := buildLibraryConfig(config)
 	wa, err := libwebauthn.New(waConfig)
 	if err != nil {

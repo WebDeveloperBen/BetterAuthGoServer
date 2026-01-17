@@ -2,76 +2,124 @@ package admin
 
 import (
 	"context"
-	"database/sql"
+	"errors"
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
-	_ "github.com/mattn/go-sqlite3"
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/sqlitedialect"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
 )
 
-func setupTestService(t *testing.T) *Service {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-
-	// For service tests, we'll use an in-memory SQLite database
-	sqldb, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("Failed to open test database: %v", err)
-	}
-	db := bun.NewDB(sqldb, sqlitedialect.New())
-	t.Cleanup(func() { _ = db.Close() })
-
-	// Create tables
-	if err := createTestTables(db); err != nil {
-		t.Fatalf("Failed to create test tables: %v", err)
-	}
-
-	return NewService(db, logger)
+// mockAdminStore implements AdminStore for testing
+type mockAdminStore struct {
+	users map[string]*models.User
 }
 
-func createTestTables(db *bun.DB) error {
-	ctx := context.Background()
+func newMockAdminStore() *mockAdminStore {
+	return &mockAdminStore{
+		users: make(map[string]*models.User),
+	}
+}
 
-	// Create users table using the store.User model (has bun tags)
-	if _, err := db.NewCreateTable().
-		Model((*store.User)(nil)).
-		IfNotExists().
-		Exec(ctx); err != nil {
-		return err
+func (m *mockAdminStore) ListUsers(ctx context.Context, opts models.ListUsersOptions) (*models.ListUsersResult, error) {
+	var users []*models.User
+	for _, u := range m.users {
+		// Apply filters
+		if opts.Query != "" && u.Name != opts.Query && u.Email != opts.Query {
+			continue
+		}
+		if opts.Role != "" && u.Role != opts.Role {
+			continue
+		}
+		users = append(users, u)
 	}
 
-	// Create sessions table
-	if _, err := db.NewCreateTable().
-		Model((*models.Session)(nil)).
-		IfNotExists().
-		Exec(ctx); err != nil {
-		return err
-	}
+	total := int64(len(users))
 
-	// Create accounts table using store.Account model
-	if _, err := db.NewCreateTable().
-		Model((*store.Account)(nil)).
-		IfNotExists().
-		Exec(ctx); err != nil {
-		return err
+	// Apply pagination
+	start := opts.Offset
+	if start > len(users) {
+		start = len(users)
 	}
+	end := start + opts.Limit
+	if end > len(users) {
+		end = len(users)
+	}
+	users = users[start:end]
 
+	return &models.ListUsersResult{
+		Users: users,
+		Total: total,
+	}, nil
+}
+
+func (m *mockAdminStore) GetUser(ctx context.Context, userID string) (*models.User, error) {
+	u, ok := m.users[userID]
+	if !ok {
+		return nil, errors.New("user not found")
+	}
+	return u, nil
+}
+
+func (m *mockAdminStore) UpdateUser(ctx context.Context, user *models.User) error {
+	if _, ok := m.users[user.ID]; !ok {
+		return errors.New("user not found")
+	}
+	m.users[user.ID] = user
 	return nil
 }
 
-func createTestUser(t *testing.T, service *Service, user *models.User) {
-	ctx := context.Background()
-	if _, err := service.db.NewInsert().Model(user).Exec(ctx); err != nil {
-		t.Fatalf("Failed to create test user: %v", err)
+func (m *mockAdminStore) DeleteUser(ctx context.Context, userID string) error {
+	if _, ok := m.users[userID]; !ok {
+		return errors.New("user not found")
 	}
+	delete(m.users, userID)
+	return nil
+}
+
+func (m *mockAdminStore) BanUser(ctx context.Context, userID string, reason *string) error {
+	u, ok := m.users[userID]
+	if !ok {
+		return errors.New("user not found")
+	}
+	u.Banned = true
+	u.BanReason = reason
+	return nil
+}
+
+func (m *mockAdminStore) UnbanUser(ctx context.Context, userID string) error {
+	u, ok := m.users[userID]
+	if !ok {
+		return errors.New("user not found")
+	}
+	u.Banned = false
+	u.BanReason = nil
+	return nil
+}
+
+func (m *mockAdminStore) SetUserRole(ctx context.Context, userID, role string) error {
+	u, ok := m.users[userID]
+	if !ok {
+		return errors.New("user not found")
+	}
+	u.Role = role
+	return nil
+}
+
+func (m *mockAdminStore) addUser(user *models.User) {
+	m.users[user.ID] = user
+}
+
+func setupTestService(t *testing.T) (*Service, *mockAdminStore) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	store := newMockAdminStore()
+	service := NewService(store, logger)
+	return service, store
 }
 
 func TestListUsers_Empty(t *testing.T) {
-	service := setupTestService(t)
+	service, _ := setupTestService(t)
 	ctx := context.Background()
 
 	result, err := service.ListUsers(ctx, models.ListUsersOptions{
@@ -92,25 +140,27 @@ func TestListUsers_Empty(t *testing.T) {
 }
 
 func TestListUsers_WithUsers(t *testing.T) {
-	service := setupTestService(t)
+	service, store := setupTestService(t)
 	ctx := context.Background()
 
 	// Create test users
-	user1 := &models.User{
-		ID:    "user-1",
-		Email: "user1@example.com",
-		Name:  "User One",
-		Role:  "user",
-	}
-	user2 := &models.User{
-		ID:    "user-2",
-		Email: "user2@example.com",
-		Name:  "User Two",
-		Role:  "admin",
-	}
-
-	createTestUser(t, service, user1)
-	createTestUser(t, service, user2)
+	now := time.Now()
+	store.addUser(&models.User{
+		ID:        "user-1",
+		Email:     "user1@example.com",
+		Name:      "User One",
+		Role:      "user",
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	store.addUser(&models.User{
+		ID:        "user-2",
+		Email:     "user2@example.com",
+		Name:      "User Two",
+		Role:      "admin",
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
 
 	result, err := service.ListUsers(ctx, models.ListUsersOptions{
 		Limit: 10,
@@ -130,18 +180,20 @@ func TestListUsers_WithUsers(t *testing.T) {
 }
 
 func TestListUsers_WithLimit(t *testing.T) {
-	service := setupTestService(t)
+	service, store := setupTestService(t)
 	ctx := context.Background()
 
 	// Create multiple test users
+	now := time.Now()
 	for i := 1; i <= 5; i++ {
-		user := &models.User{
-			ID:    "user-" + string(rune(i+'0')),
-			Email: "user" + string(rune(i+'0')) + "@example.com",
-			Name:  "User " + string(rune(i+'0')),
-			Role:  "user",
-		}
-		createTestUser(t, service, user)
+		store.addUser(&models.User{
+			ID:        "user-" + string(rune(i+'0')),
+			Email:     "user" + string(rune(i+'0')) + "@example.com",
+			Name:      "User " + string(rune(i+'0')),
+			Role:      "user",
+			CreatedAt: now,
+			UpdatedAt: now,
+		})
 	}
 
 	result, err := service.ListUsers(ctx, models.ListUsersOptions{
@@ -162,16 +214,18 @@ func TestListUsers_WithLimit(t *testing.T) {
 }
 
 func TestGetUser_Exists(t *testing.T) {
-	service := setupTestService(t)
+	service, store := setupTestService(t)
 	ctx := context.Background()
 
-	user := &models.User{
-		ID:    "user-123",
-		Email: "test@example.com",
-		Name:  "Test User",
-		Role:  "user",
-	}
-	createTestUser(t, service, user)
+	now := time.Now()
+	store.addUser(&models.User{
+		ID:        "user-123",
+		Email:     "test@example.com",
+		Name:      "Test User",
+		Role:      "user",
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
 
 	retrieved, err := service.GetUser(ctx, "user-123")
 
@@ -179,17 +233,17 @@ func TestGetUser_Exists(t *testing.T) {
 		t.Fatalf("GetUser failed: %v", err)
 	}
 
-	if retrieved.ID != user.ID {
-		t.Errorf("Expected ID %q, got %q", user.ID, retrieved.ID)
+	if retrieved.ID != "user-123" {
+		t.Errorf("Expected ID %q, got %q", "user-123", retrieved.ID)
 	}
 
-	if retrieved.Email != user.Email {
-		t.Errorf("Expected email %q, got %q", user.Email, retrieved.Email)
+	if retrieved.Email != "test@example.com" {
+		t.Errorf("Expected email %q, got %q", "test@example.com", retrieved.Email)
 	}
 }
 
 func TestGetUser_NotFound(t *testing.T) {
-	service := setupTestService(t)
+	service, _ := setupTestService(t)
 	ctx := context.Background()
 
 	_, err := service.GetUser(ctx, "non-existent")
@@ -200,16 +254,18 @@ func TestGetUser_NotFound(t *testing.T) {
 }
 
 func TestUpdateUser_Success(t *testing.T) {
-	service := setupTestService(t)
+	service, store := setupTestService(t)
 	ctx := context.Background()
 
-	user := &models.User{
-		ID:    "user-123",
-		Email: "test@example.com",
-		Name:  "Test User",
-		Role:  "user",
-	}
-	createTestUser(t, service, user)
+	now := time.Now()
+	store.addUser(&models.User{
+		ID:        "user-123",
+		Email:     "test@example.com",
+		Name:      "Test User",
+		Role:      "user",
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
 
 	newName := "Updated Name"
 	newEmail := "updated@example.com"
@@ -221,33 +277,31 @@ func TestUpdateUser_Success(t *testing.T) {
 		Role:  &newRole,
 	}
 
-	// Note: The actual database update may fail due to bun primary key detection
-	// with models.User (which doesn't have bun tags), but the core logic is tested
-	// by checking that the user is retrieved and updates are applied to the struct
-	_, err := service.UpdateUser(ctx, "user-123", updates)
-
-	// We expect this to fail due to bun not recognizing primary keys on models.User
-	// In real usage, the store.User with bun tags would be used
-	if err == nil {
-		t.Log("UpdateUser succeeded unexpectedly - this may indicate the test setup has proper bun tags")
-	} else {
-		t.Logf("UpdateUser failed as expected: %v", err)
-	}
-
-	// Test that the user exists and can be retrieved
-	retrieved, err := service.GetUser(ctx, "user-123")
+	updated, err := service.UpdateUser(ctx, "user-123", updates)
 	if err != nil {
-		t.Fatalf("Failed to retrieve user after update attempt: %v", err)
+		t.Fatalf("UpdateUser failed: %v", err)
 	}
 
-	// The user should still exist
-	if retrieved.ID != "user-123" {
-		t.Errorf("User ID changed unexpectedly")
+	if updated.Name != newName {
+		t.Errorf("Expected name %q, got %q", newName, updated.Name)
+	}
+
+	if updated.Email != newEmail {
+		t.Errorf("Expected email %q, got %q", newEmail, updated.Email)
+	}
+
+	if updated.Role != newRole {
+		t.Errorf("Expected role %q, got %q", newRole, updated.Role)
+	}
+
+	// Email change should reset verification
+	if updated.EmailVerified {
+		t.Error("Expected EmailVerified to be false after email change")
 	}
 }
 
 func TestUpdateUser_NotFound(t *testing.T) {
-	service := setupTestService(t)
+	service, _ := setupTestService(t)
 	ctx := context.Background()
 
 	updates := AdminUserUpdates{
@@ -262,16 +316,18 @@ func TestUpdateUser_NotFound(t *testing.T) {
 }
 
 func TestDeleteUser_Success(t *testing.T) {
-	service := setupTestService(t)
+	service, store := setupTestService(t)
 	ctx := context.Background()
 
-	user := &models.User{
-		ID:    "user-123",
-		Email: "test@example.com",
-		Name:  "Test User",
-		Role:  "user",
-	}
-	createTestUser(t, service, user)
+	now := time.Now()
+	store.addUser(&models.User{
+		ID:        "user-123",
+		Email:     "test@example.com",
+		Name:      "Test User",
+		Role:      "user",
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
 
 	// Verify user exists
 	_, err := service.GetUser(ctx, "user-123")
@@ -293,7 +349,7 @@ func TestDeleteUser_Success(t *testing.T) {
 }
 
 func TestDeleteUser_NotFound(t *testing.T) {
-	service := setupTestService(t)
+	service, _ := setupTestService(t)
 	ctx := context.Background()
 
 	err := service.DeleteUser(ctx, "non-existent")
@@ -304,17 +360,19 @@ func TestDeleteUser_NotFound(t *testing.T) {
 }
 
 func TestBanUser_Success(t *testing.T) {
-	service := setupTestService(t)
+	service, store := setupTestService(t)
 	ctx := context.Background()
 
-	user := &models.User{
-		ID:     "user-123",
-		Email:  "test@example.com",
-		Name:   "Test User",
-		Role:   "user",
-		Banned: false,
-	}
-	createTestUser(t, service, user)
+	now := time.Now()
+	store.addUser(&models.User{
+		ID:        "user-123",
+		Email:     "test@example.com",
+		Name:      "Test User",
+		Role:      "user",
+		Banned:    false,
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
 
 	reason := "Violation of terms"
 	err := service.BanUser(ctx, "user-123", reason)
@@ -338,19 +396,21 @@ func TestBanUser_Success(t *testing.T) {
 }
 
 func TestUnbanUser_Success(t *testing.T) {
-	service := setupTestService(t)
+	service, store := setupTestService(t)
 	ctx := context.Background()
 
 	reason := "Violation of terms"
-	user := &models.User{
+	now := time.Now()
+	store.addUser(&models.User{
 		ID:        "user-123",
 		Email:     "test@example.com",
 		Name:      "Test User",
 		Role:      "user",
 		Banned:    true,
 		BanReason: &reason,
-	}
-	createTestUser(t, service, user)
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
 
 	err := service.UnbanUser(ctx, "user-123")
 	if err != nil {
@@ -373,16 +433,18 @@ func TestUnbanUser_Success(t *testing.T) {
 }
 
 func TestSetUserRole_Success(t *testing.T) {
-	service := setupTestService(t)
+	service, store := setupTestService(t)
 	ctx := context.Background()
 
-	user := &models.User{
-		ID:    "user-123",
-		Email: "test@example.com",
-		Name:  "Test User",
-		Role:  "user",
-	}
-	createTestUser(t, service, user)
+	now := time.Now()
+	store.addUser(&models.User{
+		ID:        "user-123",
+		Email:     "test@example.com",
+		Name:      "Test User",
+		Role:      "user",
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
 
 	newRole := "admin"
 	err := service.SetUserRole(ctx, "user-123", newRole)
@@ -402,16 +464,18 @@ func TestSetUserRole_Success(t *testing.T) {
 }
 
 func TestSetUserRole_InvalidRole(t *testing.T) {
-	service := setupTestService(t)
+	service, store := setupTestService(t)
 	ctx := context.Background()
 
-	user := &models.User{
-		ID:    "user-123",
-		Email: "test@example.com",
-		Name:  "Test User",
-		Role:  "user",
-	}
-	createTestUser(t, service, user)
+	now := time.Now()
+	store.addUser(&models.User{
+		ID:        "user-123",
+		Email:     "test@example.com",
+		Name:      "Test User",
+		Role:      "user",
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
 
 	err := service.SetUserRole(ctx, "user-123", "")
 	if err != ErrInvalidRequest {

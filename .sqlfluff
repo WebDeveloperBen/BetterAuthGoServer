@@ -1,0 +1,40 @@
+[sqlfluff]
+dialect = postgres
+templater = placeholder
+sql_file_exts = .sql
+
+# Exclude rules that conflict with sqlc query files
+# PRS: parsing issues with placeholders
+# LT02: indentation rules conflict with sqlc style
+# LT09: select targets on new line
+# LT06: function name spacing
+# CP01/CP02/CP04: capitalization rules
+# AL01: aliasing style
+# AM04/AM09: ambiguous rules
+# RF04: reference rules
+# LT04/LT05/LT14: other layout rules
+exclude_rules = PRS,LT01,LT02,LT04,LT05,LT06,LT09,LT14,CP01,CP02,CP03,CP04,AL01,AM04,AM09,RF04
+
+[sqlfluff:indentation]
+indented_joins = false
+indented_using_on = false
+template_blocks_indent = false
+
+[sqlfluff:layout:type:operator]
+line_position = leading
+
+[sqlfluff:capitalisation.keywords]
+capitalisation_policy = lower
+
+[sqlfluff:capitalisation.identifiers]
+capitalisation_policy = lower
+
+[sqlfluff:capitalisation.functions]
+capitalisation_policy = lower
+
+[sqlfluff:templater:placeholder]
+# Handle both PostgreSQL ($1, $2) and SQLite (?) style placeholders
+param_regex = (\$\d+|\?)
+
+[sqlfluff:rules:layout.long_lines]
+max_line_length = 120

@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"html"
+	"strings"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
@@ -24,9 +26,16 @@ func (a *Auth) UpdateProfile(ctx context.Context, userID string, updates Profile
 
 	// Apply updates
 	if updates.Name != nil {
-		user.Name = *updates.Name
+		name := strings.TrimSpace(*updates.Name)
+		if len(name) < 1 || len(name) > 100 {
+			return nil, models.ErrInvalidProfileUpdate
+		}
+		user.Name = html.EscapeString(name)
 	}
 	if updates.Image != nil {
+		if len(*updates.Image) > 2048 {
+			return nil, models.ErrInvalidProfileUpdate
+		}
 		user.Image = updates.Image
 	}
 

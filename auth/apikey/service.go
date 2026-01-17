@@ -7,14 +7,13 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/uptrace/bun"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/kv"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
 // Service handles API key business logic.
 type Service struct {
-	db          *bun.DB
+	store       KeyStore
 	hasher      *token.Hasher
 	config      Config
 	rateLimiter kv.RateLimiter
@@ -22,9 +21,9 @@ type Service struct {
 }
 
 // NewService creates a new API key service.
-func NewService(db *bun.DB, hasher *token.Hasher, config Config, logger *slog.Logger) *Service {
+func NewService(store KeyStore, hasher *token.Hasher, config Config, logger *slog.Logger) *Service {
 	return &Service{
-		db:          db,
+		store:       store,
 		hasher:      hasher,
 		config:      config,
 		rateLimiter: config.RateLimiter,
@@ -202,7 +201,7 @@ func (s *Service) Create(ctx context.Context, userID string, req CreateRequest) 
 	}
 
 	// Insert into database
-	_, err = s.db.NewInsert().Model(apiKey).Exec(ctx)
+	err = s.store.Create(ctx, apiKey)
 	if err != nil {
 		return nil, err
 	}
@@ -220,43 +219,25 @@ func (s *Service) Create(ctx context.Context, userID string, req CreateRequest) 
 
 // Get retrieves an API key by ID.
 func (s *Service) Get(ctx context.Context, id string) (*APIKey, error) {
-	var key APIKey
-	err := s.db.NewSelect().
-		Model(&key).
-		Where("id = ?", id).
-		Scan(ctx)
-	if err != nil {
+	key, err := s.store.GetByID(ctx, id)
+	if err != nil || key == nil {
 		return nil, ErrKeyNotFound
 	}
-	return &key, nil
+	return key, nil
 }
 
 // GetByIDAndUser retrieves an API key by ID, ensuring it belongs to the user.
 func (s *Service) GetByIDAndUser(ctx context.Context, id, userID string) (*APIKey, error) {
-	var key APIKey
-	err := s.db.NewSelect().
-		Model(&key).
-		Where("id = ?", id).
-		Where("user_id = ?", userID).
-		Scan(ctx)
-	if err != nil {
+	key, err := s.store.GetByIDAndUser(ctx, id, userID)
+	if err != nil || key == nil {
 		return nil, ErrKeyNotFound
 	}
-	return &key, nil
+	return key, nil
 }
 
 // List retrieves all API keys for a user.
 func (s *Service) List(ctx context.Context, userID string) ([]*APIKey, error) {
-	var keys []*APIKey
-	err := s.db.NewSelect().
-		Model(&keys).
-		Where("user_id = ?", userID).
-		Order("created_at DESC").
-		Scan(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return keys, nil
+	return s.store.ListByUser(ctx, userID)
 }
 
 // UpdateRequest contains the parameters for updating an API key.
@@ -315,10 +296,7 @@ func (s *Service) Update(ctx context.Context, id, userID string, req UpdateReque
 	key.UpdatedAt = time.Now()
 
 	// Update in database
-	_, err = s.db.NewUpdate().
-		Model(key).
-		WherePK().
-		Exec(ctx)
+	err = s.store.Update(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -333,10 +311,7 @@ func (s *Service) Delete(ctx context.Context, id, userID string) error {
 		return err
 	}
 
-	_, err = s.db.NewDelete().
-		Model((*APIKey)(nil)).
-		Where("id = ?", id).
-		Exec(ctx)
+	err = s.store.Delete(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -351,16 +326,7 @@ func (s *Service) Delete(ctx context.Context, id, userID string) error {
 
 // DeleteAllExpired removes all expired API keys.
 func (s *Service) DeleteAllExpired(ctx context.Context) (int64, error) {
-	res, err := s.db.NewDelete().
-		Model((*APIKey)(nil)).
-		Where("expires_at IS NOT NULL").
-		Where("expires_at < ?", time.Now()).
-		Exec(ctx)
-	if err != nil {
-		return 0, err
-	}
-	n, _ := res.RowsAffected()
-	return n, nil
+	return s.store.DeleteAllExpired(ctx)
 }
 
 // VerifyKey validates an API key and returns the key if valid.
@@ -379,12 +345,7 @@ func (s *Service) VerifyKey(ctx context.Context, rawKey string, requiredPerms Pe
 	}
 
 	// Query by hash prefix (fast indexed lookup)
-	var candidates []*APIKey
-	err := s.db.NewSelect().
-		Model(&candidates).
-		Where("key_prefix = ?", keyPrefix).
-		Where("enabled = ?", true).
-		Scan(ctx)
+	candidates, err := s.store.GetByKeyPrefix(ctx, keyPrefix)
 	if err != nil {
 		return nil, ErrInvalidAPIKey
 	}
@@ -553,12 +514,7 @@ func (s *Service) updateUsageStats(ctx context.Context, key *APIKey) error {
 	key.LastRequest = &now
 	key.UpdatedAt = now
 
-	_, err := s.db.NewUpdate().
-		Model(key).
-		Column("last_request", "request_count", "remaining", "last_refill_at", "updated_at").
-		WherePK().
-		Exec(ctx)
-	return err
+	return s.store.UpdateUsage(ctx, key)
 }
 
 // GetPermissions parses and returns the key's permissions.

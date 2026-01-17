@@ -3,6 +3,8 @@ package jwt
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 )
 
 // Request types
@@ -61,9 +63,27 @@ func (p *Plugin) handlePasswordGrant(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 
+	if p.lockout != nil {
+		locked, err := p.lockout.IsLocked(r.Context(), req.Email)
+		if err != nil && p.ctx.Logger != nil {
+			p.ctx.Logger.Error("jwt lockout check failed", "email", req.Email, "error", err)
+		}
+		if locked {
+			writeError(w, http.StatusTooManyRequests, ErrAccountLocked)
+			return
+		}
+	}
+
 	// Get user by email
 	user, err := p.auth.GetPluginUserByEmail(r.Context(), req.Email)
 	if err != nil || user == nil {
+		// Hash the password to reduce timing differences for non-existent users
+		_, _ = models.NewArgon2PasswordHasher().Hash(req.Password)
+		if p.lockout != nil {
+			if _, lockErr := p.lockout.RecordFailure(r.Context(), req.Email); lockErr != nil && p.ctx.Logger != nil {
+				p.ctx.Logger.Error("jwt lockout record failure failed", "email", req.Email, "error", lockErr)
+			}
+		}
 		writeError(w, http.StatusUnauthorized, ErrInvalidCredentials)
 		return
 	}
@@ -74,11 +94,32 @@ func (p *Plugin) handlePasswordGrant(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 
+	if p.requireEmailVerification && !user.EmailVerified {
+		if p.lockout != nil {
+			if _, lockErr := p.lockout.RecordFailure(r.Context(), req.Email); lockErr != nil && p.ctx.Logger != nil {
+				p.ctx.Logger.Error("jwt lockout record failure failed", "email", req.Email, "error", lockErr)
+			}
+		}
+		writeError(w, http.StatusForbidden, ErrEmailNotVerified)
+		return
+	}
+
 	// Verify password
 	valid, err := p.auth.VerifyPassword(r.Context(), user.ID, req.Password)
 	if err != nil || !valid {
+		if p.lockout != nil {
+			if _, lockErr := p.lockout.RecordFailure(r.Context(), req.Email); lockErr != nil && p.ctx.Logger != nil {
+				p.ctx.Logger.Error("jwt lockout record failure failed", "email", req.Email, "error", lockErr)
+			}
+		}
 		writeError(w, http.StatusUnauthorized, ErrInvalidCredentials)
 		return
+	}
+
+	if p.lockout != nil {
+		if err := p.lockout.ClearFailures(r.Context(), req.Email); err != nil && p.ctx.Logger != nil {
+			p.ctx.Logger.Error("jwt lockout clear failures failed", "email", req.Email, "error", err)
+		}
 	}
 
 	// Create session for the JWT
@@ -129,6 +170,15 @@ func (p *Plugin) handleRefreshGrant(w http.ResponseWriter, r *http.Request, req 
 		writeError(w, http.StatusUnauthorized, ErrInvalidToken)
 		return
 	}
+	if user.Banned {
+		writeError(w, http.StatusForbidden, ErrUserBanned)
+		return
+	}
+
+	if p.requireEmailVerification && !user.EmailVerified {
+		writeError(w, http.StatusForbidden, ErrEmailNotVerified)
+		return
+	}
 
 	userInfo := UserInfo{
 		ID:            user.ID,
@@ -177,6 +227,15 @@ func (p *Plugin) TokenRefreshHandler() http.HandlerFunc {
 		user, err := p.auth.GetPluginUser(r.Context(), claims.UserID)
 		if err != nil || user == nil {
 			writeError(w, http.StatusUnauthorized, ErrInvalidToken)
+			return
+		}
+		if user.Banned {
+			writeError(w, http.StatusForbidden, ErrUserBanned)
+			return
+		}
+
+		if p.requireEmailVerification && !user.EmailVerified {
+			writeError(w, http.StatusForbidden, ErrEmailNotVerified)
 			return
 		}
 
@@ -273,20 +332,24 @@ func (p *Plugin) TokenIntrospectHandler() http.HandlerFunc {
 // Requires admin authorization (should be protected by middleware).
 func (p *Plugin) KeyRotateHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if p.keyManager == nil {
+		if p.keyManagerAdapter == nil {
 			writeError(w, http.StatusNotImplemented, ErrNotInitialized)
 			return
 		}
 
 		// Rotate the key
-		newKey, err := p.keyManager.RotateKey(r.Context())
+		newKey, err := p.keyManagerAdapter.RotateKey(r.Context())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
 
 		// Also cleanup any expired keys
-		cleaned, _ := p.keyManager.CleanupExpiredKeys(r.Context())
+		cleaned, _ := p.keyManagerAdapter.CleanupExpiredKeys(r.Context())
+
+		if p.ctx.Logger != nil {
+			p.ctx.Logger.Info("jwt key rotated", "kid", newKey.ID, "algorithm", newKey.Algorithm)
+		}
 
 		_ = writeJSON(w, http.StatusOK, map[string]any{
 			"message":      "Key rotated successfully",
@@ -310,5 +373,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
-	_ = writeJSON(w, status, map[string]string{"error": err.Error()})
+	message := err.Error()
+	if status >= http.StatusInternalServerError {
+		message = http.StatusText(status)
+	}
+	_ = writeJSON(w, status, map[string]string{"error": message})
 }

@@ -92,12 +92,14 @@ func (s *Store) Expire(ctx context.Context, key string, ttl time.Duration) error
 	return nil
 }
 
-// TTL returns the remaining time-to-live for a key
+// TTL returns the remaining time-to-live for a key (millisecond precision)
 func (s *Store) TTL(ctx context.Context, key string) (time.Duration, error) {
-	ttl, err := s.client.TTL(ctx, key).Result()
+	// Use PTTL for millisecond precision instead of TTL (seconds)
+	ttl, err := s.client.PTTL(ctx, key).Result()
 	if err != nil {
 		return 0, err
 	}
+	// PTTL returns -2 if key doesn't exist, -1 if key has no TTL
 	if ttl < 0 {
 		return 0, kv.ErrKeyNotFound
 	}

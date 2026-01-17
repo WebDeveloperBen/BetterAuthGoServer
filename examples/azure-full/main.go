@@ -21,6 +21,14 @@
 //
 // To run:
 //
+//	# Run migrations first
+//	migrate -path db/migrations/sqlite -database "sqlite3://auth.db" up
+//	migrate -path auth/oauth/db/migrations/sqlite -database "sqlite3://auth.db" up
+//	migrate -path auth/jwt/db/migrations/sqlite -database "sqlite3://auth.db" up
+//	migrate -path auth/otp/db/migrations/sqlite -database "sqlite3://auth.db" up
+//	migrate -path auth/apikey/db/migrations/sqlite -database "sqlite3://auth.db" up
+//	migrate -path auth/deviceauth/db/migrations/sqlite -database "sqlite3://auth.db" up
+//
 //	export AUTH_SECRET="your-32-character-or-longer-secret-key"
 //	export AZURE_CLIENT_ID="your-azure-client-id"
 //	export AZURE_CLIENT_SECRET="your-azure-client-secret"
@@ -38,8 +46,9 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/sqlitedialect"
+
+	_ "github.com/lib/pq"           // PostgreSQL driver
+	_ "github.com/mattn/go-sqlite3" // SQLite driver
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/admin"
@@ -54,9 +63,7 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/otp"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/password"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/ratelimit"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
-
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
 func main() {
@@ -67,11 +74,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	bunDB := bun.NewDB(sqldb, sqlitedialect.New())
-	defer func() { _ = bunDB.Close() }()
+	defer func() { _ = sqldb.Close() }()
 
-	dbStore := store.New(bunDB)
-	if err := dbStore.Migrate(context.Background()); err != nil {
+	dbStore, err := db.New(sqldb, db.DialectSQLite)
+	if err != nil {
 		log.Fatal(err)
 	}
 
@@ -201,7 +207,11 @@ func main() {
 			providers.WithAzureTenant(tenant),
 		)
 
-		authService.Use(oauth.NewPlugin(azureProvider))
+		oauthPlugin, err := oauth.NewPlugin(azureProvider)
+		if err != nil {
+			log.Fatal("Failed to create OAuth plugin:", err)
+		}
+		authService.Use(oauthPlugin)
 		log.Printf("Azure OAuth enabled (tenant: %s)", tenant)
 	} else {
 		log.Println("Azure OAuth not configured. Set AZURE_CLIENT_ID and AZURE_CLIENT_SECRET to enable.")

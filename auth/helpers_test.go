@@ -217,8 +217,8 @@ func TestSetSessionCookie(t *testing.T) {
 	if !cookie.Secure {
 		t.Error("cookie should be Secure for HTTPS")
 	}
-	if cookie.SameSite != http.SameSiteStrictMode {
-		t.Errorf("cookie SameSite = %v, want Strict", cookie.SameSite)
+	if cookie.SameSite != http.SameSiteLaxMode {
+		t.Errorf("cookie SameSite = %v, want Lax", cookie.SameSite)
 	}
 
 	// Check RawToken was cleared

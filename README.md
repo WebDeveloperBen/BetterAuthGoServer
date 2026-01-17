@@ -18,21 +18,56 @@ A complete, embeddable authentication library for Go applications. Handles email
   - Secure cookie settings (HttpOnly, Secure, SameSite)
   - No user enumeration on login/reset endpoints
 - **Extensible Hooks** - React to auth events (user created, sign in, password changed, etc.)
-- **Database Agnostic** - Ships with PostgreSQL and SQLite support via Bun ORM
+- **Database Agnostic** - Ships with PostgreSQL, MySQL, and SQLite support
+- **Schema as Contract** - You control your database schema; SDK provides reference SQL files
 
 ## Database Setup
 
-**Quick Start (Docker):**
-```bash
-docker-compose up postgres -d  # Start PostgreSQL
-go run main.go                 # Start server (auto-creates tables)
+The SDK provides an embedded migration system powered by golang-migrate. Migrations are embedded in the SDK and run programmatically.
+
+### Running Migrations
+
+```go
+import (
+    "github.com/webdeveloperben/BetterAuthGoServer/migrate"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/jwt"
+)
+
+func main() {
+    db, _ := sql.Open("postgres", dsn)
+
+    // Run migrations before creating Auth
+    err := migrate.Run(ctx, db, migrate.DialectPostgres,
+        migrate.WithPlugins(
+            oauth.Migrations(),
+            jwt.Migrations(),
+        ),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Now create Auth
+    // ...
+}
 ```
 
-**Manual Setup:**
-- PostgreSQL: `DATABASE_URL=postgres://user:pass@localhost:5432/dbname`
-- SQLite: `DATABASE_URL=file:auth.db` (default)
+### Migration Features
 
-Tables are **automatically created** on first run!
+- **Standalone API**: `migrate.Run()` runs before Auth creation
+- **Embedded migrations**: All SQL files embedded via `embed.FS` - no file copying needed
+- **Separate tracking tables**: Each source has its own `schema_migrations_<name>` table
+- **Topological sorting**: Plugins declare dependencies, sorted automatically
+- **Multi-dialect support**: PostgreSQL, SQLite, MySQL
+- **Dry-run mode**: `migrate.WithDryRun(true)` to preview changes
+
+### Manual Schema Setup
+
+Alternatively, you can manage your own schema. See [SCHEMA.md](./SCHEMA.md) for:
+- Core and plugin table schemas
+- Adding custom columns
+- PostgreSQL vs MySQL vs SQLite differences
 
 ## Installation
 
@@ -47,25 +82,44 @@ package main
 
 import (
     "context"
+    "database/sql"
     "log"
     "net/http"
 
-    "github.com/uptrace/bun"
+    _ "github.com/lib/pq"           // PostgreSQL driver
+    _ "github.com/go-sql-driver/mysql" // MySQL driver
+    _ "github.com/mattn/go-sqlite3" // SQLite driver
+
     "github.com/webdeveloperben/BetterAuthGoServer/auth"
     "github.com/webdeveloperben/BetterAuthGoServer/auth/config"
-    "github.com/webdeveloperben/BetterAuthGoServer/auth/handlers"
-    "github.com/webdeveloperben/BetterAuthGoServer/auth/store"
+    "github.com/webdeveloperben/BetterAuthGoServer/db"
+    "github.com/webdeveloperben/BetterAuthGoServer/migrate"
 )
 
 func main() {
-    // 1. Connect to database (PostgreSQL or SQLite)
-    bunDB := connectToDatabase() // your database connection
+    ctx := context.Background()
 
-    // 2. Create store and run migrations
-    dbStore := store.New(bunDB)
-    dbStore.Migrate(context.Background())
+    // 1. Connect to database (PostgreSQL, MySQL, or SQLite)
+    sqlDB, err := sql.Open("postgres", "postgres://user:pass@localhost:5432/authdb?sslmode=disable")
+    // Or MySQL: sql.Open("mysql", "user:pass@tcp(localhost:3306)/authdb?parseTime=true")
+    // Or SQLite: sql.Open("sqlite3", "file:auth.db?_foreign_keys=on")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer sqlDB.Close()
 
-    // 3. Create auth instance with config options
+    // 2. Run migrations (embedded in SDK)
+    if err := migrate.Run(ctx, sqlDB, migrate.DialectPostgres); err != nil {
+        log.Fatal(err)
+    }
+
+    // 3. Create sqlc-based store
+    dbStore, err := db.New(sqlDB, db.DialectPostgres)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // 4. Create auth instance with config options
     authService, err := auth.New(dbStore,
         config.WithSecret("your-secret-key-minimum-32-characters!"),
         config.WithBaseURL("http://localhost:8080"),
@@ -75,11 +129,11 @@ func main() {
     }
     defer authService.Close()
 
-    // 4. Mount auth handler
+    // 5. Mount auth handler
     mux := http.NewServeMux()
-    mux.Handle("/auth/", http.StripPrefix("/auth", handlers.NewRouter(authService)))
+    mux.Handle("/auth/", http.StripPrefix("/auth", authService.Handler()))
 
-    // 5. Protect your routes
+    // 6. Protect your routes
     mux.Handle("GET /api/profile", authService.AuthMiddleware()(profileHandler()))
 
     log.Println("Server starting on :8080")
@@ -114,6 +168,7 @@ authService, err := auth.New(store,
     // Session settings
     config.WithSessionDuration(7 * 24 * time.Hour),  // Default: 7 days
     config.WithSessionCookie("session"),              // Default: "session"
+    config.WithSessionCookieSameSite(http.SameSiteLaxMode),
 
     // Password policy
     config.WithPasswordPolicy(8, 128),                // Min/max length (default: 8, 128)
@@ -134,6 +189,7 @@ authService, err := auth.New(store,
     config.WithAuthRateLimit(10),                     // Stricter limit for auth endpoints
     config.WithTrustedOrigins("http://localhost:3000"),
     config.WithTrustedProxies("127.0.0.1"),
+    config.WithEmitRawTokensInEvents(false),
 
     // Cleanup
     config.WithSessionCleanupInterval(1 * time.Hour), // Auto-cleanup expired sessions
@@ -172,13 +228,18 @@ authService, _ := auth.New(store,
     config.WithBaseURL(baseURL),
 )
 
-// Chain plugins using builder pattern
+oauthPlugin, err := oauth.NewPlugin(
+    providers.NewGoogle(clientID, clientSecret, callbackURL),
+    providers.NewGitHub(clientID, clientSecret, callbackURL),
+)
+if err != nil {
+    log.Fatal("Failed to create OAuth plugin:", err)
+}
+
+// Register plugins
 authService.
     Use(jwt.NewPlugin(jwt.WithIssuer("myapp"))).
-    Use(oauth.NewPlugin(
-        providers.NewGoogle(clientID, clientSecret, callbackURL),
-        providers.NewGitHub(clientID, clientSecret, callbackURL),
-    ))
+    Use(oauthPlugin)
 
 // Check for any plugin registration errors
 if err := authService.Err(); err != nil {
@@ -190,6 +251,16 @@ You can also register multiple plugins in a single `Use()` call:
 
 ```go
 authService.Use(plugin1, plugin2, plugin3)
+```
+
+### Rate Limiting Plugin
+
+```go
+authService.Use(ratelimit.NewPlugin(
+    ratelimit.WithLimit(100, time.Minute),
+    ratelimit.WithFailClosed(true),
+    ratelimit.WithBackendTimeout(2*time.Second),
+))
 ```
 
 ### Minimal Setup (No Defaults)
@@ -317,7 +388,7 @@ import (
 )
 
 // Register OAuth as a plugin after creating auth instance
-authService.Use(oauth.NewPlugin(
+oauthPlugin, err := oauth.NewPlugin(
     providers.NewGoogle(
         os.Getenv("GOOGLE_CLIENT_ID"),
         os.Getenv("GOOGLE_CLIENT_SECRET"),
@@ -333,7 +404,11 @@ authService.Use(oauth.NewPlugin(
         os.Getenv("DISCORD_CLIENT_SECRET"),
         "http://localhost:8080/auth/oauth/discord/callback",
     ),
-))
+)
+if err != nil {
+    log.Fatal("Failed to create OAuth plugin:", err)
+}
+authService.Use(oauthPlugin)
 
 // Check for errors after registering plugins
 if err := authService.Err(); err != nil {
@@ -384,21 +459,33 @@ if session != nil {
 mux.Handle("GET /admin/users", authService.RequireAdmin(handler))
 ```
 
-## Database Setup
+## Database Connections
 
 ### PostgreSQL
 
 ```go
 import (
     "database/sql"
-    "github.com/uptrace/bun"
-    "github.com/uptrace/bun/dialect/pgdialect"
-    "github.com/uptrace/bun/driver/pgdriver"
+    _ "github.com/lib/pq"
+    "github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
-dsn := "postgres://user:pass@localhost:5432/dbname?sslmode=disable"
-sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
-bunDB := bun.NewDB(sqldb, pgdialect.New())
+sqlDB, _ := sql.Open("postgres", "postgres://user:pass@localhost:5432/dbname?sslmode=disable")
+store, _ := db.New(sqlDB, db.DialectPostgres)
+```
+
+### MySQL
+
+```go
+import (
+    "database/sql"
+    _ "github.com/go-sql-driver/mysql"
+    "github.com/webdeveloperben/BetterAuthGoServer/db"
+)
+
+// parseTime=true is required for proper timestamp handling
+sqlDB, _ := sql.Open("mysql", "user:pass@tcp(localhost:3306)/dbname?parseTime=true")
+store, _ := db.New(sqlDB, db.DialectMySQL)
 ```
 
 ### SQLite
@@ -406,13 +493,13 @@ bunDB := bun.NewDB(sqldb, pgdialect.New())
 ```go
 import (
     "database/sql"
-    "github.com/uptrace/bun"
-    "github.com/uptrace/bun/dialect/sqlitedialect"
     _ "github.com/mattn/go-sqlite3"
+    "github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
-sqldb, _ := sql.Open("sqlite3", "auth.db?_foreign_keys=on")
-bunDB := bun.NewDB(sqldb, sqlitedialect.New())
+// _foreign_keys=on enables foreign key constraints
+sqlDB, _ := sql.Open("sqlite3", "auth.db?_foreign_keys=on")
+store, _ := db.New(sqlDB, db.DialectSQLite)
 ```
 
 ## Environment Variables
@@ -432,7 +519,39 @@ bunDB := bun.NewDB(sqldb, sqlitedialect.New())
 
 ## Development
 
-This project uses [Task](https://taskfile.dev) for development commands.
+This project uses [Task](https://taskfile.dev) for development commands and [mise](https://mise.jdx.dev) for tool version management.
+
+### First-time Setup
+
+```bash
+# Install mise (if not already installed)
+# See: https://mise.jdx.dev/getting-started.html
+
+# Install Go (version managed by mise.toml)
+mise install
+
+# Set up development environment (install tools and git hooks)
+task setup
+```
+
+The `task setup` command installs:
+- **air** - Hot reload for development
+- **lefthook** - Git hooks for pre-commit formatting and pre-push linting
+- **golangci-lint** - Go linter
+
+### Git Hooks
+
+This project uses [lefthook](https://github.com/evilmartians/lefthook) to run automated checks:
+
+**Pre-commit:**
+- Format Go files with `gofmt -s`
+- Run `go vet`
+- Run `go mod tidy`
+
+**Pre-push:**
+- Run `golangci-lint`
+
+### Common Commands
 
 ```bash
 # Run the application
@@ -483,16 +602,27 @@ auth/                  # Main package - public API
 ├── csrf/              # CSRF protection plugin
 ├── ratelimit/         # Rate limiting plugin
 ├── jwt/               # JWT authentication plugin
+│   └── db/            # Plugin's own database schema & queries
 ├── oauth/             # OAuth2 plugin
-│   └── providers/     # OAuth provider implementations
+│   ├── providers/     # OAuth provider implementations
+│   └── db/            # Plugin's own database schema & queries
+├── organization/      # Multi-tenancy plugin
+│   └── db/            # Plugin's own database schema & queries
 ├── admin/             # Admin functionality plugin
 ├── token/             # Token generation and verification
 ├── kv/                # Key-value stores (memory, Redis)
-├── otel/              # OpenTelemetry observability
-└── store/             # Database store implementation (Bun ORM)
-    └── migrations/    # SQL migrations
+└── otel/              # OpenTelemetry observability
+db/                    # Core database (sqlc-generated)
+├── schema/            # SQL schema definitions
+├── queries/           # SQL query definitions
+├── pgstore/           # PostgreSQL generated code
+├── mysqlstore/        # MySQL generated code
+└── sqlitestore/       # SQLite generated code
+migrate/               # Migration runner
 tests/e2e/             # End-to-end tests
 ```
+
+Each plugin owns its own database schema and queries. Core tables (users, sessions, accounts, verifications) are in the central `db/` package. All database code uses sqlc with dialect-specific adapters for PostgreSQL, MySQL, and SQLite.
 
 ## License
 

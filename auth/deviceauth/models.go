@@ -2,8 +2,6 @@ package deviceauth
 
 import (
 	"time"
-
-	"github.com/uptrace/bun"
 )
 
 // DeviceCodeStatus represents the status of a device authorization request.
@@ -22,48 +20,46 @@ const (
 
 // DeviceCode represents a device authorization request stored in the database.
 type DeviceCode struct {
-	bun.BaseModel `bun:"table:device_codes,alias:dc"`
-
 	// ID is the primary key.
-	ID string `bun:"id,pk"`
+	ID string
 
 	// DeviceCode is the hashed device code (HMAC-SHA256).
 	// The raw device code is never stored.
-	DeviceCode string `bun:"device_code,notnull"`
+	DeviceCode string
 
 	// DeviceCodeHash is the first 8 characters of the hash for indexed lookup.
-	DeviceCodeHash string `bun:"device_code_hash,notnull"`
+	DeviceCodeHash string
 
 	// UserCode is the human-readable code (e.g., "ABCD-1234").
 	// Uses a charset without ambiguous characters (no 0/O, 1/I/L).
-	UserCode string `bun:"user_code,notnull,unique"`
+	UserCode string
 
 	// ClientID is the optional OAuth client identifier.
-	ClientID *string `bun:"client_id"`
+	ClientID *string
 
 	// Scope is the requested authorization scopes.
-	Scope *string `bun:"scope"`
+	Scope *string
 
 	// UserID is set when the user approves the request.
-	UserID *string `bun:"user_id"`
+	UserID *string
 
 	// Status is the current state: pending, approved, or denied.
-	Status DeviceCodeStatus `bun:"status,notnull"`
+	Status DeviceCodeStatus
 
 	// PollingInterval is the minimum seconds between token polls.
-	PollingInterval int `bun:"polling_interval,notnull"`
+	PollingInterval int
 
 	// LastPolledAt tracks the last token poll for rate limiting.
-	LastPolledAt *time.Time `bun:"last_polled_at"`
+	LastPolledAt *time.Time
 
 	// ExpiresAt is when the device code expires.
-	ExpiresAt time.Time `bun:"expires_at,notnull"`
+	ExpiresAt time.Time
 
 	// CreatedAt is when the device code was created.
-	CreatedAt time.Time `bun:"created_at,notnull"`
+	CreatedAt time.Time
 
 	// UpdatedAt is when the device code was last updated.
-	UpdatedAt time.Time `bun:"updated_at,notnull"`
+	UpdatedAt time.Time
 }
 
 // IsExpired returns true if the device code has expired.

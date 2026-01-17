@@ -3,6 +3,7 @@ package config
 
 import (
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/hooks"
@@ -24,8 +25,9 @@ type Config struct {
 	UseDefaults bool
 
 	// Session
-	SessionDuration time.Duration
-	SessionCookie   string
+	SessionDuration       time.Duration
+	SessionCookie         string
+	SessionCookieSameSite http.SameSite
 
 	// Password
 	PasswordAuthEnabled       bool // Enable password authentication plugin (default: true)
@@ -77,6 +79,10 @@ type Config struct {
 	// EventBus for publishing and subscribing to auth events
 	EventBus models.EventBus
 
+	// EmitRawTokensInEvents controls whether raw verification tokens are included
+	// in event payloads.
+	EmitRawTokensInEvents bool
+
 	// MiddlewareHooks (global before/after middleware chains)
 	MiddlewareHooks *hooks.MiddlewareHooks
 
@@ -95,8 +101,9 @@ func NewConfig(opts ...Option) *Config {
 	// Define sensible defaults inline
 	cfg := &Config{
 		// Session
-		SessionDuration: 7 * 24 * time.Hour, // 7 days
-		SessionCookie:   "session",
+		SessionDuration:       7 * 24 * time.Hour, // 7 days
+		SessionCookie:         "session",
+		SessionCookieSameSite: http.SameSiteLaxMode,
 
 		// Password
 		PasswordAuthEnabled:       true,
@@ -133,6 +140,9 @@ func NewConfig(opts ...Option) *Config {
 
 		// Logging
 		Logger: slog.Default(),
+
+		// Event payload safety
+		EmitRawTokensInEvents: false,
 	}
 
 	// Apply the options

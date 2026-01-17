@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
 	"golang.org/x/oauth2"
@@ -17,6 +18,7 @@ import (
 const (
 	githubUserURL   = "https://api.github.com/user"
 	githubEmailsURL = "https://api.github.com/user/emails"
+	githubTimeout   = 10 * time.Second
 )
 
 // GitHubProvider implements the Provider interface for GitHub OAuth
@@ -74,6 +76,9 @@ type githubEmail struct {
 // GetUserInfo fetches user information from GitHub
 func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (*oauth.UserInfo, error) {
 	client := p.config.Client(ctx, token)
+	if client.Timeout == 0 {
+		client.Timeout = githubTimeout
+	}
 
 	// Get user info
 	userResp, err := client.Get(githubUserURL)

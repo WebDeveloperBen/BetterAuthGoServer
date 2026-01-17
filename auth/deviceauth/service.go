@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/uptrace/bun"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 )
 
@@ -21,7 +20,7 @@ const deviceCodeCharset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0
 
 // Service handles device authorization business logic.
 type Service struct {
-	db     *bun.DB
+	store  DeviceCodeStore
 	hasher *token.Hasher
 	config Config
 	logger *slog.Logger
@@ -32,9 +31,9 @@ type Service struct {
 }
 
 // NewService creates a new device authorization service.
-func NewService(db *bun.DB, hasher *token.Hasher, config Config, logger *slog.Logger) *Service {
+func NewService(store DeviceCodeStore, hasher *token.Hasher, config Config, logger *slog.Logger) *Service {
 	s := &Service{
-		db:          db,
+		store:       store,
 		hasher:      hasher,
 		config:      config,
 		logger:      logger,
@@ -94,11 +93,17 @@ func (s *Service) CreateDeviceCode(ctx context.Context, req CreateDeviceCodeRequ
 	}
 
 	// Generate device code
-	var rawDeviceCode string
+	var (
+		rawDeviceCode string
+		err           error
+	)
 	if s.config.GenerateDeviceCode != nil {
 		rawDeviceCode = s.config.GenerateDeviceCode()
 	} else {
-		rawDeviceCode = generateRandomString(s.config.DeviceCodeLength, deviceCodeCharset)
+		rawDeviceCode, err = generateRandomString(s.config.DeviceCodeLength, deviceCodeCharset)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Generate user code
@@ -106,7 +111,10 @@ func (s *Service) CreateDeviceCode(ctx context.Context, req CreateDeviceCodeRequ
 	if s.config.GenerateUserCode != nil {
 		userCode = s.config.GenerateUserCode()
 	} else {
-		userCode = generateUserCode(s.config.UserCodeLength)
+		userCode, err = generateUserCode(s.config.UserCodeLength)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Hash the device code for storage
@@ -137,7 +145,7 @@ func (s *Service) CreateDeviceCode(ctx context.Context, req CreateDeviceCodeRequ
 	}
 
 	// Insert into database
-	if _, err := s.db.NewInsert().Model(dc).Exec(ctx); err != nil {
+	if err := s.store.CreateDeviceCode(ctx, dc); err != nil {
 		s.logger.Error("failed to insert device code", "error", err)
 		return nil, err
 	}
@@ -173,16 +181,11 @@ func (s *Service) CreateDeviceCode(ctx context.Context, req CreateDeviceCodeRequ
 
 // GetByUserCode retrieves a device code by its user code.
 func (s *Service) GetByUserCode(ctx context.Context, userCode string) (*DeviceCode, error) {
-	// Normalize user code (remove hyphens, uppercase)
-	normalized := normalizeUserCode(userCode)
-
-	var dc DeviceCode
-	err := s.db.NewSelect().
-		Model(&dc).
-		Where("REPLACE(user_code, '-', '') = ?", normalized).
-		Scan(ctx)
-
+	dc, err := s.store.GetDeviceCodeByUserCode(ctx, userCode)
 	if err != nil {
+		return nil, ErrInvalidUserCode
+	}
+	if dc == nil {
 		return nil, ErrInvalidUserCode
 	}
 
@@ -190,7 +193,7 @@ func (s *Service) GetByUserCode(ctx context.Context, userCode string) (*DeviceCo
 		return nil, ErrExpiredUserCode
 	}
 
-	return &dc, nil
+	return dc, nil
 }
 
 // GetByDeviceCode retrieves a device code by its raw device code.
@@ -198,18 +201,15 @@ func (s *Service) GetByDeviceCode(ctx context.Context, rawDeviceCode string) (*D
 	hashedCode := s.hasher.Hash(rawDeviceCode)
 	hashPrefix := hashedCode[:8]
 
-	var dc DeviceCode
-	err := s.db.NewSelect().
-		Model(&dc).
-		Where("device_code_hash = ?", hashPrefix).
-		Where("device_code = ?", hashedCode).
-		Scan(ctx)
-
+	dc, err := s.store.GetDeviceCodeByHash(ctx, hashPrefix, hashedCode)
 	if err != nil {
 		return nil, ErrInvalidDeviceCode
 	}
+	if dc == nil {
+		return nil, ErrInvalidDeviceCode
+	}
 
-	return &dc, nil
+	return dc, nil
 }
 
 // Approve marks a device code as approved by the given user.
@@ -223,17 +223,7 @@ func (s *Service) Approve(ctx context.Context, userCode string, userID string) e
 		return ErrAlreadyProcessed
 	}
 
-	now := time.Now()
-	dc.Status = StatusApproved
-	dc.UserID = &userID
-	dc.UpdatedAt = now
-
-	_, err = s.db.NewUpdate().
-		Model(dc).
-		Column("status", "user_id", "updated_at").
-		Where("id = ?", dc.ID).
-		Exec(ctx)
-
+	err = s.store.UpdateDeviceCodeStatus(ctx, dc.ID, string(StatusApproved), &userID)
 	if err != nil {
 		s.logger.Error("failed to approve device code", "error", err, "device_code_id", dc.ID)
 		return err
@@ -259,16 +249,7 @@ func (s *Service) Deny(ctx context.Context, userCode string) error {
 		return ErrAlreadyProcessed
 	}
 
-	now := time.Now()
-	dc.Status = StatusDenied
-	dc.UpdatedAt = now
-
-	_, err = s.db.NewUpdate().
-		Model(dc).
-		Column("status", "updated_at").
-		Where("id = ?", dc.ID).
-		Exec(ctx)
-
+	err = s.store.UpdateDeviceCodeStatus(ctx, dc.ID, string(StatusDenied), nil)
 	if err != nil {
 		s.logger.Error("failed to deny device code", "error", err, "device_code_id", dc.ID)
 		return err
@@ -319,15 +300,7 @@ func (s *Service) CheckToken(ctx context.Context, rawDeviceCode string, clientID
 
 	// Update last polled time
 	now := time.Now()
-	dc.LastPolledAt = &now
-	dc.UpdatedAt = now
-
-	_, err = s.db.NewUpdate().
-		Model(dc).
-		Column("last_polled_at", "updated_at").
-		Where("id = ?", dc.ID).
-		Exec(ctx)
-
+	err = s.store.UpdateDeviceCodeLastPolled(ctx, dc.ID, now)
 	if err != nil {
 		s.logger.Error("failed to update last_polled_at", "error", err)
 		// Continue anyway
@@ -358,17 +331,7 @@ func (s *Service) CheckToken(ctx context.Context, rawDeviceCode string, clientID
 
 // CleanupExpired removes expired device codes.
 func (s *Service) CleanupExpired(ctx context.Context) (int64, error) {
-	result, err := s.db.NewDelete().
-		Model((*DeviceCode)(nil)).
-		Where("expires_at < ?", time.Now()).
-		Exec(ctx)
-
-	if err != nil {
-		return 0, err
-	}
-
-	count, _ := result.RowsAffected()
-	return count, nil
+	return s.store.DeleteExpiredDeviceCodes(ctx)
 }
 
 // cleanupLoop runs the cleanup job at the configured interval.
@@ -404,38 +367,25 @@ func (s *Service) cleanupLoop() {
 // Helper functions
 
 // generateRandomString generates a cryptographically secure random string.
-func generateRandomString(length int, charset string) string {
+func generateRandomString(length int, charset string) (string, error) {
 	result := make([]byte, length)
 	for i := range result {
 		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
 		if err != nil {
-			panic(err) // Should never happen with crypto/rand
+			return "", err
 		}
 		result[i] = charset[n.Int64()]
 	}
-	return string(result)
+	return string(result), nil
 }
 
 // generateUserCode generates a user-friendly code with a hyphen in the middle.
-func generateUserCode(length int) string {
-	code := generateRandomString(length, userCodeCharset)
+func generateUserCode(length int) (string, error) {
+	code, err := generateRandomString(length, userCodeCharset)
+	if err != nil {
+		return "", err
+	}
 	// Insert hyphen in the middle
 	mid := len(code) / 2
-	return code[:mid] + "-" + code[mid:]
-}
-
-// normalizeUserCode removes hyphens and converts to uppercase.
-func normalizeUserCode(code string) string {
-	result := make([]byte, 0, len(code))
-	for i := 0; i < len(code); i++ {
-		c := code[i]
-		if c != '-' && c != ' ' {
-			// Convert to uppercase
-			if c >= 'a' && c <= 'z' {
-				c = c - 'a' + 'A'
-			}
-			result = append(result, c)
-		}
-	}
-	return string(result)
+	return code[:mid] + "-" + code[mid:], nil
 }

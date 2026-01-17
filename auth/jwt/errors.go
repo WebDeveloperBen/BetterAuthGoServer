@@ -20,6 +20,7 @@ var (
 	ErrInvalidGrantType   = errors.New("jwt: invalid grant type")
 	ErrInvalidCredentials = errors.New("jwt: invalid credentials")
 	ErrUserBanned         = errors.New("jwt: user banned")
+	ErrEmailNotVerified   = errors.New("jwt: email not verified")
 
 	// Key management errors
 	ErrKeyNotFound       = errors.New("jwt: key not found")

@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -114,9 +115,13 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 
 // writeError writes an error response
 func writeError(w http.ResponseWriter, status int, err error) {
+	message := err.Error()
+	if status >= http.StatusInternalServerError {
+		message = http.StatusText(status)
+	}
 	writeJSON(w, status, errorResponse{
 		Error:   http.StatusText(status),
-		Message: err.Error(),
+		Message: message,
 	})
 }
 
@@ -132,15 +137,20 @@ type handlers struct {
 	sessions     plugin.SessionManager
 	userProvider UserProvider
 	config       *Config
+	logger       *slog.Logger
 }
 
-func newHandlers(service AdminOperations, auth plugin.AuthCore, sessions plugin.SessionManager, userProvider UserProvider, config *Config) *handlers {
+func newHandlers(service AdminOperations, auth plugin.AuthCore, sessions plugin.SessionManager, userProvider UserProvider, config *Config, logger *slog.Logger) *handlers {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &handlers{
 		service:      service,
 		auth:         auth,
 		sessions:     sessions,
 		userProvider: userProvider,
 		config:       config,
+		logger:       logger,
 	}
 }
 
@@ -207,6 +217,7 @@ func (h *handlers) updateUser(w http.ResponseWriter, r *http.Request, userID str
 		return
 	}
 
+	h.logger.Info("admin user updated", "user_id", userID)
 	writeJSON(w, http.StatusOK, toUserResponse(user))
 }
 
@@ -222,6 +233,7 @@ func (h *handlers) deleteUser(w http.ResponseWriter, r *http.Request, userID str
 		return
 	}
 
+	h.logger.Info("admin user deleted", "user_id", userID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -243,6 +255,7 @@ func (h *handlers) banUser(w http.ResponseWriter, r *http.Request, userID string
 		return
 	}
 
+	h.logger.Info("admin user banned", "user_id", userID, "reason", req.Reason)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -258,6 +271,7 @@ func (h *handlers) unbanUser(w http.ResponseWriter, r *http.Request, userID stri
 		return
 	}
 
+	h.logger.Info("admin user unbanned", "user_id", userID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -282,6 +296,7 @@ func (h *handlers) setRole(w http.ResponseWriter, r *http.Request, userID string
 		return
 	}
 
+	h.logger.Info("admin role updated", "user_id", userID, "role", req.Role)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -432,6 +447,8 @@ func (h *handlers) impersonateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logger.Info("admin impersonation started", "admin_user_id", adminUser.ID, "target_user_id", targetUser.ID)
+
 	// Store the admin's original session token for restoration
 	http.SetCookie(w, &http.Cookie{
 		Name:     "admin_session_token",
@@ -495,6 +512,8 @@ func (h *handlers) stopImpersonating(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, errors.New("failed to delete impersonation session"))
 		return
 	}
+
+	h.logger.Info("admin impersonation stopped", "session_id", currentSession.ID)
 
 	// Clear the admin_session_token cookie
 	http.SetCookie(w, &http.Cookie{

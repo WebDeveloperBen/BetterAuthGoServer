@@ -4,8 +4,6 @@ import (
 	"context"
 	"testing"
 	"time"
-
-	"github.com/uptrace/bun"
 )
 
 func TestMemoryTokenBlocklist(t *testing.T) {
@@ -64,28 +62,5 @@ func TestMemoryTokenBlocklist(t *testing.T) {
 	}
 	if revoked {
 		t.Error("Expected expired token to be cleaned up")
-	}
-}
-
-func TestDBTokenBlocklist_Constructor(t *testing.T) {
-	// Test that constructor works
-	var db *bun.DB // nil DB for testing
-	blocklist := NewDBTokenBlocklist(db)
-
-	if blocklist == nil {
-		t.Fatal("NewDBTokenBlocklist returned nil")
-	}
-
-	if blocklist.db != db {
-		t.Error("DB not set correctly in blocklist")
-	}
-}
-
-func TestRevokedToken_TableName(t *testing.T) {
-	token := &RevokedToken{}
-	expected := "jwt_revoked_tokens"
-
-	if token.TableName() != expected {
-		t.Errorf("TableName() = %s, want %s", token.TableName(), expected)
 	}
 }

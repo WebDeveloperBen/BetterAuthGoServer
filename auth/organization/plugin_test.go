@@ -131,37 +131,6 @@ func TestPlugin_Middleware_WhenDisabled(t *testing.T) {
 	}
 }
 
-func TestPlugin_Migrations_Basic(t *testing.T) {
-	p := NewPlugin()
-
-	migrations := p.Migrations()
-
-	// Should include: Organization, Member, Invitation
-	// Teams are disabled by default, so Team and TeamMember should not be included
-	// Note: SessionExtension is added via ALTER TABLE in Init(), not here
-	expectedCount := 3
-
-	if len(migrations) != expectedCount {
-		t.Errorf("len(migrations) = %d, want %d", len(migrations), expectedCount)
-	}
-}
-
-func TestPlugin_Migrations_WithTeams(t *testing.T) {
-	p := NewPlugin(
-		WithTeams(TeamsConfig{Enabled: true}),
-	)
-
-	migrations := p.Migrations()
-
-	// Should include: Organization, Member, Invitation, Team, TeamMember
-	// Note: SessionExtension is added via ALTER TABLE in Init(), not here
-	expectedCount := 5
-
-	if len(migrations) != expectedCount {
-		t.Errorf("len(migrations) = %d, want %d", len(migrations), expectedCount)
-	}
-}
-
 func TestPlugin_ImplementsInterfaces(t *testing.T) {
 	p := NewPlugin()
 
@@ -169,7 +138,6 @@ func TestPlugin_ImplementsInterfaces(t *testing.T) {
 	var _ plugin.Plugin = p
 	var _ plugin.RoutesProvider = p
 	var _ plugin.MiddlewareProvider = p
-	var _ plugin.MigrationsProvider = p
 }
 
 func TestPlugin_AccessControlInitialization(t *testing.T) {

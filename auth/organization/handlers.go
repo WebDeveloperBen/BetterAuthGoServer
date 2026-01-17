@@ -1101,8 +1101,12 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
+	message := err.Error()
+	if status >= http.StatusInternalServerError {
+		message = http.StatusText(status)
+	}
 	writeJSON(w, status, map[string]string{
 		"error":   http.StatusText(status),
-		"message": err.Error(),
+		"message": message,
 	})
 }

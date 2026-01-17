@@ -11,13 +11,13 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/sqlitedialect"
+	_ "github.com/lib/pq"           // PostgreSQL driver
+	_ "github.com/mattn/go-sqlite3" // SQLite driver
+
 	"github.com/webdeveloperben/BetterAuthGoServer/auth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/config"
-	"github.com/webdeveloperben/BetterAuthGoServer/auth/store"
-
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	"github.com/webdeveloperben/BetterAuthGoServer/migrate"
 )
 
 func main() {
@@ -26,16 +26,23 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	bunDB := bun.NewDB(sqldb, sqlitedialect.New())
-	defer func() { _ = bunDB.Close() }()
+	defer func() { _ = sqldb.Close() }()
 
-	// 2. Create store and run migrations
-	dbStore := store.New(bunDB)
-	if err := dbStore.Migrate(context.Background()); err != nil {
+	// 2. Run database migrations
+	// This creates the core tables (users, accounts, sessions, verifications).
+	// Add plugin migrations with migrate.WithPlugins() if using plugins.
+	ctx := context.Background()
+	if err := migrate.Run(ctx, sqldb, migrate.DialectSQLite); err != nil {
+		log.Fatal("Failed to run migrations:", err)
+	}
+
+	// 3. Create sqlc-based store
+	dbStore, err := db.New(sqldb, db.DialectSQLite)
+	if err != nil {
 		log.Fatal(err)
 	}
 
-	// 3. Get secret from environment (required, must be 32+ characters)
+	// 4. Get secret from environment (required, must be 32+ characters)
 	secret := os.Getenv("AUTH_SECRET")
 	if secret == "" {
 		secret = "development-secret-key-at-least-32-characters!"
@@ -47,7 +54,7 @@ func main() {
 		baseURL = "http://localhost:8080"
 	}
 
-	// 4. Create auth instance with default plugins (rate limiting, CSRF)
+	// 5. Create auth instance with default plugins (rate limiting, CSRF)
 	authService, err := auth.New(dbStore,
 		config.WithSecret(secret),
 		config.WithBaseURL(baseURL),
@@ -57,7 +64,7 @@ func main() {
 	}
 	defer authService.Close()
 
-	// 5. Set up HTTP server
+	// 6. Set up HTTP server
 	mux := http.NewServeMux()
 
 	// Mount auth endpoints under /auth/

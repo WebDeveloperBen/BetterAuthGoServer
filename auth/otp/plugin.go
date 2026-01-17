@@ -16,8 +16,10 @@ package otp
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
+	otpdb "github.com/webdeveloperben/BetterAuthGoServer/auth/otp/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
@@ -29,7 +31,8 @@ const (
 // Plugin implements the OTP functionality as a plugin.
 type Plugin struct {
 	ctx     plugin.Context
-	store   *Store
+	store   TokenStore
+	dbStore *otpdb.Store
 	service *Service
 	opts    []Option
 }
@@ -37,7 +40,6 @@ type Plugin struct {
 // Compile-time interface checks
 var (
 	_ plugin.Plugin                     = (*Plugin)(nil)
-	_ plugin.MigrationsProvider         = (*Plugin)(nil)
 	_ plugin.EmailVerificationProvider  = (*Plugin)(nil)
 	_ plugin.PasswordResetTokenProvider = (*Plugin)(nil)
 )
@@ -56,8 +58,8 @@ func (p *Plugin) Name() string {
 func (p *Plugin) Init(ctx plugin.Context) error {
 	p.ctx = ctx
 
-	// Require database access
-	if ctx.DB == nil {
+	// Require database access via RawDB
+	if ctx.RawDB == nil {
 		ctx.Logger.Warn("otp plugin: no database available, plugin disabled")
 		return nil
 	}
@@ -68,8 +70,13 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		opt(&config)
 	}
 
-	// Create store and service
-	p.store = NewStore(ctx.DB)
+	// Create the plugin's own store using raw DB access
+	store, err := otpdb.New(ctx.RawDB, ctx.Dialect)
+	if err != nil {
+		return fmt.Errorf("otp plugin: failed to create store: %w", err)
+	}
+	p.dbStore = store
+	p.store = NewStoreAdapter(p.dbStore)
 	p.service = NewService(p.store, ctx.Hasher, config)
 
 	ctx.Logger.Info("otp plugin initialized")
@@ -79,11 +86,6 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 // Close cleans up plugin resources.
 func (p *Plugin) Close() error {
 	return nil
-}
-
-// Migrations returns the database models for auto-migration.
-func (p *Plugin) Migrations() []any {
-	return []any{&OTPToken{}}
 }
 
 // Service returns the OTP service for use by Auth.

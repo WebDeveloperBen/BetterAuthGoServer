@@ -60,7 +60,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		p.logger = slog.Default()
 	}
 
-	if ctx.DB == nil {
+	if ctx.Store == nil {
 		p.logger.Warn("admin plugin: no database available, plugin disabled")
 		return nil
 	}
@@ -73,8 +73,8 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 	p.userProvider = userProvider
 
-	p.service = NewService(ctx.DB, p.logger)
-	p.handlers = newHandlers(p.service, ctx.Auth, ctx.Sessions, userProvider, &p.config)
+	p.service = NewService(NewStoreAdapter(ctx.Store), p.logger)
+	p.handlers = newHandlers(p.service, ctx.Auth, ctx.Sessions, userProvider, &p.config, p.logger)
 
 	// Initialize access control
 	if p.config.AccessControl == nil {

@@ -94,10 +94,7 @@ func (h *handlers) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.CreateDeviceCode(r.Context(), CreateDeviceCodeRequest{
-		ClientID: req.ClientID,
-		Scope:    req.Scope,
-	})
+	result, err := h.service.CreateDeviceCode(r.Context(), CreateDeviceCodeRequest(req))
 
 	if err != nil {
 		if errors.Is(err, ErrInvalidClient) {
@@ -301,7 +298,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
-	writeJSON(w, status, map[string]string{"error": err.Error()})
+	message := err.Error()
+	if status >= http.StatusInternalServerError {
+		message = http.StatusText(status)
+	}
+	writeJSON(w, status, map[string]string{"error": message})
 }
 
 func writeOAuth2Error(w http.ResponseWriter, status int, errCode, description string) {

@@ -9,13 +9,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/uptrace/bun"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
 
 // Service provides anonymous authentication functionality
 type Service struct {
-	db     *bun.DB
+	store  AnonymousStore
 	auth   AuthProvider
 	config Config
 	logger *slog.Logger
@@ -26,9 +25,9 @@ type Service struct {
 }
 
 // NewService creates a new anonymous service
-func NewService(db *bun.DB, auth AuthProvider, config Config, logger *slog.Logger) *Service {
+func NewService(store AnonymousStore, auth AuthProvider, config Config, logger *slog.Logger) *Service {
 	s := &Service{
-		db:          db,
+		store:       store,
 		auth:        auth,
 		config:      config,
 		logger:      logger,
@@ -162,13 +161,7 @@ func (s *Service) generateName() string {
 
 // setAnonymousFlag updates the is_anonymous flag for a user
 func (s *Service) setAnonymousFlag(ctx context.Context, userID string, isAnonymous bool) error {
-	_, err := s.db.NewUpdate().
-		Table("users").
-		Set("is_anonymous = ?", isAnonymous).
-		Set("updated_at = ?", time.Now()).
-		Where("id = ?", userID).
-		Exec(ctx)
-	return err
+	return s.store.SetAnonymousFlag(ctx, userID, isAnonymous)
 }
 
 // startCleanupLoop starts the background cleanup goroutine
@@ -185,9 +178,11 @@ func (s *Service) startCleanupLoop() {
 			case <-s.stopCleanup:
 				return
 			case <-ticker.C:
-				if err := s.cleanupStaleAnonymousUsers(context.Background()); err != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				if err := s.cleanupStaleAnonymousUsers(ctx); err != nil {
 					s.logger.Error("failed to cleanup stale anonymous users", "error", err)
 				}
+				cancel()
 			}
 		}
 	}()
@@ -202,16 +197,11 @@ func (s *Service) startCleanupLoop() {
 func (s *Service) cleanupStaleAnonymousUsers(ctx context.Context) error {
 	cutoff := time.Now().Add(-s.config.AnonymousUserTTL)
 
-	result, err := s.db.NewDelete().
-		Table("users").
-		Where("is_anonymous = ?", true).
-		Where("created_at < ?", cutoff).
-		Exec(ctx)
+	affected, err := s.store.DeleteStaleAnonymousUsers(ctx, cutoff)
 	if err != nil {
 		return err
 	}
 
-	affected, _ := result.RowsAffected()
 	if affected > 0 {
 		s.logger.Info("cleaned up stale anonymous users", "count", affected)
 	}
