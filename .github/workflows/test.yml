@@ -32,12 +32,8 @@ jobs:
         run: go mod download
 
       - name: Run unit tests
-        env:
-          TEST_POSTGRES: "false"
-          TEST_MYSQL: "false"
-          TEST_SQLITE: "false"
         run: |
-          go test -v -race -short ./...
+          go test -v -race -short $(go list ./... | grep -v '/db$' | grep -v '/migrate$' | grep -v '/tests/e2e')
 
   # Integration/E2E tests with dialect matrix
   integration:
@@ -87,7 +83,7 @@ jobs:
           TEST_MYSQL: ${{ matrix.env_mysql }}
           TEST_SQLITE: ${{ matrix.env_sqlite }}
         run: |
-          go test -v ./tests/e2e/... ./migrate/...
+          go test -v ./db/... ./migrate/... ./tests/e2e/...
 
   # All tests must pass
   test-complete:
