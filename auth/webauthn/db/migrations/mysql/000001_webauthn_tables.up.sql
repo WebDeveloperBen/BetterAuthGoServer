@@ -9,11 +9,9 @@ CREATE TABLE IF NOT EXISTS webauthn_credentials (
     sign_count INTEGER NOT NULL DEFAULT 0,
     transports LONGTEXT,
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    last_used_at TIMESTAMP(6)
+    last_used_at TIMESTAMP(6),
+    INDEX idx_webauthn_credentials_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_credential_id ON webauthn_credentials(credential_id(255));
-CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user_id ON webauthn_credentials(user_id);
 
 -- WebAuthn sessions table (registration/login ceremony state)
 CREATE TABLE IF NOT EXISTS webauthn_sessions (
@@ -22,8 +20,7 @@ CREATE TABLE IF NOT EXISTS webauthn_sessions (
     type VARCHAR(50) NOT NULL,
     data LONGBLOB NOT NULL,
     expires_at TIMESTAMP(6) NOT NULL,
-    created_at TIMESTAMP(6) NOT NULL
+    created_at TIMESTAMP(6) NOT NULL,
+    INDEX idx_webauthn_sessions_expires_at (expires_at),
+    INDEX idx_webauthn_sessions_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE INDEX IF NOT EXISTS idx_webauthn_sessions_expires_at ON webauthn_sessions(expires_at);
-CREATE INDEX IF NOT EXISTS idx_webauthn_sessions_user_id ON webauthn_sessions(user_id);

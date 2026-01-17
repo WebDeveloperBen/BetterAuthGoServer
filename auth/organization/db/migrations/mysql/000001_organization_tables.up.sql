@@ -11,8 +11,6 @@ CREATE TABLE IF NOT EXISTS organizations (
     updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX IF NOT EXISTS idx_organizations_slug ON organizations(slug);
-
 -- Members table
 CREATE TABLE IF NOT EXISTS members (
     id VARCHAR(255) PRIMARY KEY,
@@ -21,11 +19,10 @@ CREATE TABLE IF NOT EXISTS members (
     role VARCHAR(50) NOT NULL DEFAULT 'member',
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-    UNIQUE(organization_id, user_id)
+    UNIQUE KEY unique_org_user (organization_id, user_id),
+    INDEX idx_members_organization_id (organization_id),
+    INDEX idx_members_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE INDEX IF NOT EXISTS idx_members_organization_id ON members(organization_id);
-CREATE INDEX IF NOT EXISTS idx_members_user_id ON members(user_id);
 
 -- Invitations table
 CREATE TABLE IF NOT EXISTS invitations (
@@ -36,12 +33,11 @@ CREATE TABLE IF NOT EXISTS invitations (
     role VARCHAR(50) NOT NULL DEFAULT 'member',
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
     expires_at TIMESTAMP(6),
-    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_invitations_organization_id (organization_id),
+    INDEX idx_invitations_email (email),
+    INDEX idx_invitations_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE INDEX IF NOT EXISTS idx_invitations_organization_id ON invitations(organization_id);
-CREATE INDEX IF NOT EXISTS idx_invitations_email ON invitations(email);
-CREATE INDEX IF NOT EXISTS idx_invitations_status ON invitations(status);
 
 -- Teams table
 CREATE TABLE IF NOT EXISTS teams (
@@ -49,10 +45,9 @@ CREATE TABLE IF NOT EXISTS teams (
     name VARCHAR(255) NOT NULL,
     organization_id VARCHAR(255) NOT NULL,
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
+    updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    INDEX idx_teams_organization_id (organization_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE INDEX IF NOT EXISTS idx_teams_organization_id ON teams(organization_id);
 
 -- Team members table
 CREATE TABLE IF NOT EXISTS team_members (
@@ -60,8 +55,7 @@ CREATE TABLE IF NOT EXISTS team_members (
     team_id VARCHAR(255) NOT NULL,
     user_id VARCHAR(255) NOT NULL,
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    UNIQUE(team_id, user_id)
+    UNIQUE KEY unique_team_user (team_id, user_id),
+    INDEX idx_team_members_team_id (team_id),
+    INDEX idx_team_members_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE INDEX IF NOT EXISTS idx_team_members_team_id ON team_members(team_id);
-CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id);

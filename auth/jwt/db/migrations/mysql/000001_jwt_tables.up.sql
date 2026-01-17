@@ -4,10 +4,9 @@
 CREATE TABLE IF NOT EXISTS jwt_revoked_tokens (
     id VARCHAR(255) PRIMARY KEY,
     expires_at TIMESTAMP(6) NOT NULL,
-    revoked_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+    revoked_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_jwt_revoked_tokens_expires_at (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE INDEX IF NOT EXISTS idx_jwt_revoked_tokens_expires_at ON jwt_revoked_tokens(expires_at);
 
 -- JWT keys table (for database-backed asymmetric keys)
 CREATE TABLE IF NOT EXISTS jwt_keys (
@@ -22,8 +21,7 @@ CREATE TABLE IF NOT EXISTS jwt_keys (
     rotated_at TIMESTAMP(6),
     expires_at TIMESTAMP(6),
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
+    updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    INDEX idx_jwt_keys_algorithm_status (algorithm, status),
+    INDEX idx_jwt_keys_expires_at (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE INDEX IF NOT EXISTS idx_jwt_keys_algorithm_status ON jwt_keys(algorithm, status);
-CREATE INDEX IF NOT EXISTS idx_jwt_keys_expires_at ON jwt_keys(expires_at);

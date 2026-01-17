@@ -23,40 +23,50 @@ A complete, embeddable authentication library for Go applications. Handles email
 
 ## Database Setup
 
-The SDK uses a **"schema as contract"** approach - you manage your own database schema, and the SDK runs queries against it.
+The SDK provides an embedded migration system powered by golang-migrate. Migrations are embedded in the SDK and run programmatically.
 
-**Option A: Use SDK Schema Files**
-```bash
-# Copy schema files from the SDK and run with your migration tool
-# PostgreSQL:
-db/schema/postgres/001_users.sql
-db/schema/postgres/002_accounts.sql
-db/schema/postgres/003_sessions.sql
-db/schema/postgres/004_verifications.sql
+### Running Migrations
 
-# MySQL:
-db/schema/mysql/001_users.sql
-db/schema/mysql/002_accounts.sql
-db/schema/mysql/003_sessions.sql
-db/schema/mysql/004_verifications.sql
+```go
+import (
+    "github.com/webdeveloperben/BetterAuthGoServer/migrate"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
+    "github.com/webdeveloperben/BetterAuthGoServer/auth/jwt"
+)
 
-# SQLite:
-db/schema/sqlite/001_users.sql
-db/schema/sqlite/002_accounts.sql
-db/schema/sqlite/003_sessions.sql
-db/schema/sqlite/004_verifications.sql
+func main() {
+    db, _ := sql.Open("postgres", dsn)
+
+    // Run migrations before creating Auth
+    err := migrate.Run(ctx, db, migrate.DialectPostgres,
+        migrate.WithPlugins(
+            oauth.Migrations(),
+            jwt.Migrations(),
+        ),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Now create Auth
+    // ...
+}
 ```
 
-**Option B: Create Schema Manually**
+### Migration Features
 
-Create tables matching the expected structure. See [SCHEMA.md](./SCHEMA.md) for complete table definitions.
+- **Standalone API**: `migrate.Run()` runs before Auth creation
+- **Embedded migrations**: All SQL files embedded via `embed.FS` - no file copying needed
+- **Separate tracking tables**: Each source has its own `schema_migrations_<name>` table
+- **Topological sorting**: Plugins declare dependencies, sorted automatically
+- **Multi-dialect support**: PostgreSQL, SQLite, MySQL
+- **Dry-run mode**: `migrate.WithDryRun(true)` to preview changes
 
-**Custom Columns?** Just add them to your schema. The SDK only reads/writes its own columns and ignores any additional columns you add.
+### Manual Schema Setup
 
-See [SCHEMA.md](./SCHEMA.md) for full documentation on:
+Alternatively, you can manage your own schema. See [SCHEMA.md](./SCHEMA.md) for:
 - Core and plugin table schemas
 - Adding custom columns
-- Version upgrade migrations
 - PostgreSQL vs MySQL vs SQLite differences
 
 ## Installation
@@ -71,35 +81,45 @@ go get github.com/webdeveloperben/BetterAuthGoServer
 package main
 
 import (
+    "context"
     "database/sql"
     "log"
     "net/http"
 
     _ "github.com/lib/pq"           // PostgreSQL driver
+    _ "github.com/go-sql-driver/mysql" // MySQL driver
     _ "github.com/mattn/go-sqlite3" // SQLite driver
 
     "github.com/webdeveloperben/BetterAuthGoServer/auth"
     "github.com/webdeveloperben/BetterAuthGoServer/auth/config"
     "github.com/webdeveloperben/BetterAuthGoServer/db"
+    "github.com/webdeveloperben/BetterAuthGoServer/migrate"
 )
 
 func main() {
-    // 1. Connect to database (PostgreSQL or SQLite)
-    // NOTE: Run migrations first using golang-migrate or your preferred tool:
-    //   migrate -path db/migrations/sqlite -database "sqlite3://auth.db" up
-    sqlDB, err := sql.Open("sqlite3", "file:auth.db?_foreign_keys=on")
+    ctx := context.Background()
+
+    // 1. Connect to database (PostgreSQL, MySQL, or SQLite)
+    sqlDB, err := sql.Open("postgres", "postgres://user:pass@localhost:5432/authdb?sslmode=disable")
+    // Or MySQL: sql.Open("mysql", "user:pass@tcp(localhost:3306)/authdb?parseTime=true")
+    // Or SQLite: sql.Open("sqlite3", "file:auth.db?_foreign_keys=on")
     if err != nil {
         log.Fatal(err)
     }
     defer sqlDB.Close()
 
-    // 2. Create sqlc-based store
-    dbStore, err := db.New(sqlDB, db.DialectSQLite)
+    // 2. Run migrations (embedded in SDK)
+    if err := migrate.Run(ctx, sqlDB, migrate.DialectPostgres); err != nil {
+        log.Fatal(err)
+    }
+
+    // 3. Create sqlc-based store
+    dbStore, err := db.New(sqlDB, db.DialectPostgres)
     if err != nil {
         log.Fatal(err)
     }
 
-    // 3. Create auth instance with config options
+    // 4. Create auth instance with config options
     authService, err := auth.New(dbStore,
         config.WithSecret("your-secret-key-minimum-32-characters!"),
         config.WithBaseURL("http://localhost:8080"),
@@ -109,11 +129,11 @@ func main() {
     }
     defer authService.Close()
 
-    // 4. Mount auth handler
+    // 5. Mount auth handler
     mux := http.NewServeMux()
     mux.Handle("/auth/", http.StripPrefix("/auth", authService.Handler()))
 
-    // 5. Protect your routes
+    // 6. Protect your routes
     mux.Handle("GET /api/profile", authService.AuthMiddleware()(profileHandler()))
 
     log.Println("Server starting on :8080")
@@ -439,21 +459,33 @@ if session != nil {
 mux.Handle("GET /admin/users", authService.RequireAdmin(handler))
 ```
 
-## Database Setup
+## Database Connections
 
 ### PostgreSQL
 
 ```go
 import (
     "database/sql"
-    "github.com/uptrace/bun"
-    "github.com/uptrace/bun/dialect/pgdialect"
-    "github.com/uptrace/bun/driver/pgdriver"
+    _ "github.com/lib/pq"
+    "github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
-dsn := "postgres://user:pass@localhost:5432/dbname?sslmode=disable"
-sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
-bunDB := bun.NewDB(sqldb, pgdialect.New())
+sqlDB, _ := sql.Open("postgres", "postgres://user:pass@localhost:5432/dbname?sslmode=disable")
+store, _ := db.New(sqlDB, db.DialectPostgres)
+```
+
+### MySQL
+
+```go
+import (
+    "database/sql"
+    _ "github.com/go-sql-driver/mysql"
+    "github.com/webdeveloperben/BetterAuthGoServer/db"
+)
+
+// parseTime=true is required for proper timestamp handling
+sqlDB, _ := sql.Open("mysql", "user:pass@tcp(localhost:3306)/dbname?parseTime=true")
+store, _ := db.New(sqlDB, db.DialectMySQL)
 ```
 
 ### SQLite
@@ -461,13 +493,13 @@ bunDB := bun.NewDB(sqldb, pgdialect.New())
 ```go
 import (
     "database/sql"
-    "github.com/uptrace/bun"
-    "github.com/uptrace/bun/dialect/sqlitedialect"
     _ "github.com/mattn/go-sqlite3"
+    "github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
-sqldb, _ := sql.Open("sqlite3", "auth.db?_foreign_keys=on")
-bunDB := bun.NewDB(sqldb, sqlitedialect.New())
+// _foreign_keys=on enables foreign key constraints
+sqlDB, _ := sql.Open("sqlite3", "auth.db?_foreign_keys=on")
+store, _ := db.New(sqlDB, db.DialectSQLite)
 ```
 
 ## Environment Variables
@@ -552,11 +584,13 @@ db/                    # Core database (sqlc-generated)
 ├── schema/            # SQL schema definitions
 ├── queries/           # SQL query definitions
 ├── pgstore/           # PostgreSQL generated code
+├── mysqlstore/        # MySQL generated code
 └── sqlitestore/       # SQLite generated code
+migrate/               # Migration runner
 tests/e2e/             # End-to-end tests
 ```
 
-Each plugin owns its own database schema and queries. Core tables (users, sessions, accounts, verifications) are in the central `db/` package.
+Each plugin owns its own database schema and queries. Core tables (users, sessions, accounts, verifications) are in the central `db/` package. All database code uses sqlc with dialect-specific adapters for PostgreSQL, MySQL, and SQLite.
 
 ## License
 

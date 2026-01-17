@@ -13,12 +13,10 @@ CREATE TABLE IF NOT EXISTS users (
     role VARCHAR(50) NOT NULL DEFAULT 'user',
     is_anonymous BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
+    updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    INDEX idx_users_banned (banned),
+    INDEX idx_users_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_users_banned ON users(banned);
-CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at);
 
 -- Accounts table (links users to auth providers)
 CREATE TABLE IF NOT EXISTS accounts (
@@ -29,11 +27,10 @@ CREATE TABLE IF NOT EXISTS accounts (
     password_hash LONGTEXT,
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    INDEX idx_accounts_user_id (user_id),
+    INDEX idx_accounts_provider (provider, provider_account_id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE INDEX IF NOT EXISTS idx_accounts_user_id ON accounts(user_id);
-CREATE INDEX IF NOT EXISTS idx_accounts_provider ON accounts(provider, provider_account_id);
 
 -- Sessions table
 CREATE TABLE IF NOT EXISTS sessions (
@@ -46,12 +43,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at TIMESTAMP(6) NOT NULL,
     last_used TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     impersonated_by VARCHAR(255),
+    INDEX idx_sessions_user_id (user_id),
+    INDEX idx_sessions_expires_at (expires_at),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
-CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 
 -- Verifications table (email verification, password reset tokens)
 CREATE TABLE IF NOT EXISTS verifications (
@@ -62,9 +57,7 @@ CREATE TABLE IF NOT EXISTS verifications (
     identifier VARCHAR(255),
     expires_at TIMESTAMP(6) NOT NULL,
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    INDEX idx_verifications_user_id_type (user_id, type),
+    INDEX idx_verifications_expires_at (expires_at),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE INDEX IF NOT EXISTS idx_verifications_token_hash ON verifications(token_hash);
-CREATE INDEX IF NOT EXISTS idx_verifications_user_id_type ON verifications(user_id, type);
-CREATE INDEX IF NOT EXISTS idx_verifications_expires_at ON verifications(expires_at);

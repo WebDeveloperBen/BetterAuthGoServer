@@ -57,6 +57,22 @@ CREATE TABLE users (
     updated_at TIMESTAMPTZ NOT NULL
 );
 
+-- MySQL
+CREATE TABLE users (
+    id VARCHAR(255) PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    email_verified BOOLEAN DEFAULT FALSE,
+    name VARCHAR(255) NOT NULL,
+    image TEXT,
+    role VARCHAR(50) DEFAULT 'user',
+    banned BOOLEAN DEFAULT FALSE,
+    banned_at TIMESTAMP NULL,
+    ban_reason TEXT,
+    is_anonymous BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
 -- SQLite
 CREATE TABLE users (
     id TEXT PRIMARY KEY,
@@ -89,6 +105,19 @@ CREATE TABLE accounts (
     UNIQUE(user_id, provider)
 );
 
+-- MySQL
+CREATE TABLE accounts (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    provider VARCHAR(100) NOT NULL,
+    provider_account_id VARCHAR(255),
+    password_hash TEXT,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    UNIQUE(user_id, provider),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- SQLite
 CREATE TABLE accounts (
     id TEXT PRIMARY KEY,
@@ -119,6 +148,20 @@ CREATE TABLE sessions (
     last_used TIMESTAMPTZ NOT NULL
 );
 
+-- MySQL
+CREATE TABLE sessions (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    token_hash VARCHAR(255) NOT NULL,
+    ip_address VARCHAR(45),
+    user_agent TEXT,
+    impersonated_by VARCHAR(255),
+    created_at TIMESTAMP NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    last_used TIMESTAMP NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- SQLite
 CREATE TABLE sessions (
     id TEXT PRIMARY KEY,
@@ -146,6 +189,17 @@ CREATE TABLE verifications (
     identifier TEXT,
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL
+);
+
+-- MySQL
+CREATE TABLE verifications (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    token_hash VARCHAR(255) NOT NULL,
+    type VARCHAR(50) NOT NULL,
+    identifier VARCHAR(255),
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL
 );
 
 -- SQLite
@@ -246,14 +300,21 @@ db/migrations/
 ALTER TABLE users ADD COLUMN IF NOT EXISTS new_feature_flag BOOLEAN DEFAULT FALSE;
 ```
 
-## Type Differences: PostgreSQL vs SQLite
+## Type Differences: PostgreSQL vs MySQL vs SQLite
 
-| Concept | PostgreSQL | SQLite |
-|---------|------------|--------|
-| Boolean | `BOOLEAN` | `INTEGER` (0/1) |
-| Timestamp | `TIMESTAMPTZ` | `TEXT` (RFC3339) |
-| JSON | `JSONB` | `TEXT` |
-| Auto-increment | `SERIAL` | `INTEGER PRIMARY KEY` |
+| Concept | PostgreSQL | MySQL | SQLite |
+|---------|------------|-------|--------|
+| Boolean | `BOOLEAN` | `BOOLEAN` | `INTEGER` (0/1) |
+| Timestamp | `TIMESTAMPTZ` | `TIMESTAMP` | `TEXT` (RFC3339) |
+| Timestamp with timezone | `TIMESTAMPTZ` | `TIMESTAMP` (UTC) | `TEXT` (RFC3339) |
+| Variable text | `TEXT` | `VARCHAR(n)` | `TEXT` |
+| JSON | `JSONB` | `JSON` | `TEXT` |
+| Auto-increment | `SERIAL` | `INT AUTO_INCREMENT` | `INTEGER PRIMARY KEY` |
+
+**Important MySQL notes:**
+- Use `parseTime=true` in connection string for proper timestamp handling
+- `VARCHAR` lengths must be specified (e.g., `VARCHAR(255)`)
+- `TEXT` columns cannot have default values in some MySQL versions
 
 The SDK handles these differences internally - just use the correct types for your database.
 
