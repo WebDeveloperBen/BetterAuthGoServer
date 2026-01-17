@@ -54,7 +54,7 @@ func DefaultConfig() Config {
 		MaxRequests: 100,
 		// KeyFunc is nil by default; Limiter.init() will set RemoteAddrKeyFunc
 		// unless TrustedProxies is configured
-		FailClosed:    true,
+		FailClosed:     true,
 		BackendTimeout: 2 * time.Second,
 	}
 }

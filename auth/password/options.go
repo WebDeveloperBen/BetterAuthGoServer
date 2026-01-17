@@ -42,14 +42,14 @@ type Config struct {
 // DefaultConfig returns the default password configuration.
 func DefaultConfig() Config {
 	return Config{
-		MinLength:         8,
-		MaxLength:         128,
-		RequireComplexity: true,
-		ResetTokenExpiry:  time.Hour,
-		AutoSignIn:        true,
+		MinLength:                8,
+		MaxLength:                128,
+		RequireComplexity:        true,
+		ResetTokenExpiry:         time.Hour,
+		AutoSignIn:               true,
 		RequireEmailVerification: false,
-		LockoutThreshold:  10,
-		LockoutDuration:   15 * time.Minute,
+		LockoutThreshold:         10,
+		LockoutDuration:          15 * time.Minute,
 		// LockoutStore: nil means use in-memory (created in Init)
 	}
 }

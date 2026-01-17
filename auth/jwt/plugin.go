@@ -116,16 +116,16 @@ const (
 
 // Plugin wraps JWT functionality as an auth plugin
 type Plugin struct {
-	service           *Service
-	keyManagerAdapter *KeyManagerAdapter // sqlc-based key manager
-	dbStore           *jwtdb.Store       // plugin's own store
-	ctx               plugin.Context
-	auth              AuthProvider
-	opts              []Option
-	lockout           *lockoutService
-	rotateKeyLimiter  kv.RateLimiter
-	ownsRotateLimiter bool
-	keyRotationRoles  []string
+	service                  *Service
+	keyManagerAdapter        *KeyManagerAdapter // sqlc-based key manager
+	dbStore                  *jwtdb.Store       // plugin's own store
+	ctx                      plugin.Context
+	auth                     AuthProvider
+	opts                     []Option
+	lockout                  *lockoutService
+	rotateKeyLimiter         kv.RateLimiter
+	ownsRotateLimiter        bool
+	keyRotationRoles         []string
 	rotateKeyRateLimitMax    int
 	rotateKeyRateLimitWindow time.Duration
 	requireEmailVerification bool

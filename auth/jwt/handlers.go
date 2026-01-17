@@ -223,21 +223,21 @@ func (p *Plugin) TokenRefreshHandler() http.HandlerFunc {
 			return
 		}
 
-	// Get user info
-	user, err := p.auth.GetPluginUser(r.Context(), claims.UserID)
-	if err != nil || user == nil {
-		writeError(w, http.StatusUnauthorized, ErrInvalidToken)
-		return
-	}
-	if user.Banned {
-		writeError(w, http.StatusForbidden, ErrUserBanned)
-		return
-	}
+		// Get user info
+		user, err := p.auth.GetPluginUser(r.Context(), claims.UserID)
+		if err != nil || user == nil {
+			writeError(w, http.StatusUnauthorized, ErrInvalidToken)
+			return
+		}
+		if user.Banned {
+			writeError(w, http.StatusForbidden, ErrUserBanned)
+			return
+		}
 
-	if p.requireEmailVerification && !user.EmailVerified {
-		writeError(w, http.StatusForbidden, ErrEmailNotVerified)
-		return
-	}
+		if p.requireEmailVerification && !user.EmailVerified {
+			writeError(w, http.StatusForbidden, ErrEmailNotVerified)
+			return
+		}
 
 		userInfo := UserInfo{
 			ID:            user.ID,

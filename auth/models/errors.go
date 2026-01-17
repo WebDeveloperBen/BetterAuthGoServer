@@ -29,8 +29,8 @@ var (
 	ErrCannotUnlinkLastAccount = errors.New("auth: cannot unlink last authentication method")
 
 	// General errors
-	ErrInvalidRequest = errors.New("auth: invalid request")
-	ErrForbidden      = errors.New("auth: forbidden")
-	ErrMissingStore   = errors.New("auth: store is required")
+	ErrInvalidRequest       = errors.New("auth: invalid request")
+	ErrForbidden            = errors.New("auth: forbidden")
+	ErrMissingStore         = errors.New("auth: store is required")
 	ErrInvalidProfileUpdate = errors.New("auth: invalid profile update")
 )

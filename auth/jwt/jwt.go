@@ -124,9 +124,9 @@ type TokenBlocklist interface {
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() Config {
 	return Config{
-		Algorithm:       AlgorithmHS256,
-		AccessTokenTTL:  15 * time.Minute,
-		RefreshTokenTTL: 7 * 24 * time.Hour,
+		Algorithm:                AlgorithmHS256,
+		AccessTokenTTL:           15 * time.Minute,
+		RefreshTokenTTL:          7 * 24 * time.Hour,
 		RequireEmailVerification: false,
 		LockoutThreshold:         10,
 		LockoutDuration:          15 * time.Minute,

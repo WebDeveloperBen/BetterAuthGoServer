@@ -519,7 +519,40 @@ store, _ := db.New(sqlDB, db.DialectSQLite)
 
 ## Development
 
-This project uses [Task](https://taskfile.dev) for development commands.
+This project uses [Task](https://taskfile.dev) for development commands and [mise](https://mise.jdx.dev) for tool version management.
+
+### First-time Setup
+
+```bash
+# Install mise (if not already installed)
+# See: https://mise.jdx.dev/getting-started.html
+
+# Install Go (version managed by mise.toml)
+mise install
+
+# Set up development environment (install tools and git hooks)
+task setup
+```
+
+The `task setup` command installs:
+- **air** - Hot reload for development
+- **lefthook** - Git hooks for pre-commit formatting and pre-push linting
+- **golangci-lint** - Go linter
+
+### Git Hooks
+
+This project uses [lefthook](https://github.com/evilmartians/lefthook) to run automated checks:
+
+**Pre-commit:**
+- Format Go files with `gofmt -s`
+- Run `go vet`
+- Run `go mod tidy`
+
+**Pre-push:**
+- Run `golangci-lint`
+- Run unit tests (`go test -short`)
+
+### Common Commands
 
 ```bash
 # Run the application

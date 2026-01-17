@@ -102,8 +102,8 @@ func (s *Service) CreateDeviceCode(ctx context.Context, req CreateDeviceCodeRequ
 	} else {
 		rawDeviceCode, err = generateRandomString(s.config.DeviceCodeLength, deviceCodeCharset)
 		if err != nil {
-		return nil, err
-	}
+			return nil, err
+		}
 	}
 
 	// Generate user code

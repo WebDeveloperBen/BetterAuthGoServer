@@ -143,6 +143,14 @@ tasks:
     desc: Install development tools
     cmds:
       - go install github.com/air-verse/air@latest
+      - go install github.com/evilmartians/lefthook/v2@latest
+      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+  setup:
+    desc: Set up development environment (install tools and git hooks)
+    cmds:
+      - task: tools
+      - lefthook install
 
   # =============================================================================
   # Docker & Compose

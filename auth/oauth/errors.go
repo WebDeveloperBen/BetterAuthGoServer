@@ -6,13 +6,13 @@ import "errors"
 
 // OAuth plugin errors
 var (
-	ErrProviderNotFound = errors.New("oauth: provider not found")
-	ErrStateMismatch    = errors.New("oauth: state mismatch")
-	ErrStateExpired     = errors.New("oauth: state expired")
-	ErrStateNotFound    = errors.New("oauth: state not found")
-	ErrMissingCode      = errors.New("oauth: missing code or state parameter")
-	ErrNoUserInfo       = errors.New("oauth: no user info in result")
-	ErrStoreRequired    = errors.New("oauth: plugin store is required")
+	ErrProviderNotFound   = errors.New("oauth: provider not found")
+	ErrStateMismatch      = errors.New("oauth: state mismatch")
+	ErrStateExpired       = errors.New("oauth: state expired")
+	ErrStateNotFound      = errors.New("oauth: state not found")
+	ErrMissingCode        = errors.New("oauth: missing code or state parameter")
+	ErrNoUserInfo         = errors.New("oauth: no user info in result")
+	ErrStoreRequired      = errors.New("oauth: plugin store is required")
 	ErrRedirectNotAllowed = errors.New("oauth: redirect not allowed")
 	ErrEmailNotVerified   = errors.New("oauth: email not verified")
 	ErrNoProviders        = errors.New("oauth: at least one provider is required")

@@ -15,14 +15,14 @@ const (
 
 // Plugin wraps OAuth functionality as an auth plugin
 type Plugin struct {
-	service      *Service
-	providers    []Provider
-	ctx          plugin.Context
-	auth         AuthProvider
-	store        *oauthdb.Store
-	accountStore *AccountStoreAdapter
-	trustedRedirectOrigins []string
-	allowRelativeRedirects bool
+	service                  *Service
+	providers                []Provider
+	ctx                      plugin.Context
+	auth                     AuthProvider
+	store                    *oauthdb.Store
+	accountStore             *AccountStoreAdapter
+	trustedRedirectOrigins   []string
+	allowRelativeRedirects   bool
 	requireEmailVerification bool
 }
 

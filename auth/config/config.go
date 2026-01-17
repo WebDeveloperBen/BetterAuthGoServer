@@ -25,8 +25,8 @@ type Config struct {
 	UseDefaults bool
 
 	// Session
-	SessionDuration time.Duration
-	SessionCookie   string
+	SessionDuration       time.Duration
+	SessionCookie         string
 	SessionCookieSameSite http.SameSite
 
 	// Password
@@ -101,8 +101,8 @@ func NewConfig(opts ...Option) *Config {
 	// Define sensible defaults inline
 	cfg := &Config{
 		// Session
-		SessionDuration: 7 * 24 * time.Hour, // 7 days
-		SessionCookie:   "session",
+		SessionDuration:       7 * 24 * time.Hour, // 7 days
+		SessionCookie:         "session",
 		SessionCookieSameSite: http.SameSiteLaxMode,
 
 		// Password
