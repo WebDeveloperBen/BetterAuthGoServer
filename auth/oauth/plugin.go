@@ -4,6 +4,8 @@ package oauth
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 
 	oauthdb "github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
@@ -24,6 +26,10 @@ type Plugin struct {
 	trustedRedirectOrigins   []string
 	allowRelativeRedirects   bool
 	requireEmailVerification bool
+	// callbackErrorRedirect is the parsed WithCallbackErrorRedirect target (nil when unset).
+	callbackErrorRedirect *url.URL
+	// configErr records an invalid option; Init returns it.
+	configErr error
 }
 
 // Ensure Plugin implements required interfaces
@@ -63,6 +69,49 @@ func (p *Plugin) WithRequireEmailVerification(required bool) *Plugin {
 	return p
 }
 
+// WithCallbackErrorRedirect makes browser-facing failures of the sign-in begin
+// (GET /oauth/{provider}) and callback (GET /oauth/{provider}/callback) endpoints respond
+// 302 to target instead of JSON. The redirect carries the stable error code in "error",
+// the provider path name in "provider" (omitted when empty) and "flow=link" when the
+// failed callback belonged to a link flow; any query already on target is preserved.
+// POST /oauth/{provider}/link keeps responding JSON.
+//
+// target must be an absolute http(s) URL or a path starting with a single "/"; otherwise
+// Init fails with ErrInvalidCallbackErrorRedirect.
+func (p *Plugin) WithCallbackErrorRedirect(target string) *Plugin {
+	u, err := parseCallbackErrorRedirect(target)
+	if err != nil {
+		p.callbackErrorRedirect = nil
+		p.configErr = err
+		return p
+	}
+	p.callbackErrorRedirect = u
+	p.configErr = nil
+	return p
+}
+
+func parseCallbackErrorRedirect(target string) (*url.URL, error) {
+	invalid := fmt.Errorf("%w: %q", ErrInvalidCallbackErrorRedirect, target)
+	// Browsers treat "\" like "/", so "/\host" would be protocol-relative.
+	if strings.ContainsAny(target, "\\\r\n\t") {
+		return nil, invalid
+	}
+	u, err := url.Parse(target)
+	if err != nil {
+		return nil, invalid
+	}
+	if strings.HasPrefix(target, "/") {
+		if strings.HasPrefix(target, "//") {
+			return nil, invalid
+		}
+		return u, nil
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+		return nil, invalid
+	}
+	return u, nil
+}
+
 // Name returns the plugin identifier
 func (p *Plugin) Name() string {
 	return PluginName
@@ -70,6 +119,9 @@ func (p *Plugin) Name() string {
 
 // Init initializes the OAuth plugin
 func (p *Plugin) Init(ctx plugin.Context) error {
+	if p.configErr != nil {
+		return p.configErr
+	}
 	p.ctx = ctx
 	if p.trustedRedirectOrigins == nil {
 		p.trustedRedirectOrigins = ctx.TrustedOrigins

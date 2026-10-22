@@ -559,32 +559,34 @@ paths:
             type: string
             format: uri
       responses:
-        '307':
-          description: Redirect to OAuth provider
+        '302':
+          description: |
+            Redirect to the OAuth provider. When the plugin is configured with
+            WithCallbackErrorRedirect, failures also respond 302, to the configured target with
+            query error=<code> and provider=<provider> (the target's own query is preserved).
           headers:
             Location:
-              description: OAuth provider authorization URL
+              description: OAuth provider authorization URL, or the error redirect target
               schema:
                 type: string
                 format: uri
         '400':
-          description: Invalid redirect URL
+          description: |
+            Provider not configured (code provider_not_found) or redirect_to not allowed
+            (code invalid_redirect).
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/OAuthErrorResponse'
               example:
-                error: Bad Request
-                message: invalid redirect URL
-        '404':
-          description: OAuth provider not configured
+                error: "oauth: redirect not allowed"
+                code: invalid_redirect
+        '500':
+          description: Internal error (code server_error)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error: Not Found
-                message: oauth provider not found
+                $ref: '#/components/schemas/OAuthErrorResponse'
 
   /oauth/{provider}/callback:
     get:
@@ -602,8 +604,10 @@ paths:
         Link flows (started with POST /oauth/{provider}/link) require the same session that
         started the link, link the provider identity to that user and do not create a session.
 
-        For browser clients, redirects to the configured redirect URL or base URL.
-        For API clients (Accept: application/json), returns JSON response.
+        On success, redirects to the flow's redirect_to when given, otherwise responds JSON.
+        On failure, responds JSON {error, code}; when the plugin is configured with
+        WithCallbackErrorRedirect, it instead responds 302 to the configured target with query
+        error=<code>, provider=<provider> and flow=link for link flows.
       operationId: oauthCallback
       parameters:
         - name: provider
@@ -614,26 +618,28 @@ paths:
             type: string
         - name: code
           in: query
-          required: true
-          description: Authorization code from OAuth provider
+          required: false
+          description: Authorization code from OAuth provider (absent on provider errors)
           schema:
             type: string
         - name: state
           in: query
-          required: true
+          required: false
           description: State parameter for CSRF protection
           schema:
             type: string
         - name: error
           in: query
           required: false
-          description: Error code from OAuth provider (if authorization failed)
+          description: |
+            OAuth error response from the provider. access_denied maps to code
+            access_denied, anything else to provider_error. The state is consumed.
           schema:
             type: string
         - name: error_description
           in: query
           required: false
-          description: Error description from OAuth provider
+          description: Error description from OAuth provider; never echoed.
           schema:
             type: string
       responses:
@@ -648,8 +654,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthResponse'
-        '307':
-          description: Redirect to application (browser clients)
+        '302':
+          description: |
+            Redirect to the flow's redirect_to after success, or (with WithCallbackErrorRedirect)
+            to the error target after a failure.
           headers:
             Location:
               description: Redirect URL
@@ -657,41 +665,36 @@ paths:
                 type: string
                 format: uri
             Set-Cookie:
-              description: Session cookie
+              description: Session cookie (successful sign-in only)
               schema:
                 type: string
         '400':
-          description: OAuth error or invalid state
+          description: |
+            Provider error (codes access_denied, provider_error), missing, unknown, expired or
+            mismatched state (code invalid_state), callback without code/state (code
+            invalid_callback), unknown provider (code provider_not_found) or redirect target no
+            longer allowed (code invalid_redirect).
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/OAuthErrorResponse'
               examples:
-                missing_params:
-                  summary: Missing code or state
+                access_denied:
+                  summary: The user cancelled at the provider
                   value:
-                    error: Bad Request
-                    message: code and state are required
-                state_mismatch:
-                  summary: State mismatch (CSRF protection)
-                  value:
-                    error: Bad Request
-                    message: oauth state mismatch
+                    error: "oauth: access denied at the provider"
+                    code: access_denied
                 state_expired:
                   summary: State expired
                   value:
-                    error: Bad Request
-                    message: oauth state expired
-                provider_error:
-                  summary: Error from OAuth provider
-                  value:
-                    error: Bad Request
-                    message: "access_denied: The user denied the request"
+                    error: "oauth: state expired"
+                    code: invalid_state
         '403':
           description: |
             Sign-in with a new provider identity whose email is not verified (code
-            email_not_verified), or a link callback without the session that started the
-            link (code link_session_mismatch). Nothing is written.
+            email_not_verified), a link callback without the session that started the
+            link (code link_session_mismatch), or a banned user (code user_banned). Nothing is
+            written.
           content:
             application/json:
               schema:
@@ -708,12 +711,12 @@ paths:
               example:
                 error: "oauth: an account with this email already exists; sign in and link this provider"
                 code: account_exists_link_required
-        '404':
-          description: OAuth provider not configured
+        '500':
+          description: Internal error (code server_error)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/OAuthErrorResponse'
 
   /oauth/{provider}/link:
     post:
@@ -957,13 +960,20 @@ components:
           description: Error message
         code:
           type: string
-          description: Stable error code, present for errors clients are expected to handle
+          description: Stable error code; every OAuth error response carries one
           enum:
+            - access_denied
+            - provider_error
+            - invalid_state
+            - invalid_callback
+            - provider_not_found
+            - invalid_redirect
             - email_not_verified
             - account_exists_link_required
             - account_already_linked
             - link_session_mismatch
             - user_banned
+            - server_error
 
   responses:
     Unauthorized:

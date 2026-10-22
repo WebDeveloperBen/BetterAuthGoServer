@@ -27,14 +27,15 @@ import (
 // fakeIDP is an OAuth authorization server whose token endpoint issues an access token
 // per authorization code; the user info for each code is registered by the test.
 type fakeIDP struct {
-	server *httptest.Server
-	mu     sync.Mutex
-	users  map[string]*oauth.UserInfo
+	server   *httptest.Server
+	mu       sync.Mutex
+	users    map[string]*oauth.UserInfo
+	rejected map[string]bool
 }
 
 func newFakeIDP(t *testing.T) *fakeIDP {
 	t.Helper()
-	idp := &fakeIDP{users: make(map[string]*oauth.UserInfo)}
+	idp := &fakeIDP{users: make(map[string]*oauth.UserInfo), rejected: make(map[string]bool)}
 	idp.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/token" {
 			http.NotFound(w, r)
@@ -46,6 +47,14 @@ func newFakeIDP(t *testing.T) *fakeIDP {
 		}
 		code := r.PostForm.Get("code")
 		w.Header().Set("Content-Type", "application/json")
+		idp.mu.Lock()
+		rejected := idp.rejected[code]
+		idp.mu.Unlock()
+		if rejected {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_grant"})
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "at:" + code,
 			"refresh_token": "rt:" + code,
@@ -62,6 +71,13 @@ func (idp *fakeIDP) issue(code string, info oauth.UserInfo) {
 	idp.mu.Lock()
 	defer idp.mu.Unlock()
 	idp.users[code] = &info
+}
+
+// reject makes the token endpoint refuse code with invalid_grant.
+func (idp *fakeIDP) reject(code string) {
+	idp.mu.Lock()
+	defer idp.mu.Unlock()
+	idp.rejected[code] = true
 }
 
 func (idp *fakeIDP) provider() oauth.Provider {
@@ -108,9 +124,18 @@ type oauthEnv struct {
 
 func setupOAuth(t *testing.T, dialectEnv *DialectEnv) *oauthEnv {
 	t.Helper()
+	return setupOAuthWith(t, dialectEnv, nil)
+}
+
+// setupOAuthWith is setupOAuth with a hook that configures the plugin before registration.
+func setupOAuthWith(t *testing.T, dialectEnv *DialectEnv, configure func(*oauth.Plugin)) *oauthEnv {
+	t.Helper()
 	idp := newFakeIDP(t)
 	oauthPlugin, err := oauth.NewPlugin(idp.provider())
 	require.NoError(t, err)
+	if configure != nil {
+		configure(oauthPlugin)
+	}
 	env := SetupWithDialectPlugins(t, dialectEnv, oauthPlugin)
 	return &oauthEnv{TestEnv: env, idp: idp}
 }

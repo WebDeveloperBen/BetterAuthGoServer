@@ -40,13 +40,13 @@ func (p *Plugin) OAuthBeginHandler() func(http.ResponseWriter, *http.Request, st
 	return func(w http.ResponseWriter, r *http.Request, provider string) {
 		redirectTo := r.URL.Query().Get("redirect_to")
 		if redirectTo != "" && !p.isRedirectAllowed(redirectTo) {
-			writeError(w, http.StatusBadRequest, ErrRedirectNotAllowed)
+			p.failFlow(w, r, provider, false, ErrRedirectNotAllowed)
 			return
 		}
 
 		result, err := p.service.Begin(r.Context(), provider, redirectTo)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err)
+			p.failFlow(w, r, provider, false, err)
 			return
 		}
 
@@ -94,22 +94,29 @@ func (p *Plugin) OAuthLinkBeginHandler() http.HandlerFunc {
 // Sign-in states run the sign-in rules; link states run the explicit-link rules.
 func (p *Plugin) OAuthCallbackHandler() func(http.ResponseWriter, *http.Request, string) {
 	return func(w http.ResponseWriter, r *http.Request, provider string) {
-		code := r.URL.Query().Get("code")
-		state := r.URL.Query().Get("state")
+		query := r.URL.Query()
+		code := query.Get("code")
+		state := query.Get("state")
+
+		// OAuth 2.0 error response (RFC 6749 section 4.1.2.1). error_description is never echoed.
+		if providerError := query.Get("error"); providerError != "" {
+			p.failProviderError(w, r, provider, providerError, state)
+			return
+		}
 
 		if code == "" || state == "" {
-			writeError(w, http.StatusBadRequest, ErrMissingCode)
+			p.failFlow(w, r, provider, false, ErrMissingCode)
 			return
 		}
 
 		// Complete OAuth flow
 		oauthResult, oauthState, err := p.service.Complete(r.Context(), provider, code, state)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err)
+			p.failFlow(w, r, provider, oauthState != nil && oauthState.IsLink(), err)
 			return
 		}
 		if oauthResult.UserInfo == nil || oauthResult.UserInfo.ID == "" {
-			writeError(w, http.StatusBadRequest, ErrNoUserInfo)
+			p.failFlow(w, r, provider, oauthState.IsLink(), ErrNoUserInfo)
 			return
 		}
 
@@ -121,28 +128,47 @@ func (p *Plugin) OAuthCallbackHandler() func(http.ResponseWriter, *http.Request,
 	}
 }
 
+// failProviderError handles a callback on which the provider reported an error. The state
+// is consumed so it cannot be completed later, and tells whether a link flow failed.
+func (p *Plugin) failProviderError(w http.ResponseWriter, r *http.Request, provider, providerError, stateValue string) {
+	state, err := p.service.Discard(r.Context(), provider, stateValue)
+	if errors.Is(err, ErrProviderNotFound) {
+		p.failFlow(w, r, provider, false, err)
+		return
+	}
+	// Any other lookup failure only loses the flow kind: the provider's error is still
+	// the outcome to report, and the unconsumed state expires on its own.
+	isLink := err == nil && state != nil && state.IsLink()
+
+	flowErr := ErrProviderError
+	if providerError == "access_denied" {
+		flowErr = ErrProviderAccessDenied
+	}
+	p.failFlow(w, r, provider, isLink, flowErr)
+}
+
 // completeSignIn resolves the user for a sign-in callback, creates a session and responds.
 func (p *Plugin) completeSignIn(w http.ResponseWriter, r *http.Request, provider string, result *AuthResult, state *State) {
 	user, err := p.signInUser(r.Context(), provider, result)
 	if err != nil {
-		writeError(w, statusForError(err), err)
+		p.failFlow(w, r, provider, false, err)
 		return
 	}
 
 	// Create session
 	session, err := p.auth.CreateSessionForUser(r.Context(), user.ID, r)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		p.failFlow(w, r, provider, false, err)
 		return
 	}
 
 	// WriteAuthResponse handles both cookie and JWT modes
 	if err := p.ctx.Sessions.WriteAuthResponse(r.Context(), w, session, user); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		p.failFlow(w, r, provider, false, err)
 		return
 	}
 
-	if p.redirectAfterCallback(w, r, state) {
+	if p.redirectAfterCallback(w, r, provider, state) {
 		return
 	}
 
@@ -259,35 +285,35 @@ func (p *Plugin) completeLink(w http.ResponseWriter, r *http.Request, provider s
 
 	session, err := p.auth.GetPluginSessionFromRequest(r)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		p.failFlow(w, r, provider, true, err)
 		return
 	}
 	if session == nil || state.LinkUserID == nil || state.LinkSessionID == nil ||
 		session.ID != *state.LinkSessionID || session.UserID != *state.LinkUserID {
-		writeError(w, http.StatusForbidden, ErrLinkRequiresSession)
+		p.failFlow(w, r, provider, true, ErrLinkRequiresSession)
 		return
 	}
 	if session.IsImpersonation() {
-		writeError(w, http.StatusForbidden, ErrLinkNotAllowed)
+		p.failFlow(w, r, provider, true, ErrLinkNotAllowed)
 		return
 	}
 
 	user, err := p.auth.GetPluginUser(ctx, session.UserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		p.failFlow(w, r, provider, true, err)
 		return
 	}
 	if user.Banned {
-		writeError(w, http.StatusForbidden, models.ErrUserBanned)
+		p.failFlow(w, r, provider, true, models.ErrUserBanned)
 		return
 	}
 
 	if err := p.linkAccount(ctx, user.ID, provider, result); err != nil {
-		writeError(w, statusForError(err), err)
+		p.failFlow(w, r, provider, true, err)
 		return
 	}
 
-	if p.redirectAfterCallback(w, r, state) {
+	if p.redirectAfterCallback(w, r, provider, state) {
 		return
 	}
 
@@ -354,17 +380,41 @@ func (p *Plugin) retryOnDeadlock(fn func() error) error {
 
 // redirectAfterCallback redirects to the state's redirect target when one was requested.
 // It reports whether a response was written.
-func (p *Plugin) redirectAfterCallback(w http.ResponseWriter, r *http.Request, state *State) bool {
+func (p *Plugin) redirectAfterCallback(w http.ResponseWriter, r *http.Request, provider string, state *State) bool {
 	if state == nil || state.RedirectTo == nil || *state.RedirectTo == "" {
 		return false
 	}
 	redirectTo := *state.RedirectTo
 	if !p.isRedirectAllowed(redirectTo) {
-		writeError(w, http.StatusBadRequest, ErrRedirectNotAllowed)
+		p.failFlow(w, r, provider, state.IsLink(), ErrRedirectNotAllowed)
 		return true
 	}
 	http.Redirect(w, r, redirectTo, http.StatusFound)
 	return true
+}
+
+// failFlow responds to a failed sign-in begin or callback. With WithCallbackErrorRedirect
+// it redirects the browser to the configured target with the stable error code, the
+// provider and flow=link for link flows; otherwise it writes the JSON error.
+func (p *Plugin) failFlow(w http.ResponseWriter, r *http.Request, provider string, isLink bool, err error) {
+	status := statusForError(err)
+	if p.callbackErrorRedirect == nil {
+		writeError(w, status, err)
+		return
+	}
+
+	_, code := publicError(status, err)
+	target := *p.callbackErrorRedirect
+	query := target.Query()
+	query.Set("error", code)
+	if provider != "" {
+		query.Set("provider", provider)
+	}
+	if isLink {
+		query.Set("flow", "link")
+	}
+	target.RawQuery = query.Encode()
+	http.Redirect(w, r, target.String(), http.StatusFound)
 }
 
 // newAccount builds a provider account with encrypted tokens.
@@ -430,22 +480,6 @@ func (p *Plugin) accountStoreFor(tx db.DBTX) (*AccountStoreAdapter, error) {
 	return NewAccountStoreAdapter(store), nil
 }
 
-// statusForError maps OAuth flow errors to HTTP status codes.
-func statusForError(err error) int {
-	switch {
-	case errors.Is(err, ErrEmailNotVerified),
-		errors.Is(err, ErrLinkRequiresSession),
-		errors.Is(err, ErrLinkNotAllowed),
-		errors.Is(err, models.ErrUserBanned):
-		return http.StatusForbidden
-	case errors.Is(err, ErrAccountExistsLinkRequired),
-		errors.Is(err, ErrAccountAlreadyLinked):
-		return http.StatusConflict
-	default:
-		return http.StatusInternalServerError
-	}
-}
-
 // Helper functions (adapted from handlers package)
 func writeJSON(w http.ResponseWriter, status int, v any) error {
 	w.Header().Set("Content-Type", "application/json")
@@ -453,18 +487,21 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 	return json.NewEncoder(w).Encode(v)
 }
 
-// writeError writes {"error": message} plus a stable "code" for errors that have one.
-// Messages of 5xx responses are replaced by the status text.
+// writeError writes {"error": message, "code": code}; see publicError.
 func writeError(w http.ResponseWriter, status int, err error) {
-	message := err.Error()
-	if status >= http.StatusInternalServerError {
-		message = http.StatusText(status)
+	message, code := publicError(status, err)
+	_ = writeJSON(w, status, map[string]string{"error": message, "code": code})
+}
+
+// publicError returns the client-facing message and stable code for err. Only the message
+// of the classified sentinel is exposed, never wrapped details; 5xx responses and
+// unclassified errors get the status text and code server_error.
+func publicError(status int, err error) (message, code string) {
+	fe := classifyError(err)
+	if status >= http.StatusInternalServerError || fe == nil {
+		return http.StatusText(status), CodeServerError
 	}
-	body := map[string]string{"error": message}
-	if code := errorCode(err); code != "" {
-		body["code"] = code
-	}
-	_ = writeJSON(w, status, body)
+	return fe.err.Error(), fe.code
 }
 
 // OAuthDynamicHandler handles dynamic OAuth routes (/oauth/:provider and /oauth/:provider/callback)
