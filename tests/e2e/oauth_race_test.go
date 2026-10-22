@@ -29,13 +29,15 @@ func TestOAuthConcurrentRaces(t *testing.T) {
 
 			t.Run("UniqueViolationIsDetected", func(t *testing.T) {
 				env.TruncateTables(t)
+				env.CreateUser(t, "dup1@example.com", "password123!", "Dup 1")
+				env.CreateUser(t, "dup2@example.com", "password123!", "Dup 2")
 				store, err := oauthdb.New(env.DB, env.Dialect)
 				require.NoError(t, err)
 				now := time.Now()
-				account := &oauthdb.Account{ID: "acc-1", UserID: "user-1", Provider: "fake", ProviderAccountID: "idp-dup", CreatedAt: now, UpdatedAt: now}
+				account := &oauthdb.Account{ID: "acc-1", UserID: env.userID(t, "dup1@example.com"), Provider: "fake", ProviderAccountID: "idp-dup", CreatedAt: now, UpdatedAt: now}
 				require.NoError(t, store.CreateAccount(context.Background(), account))
 
-				account.ID, account.UserID = "acc-2", "user-2"
+				account.ID, account.UserID = "acc-2", env.userID(t, "dup2@example.com")
 				err = store.CreateAccount(context.Background(), account)
 				require.Error(t, err)
 				assert.True(t, store.IsUniqueViolation(err), "unexpected error: %v", err)
@@ -108,6 +110,8 @@ func TestOAuthConcurrentRaces(t *testing.T) {
 					// only checks the outcome of the plain race.
 					var blocker *sql.Tx
 					if env.Dialect != db.DialectSQLite {
+						env.CreateUser(t, fmt.Sprintf("blocker%d@example.com", round), "password123!", "Blocker")
+						blockerUserID := env.userID(t, fmt.Sprintf("blocker%d@example.com", round))
 						var err error
 						blocker, err = env.DB.BeginTx(context.Background(), nil)
 						require.NoError(t, err)
@@ -116,7 +120,7 @@ func TestOAuthConcurrentRaces(t *testing.T) {
 						now := time.Now()
 						_, err = blocker.ExecContext(context.Background(), rebind(env.Dialect,
 							"INSERT INTO oauth_accounts (id, user_id, provider, provider_account_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"),
-							"blocker", "blocker", "fake", info.ID, now, now)
+							"blocker", blockerUserID, "fake", info.ID, now, now)
 						require.NoError(t, err)
 					}
 

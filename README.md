@@ -506,6 +506,12 @@ in that migration folds only ASCII letters.)
 The `0002` OAuth migration adds the link columns to `oauth_states` and a unique index on
 `oauth_accounts (provider, provider_account_id)`; it fails if duplicate provider identities already exist.
 
+The `0003` OAuth migration adds `ON DELETE CASCADE` foreign keys from `oauth_accounts.user_id` and
+`oauth_states.link_user_id` to `users(id)`. Deleting a user (`DELETE /account` or the admin delete) removes
+their provider identities and pending link flows in the same statement, so the identity can sign up again.
+The migration first deletes rows whose user no longer exists. On SQLite the cascade needs foreign key
+enforcement on the connection (`?_foreign_keys=on`, as for the core tables).
+
 ### Frontend Integration
 
 ```javascript

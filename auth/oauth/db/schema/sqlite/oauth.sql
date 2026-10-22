@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS oauth_states (
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL,
   -- Set only for explicit account-linking flows: the signed-in user and session that started the flow.
-  link_user_id TEXT,
+  link_user_id TEXT REFERENCES users (id) ON DELETE CASCADE,
   link_session_id TEXT
 );
 
@@ -16,7 +16,7 @@ CREATE INDEX IF NOT EXISTS idx_oauth_states_expires_at ON oauth_states (expires_
 -- OAuth accounts table (linked OAuth provider accounts)
 CREATE TABLE IF NOT EXISTS oauth_accounts (
   id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   provider TEXT NOT NULL,
   provider_account_id TEXT NOT NULL,
   access_token TEXT,

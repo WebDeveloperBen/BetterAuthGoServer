@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS oauth_states (
   expires_at TIMESTAMP(6) NOT NULL,
   -- Set only for explicit account-linking flows: the signed-in user and session that started the flow.
   link_user_id VARCHAR(255),
-  link_session_id VARCHAR(255)
+  link_session_id VARCHAR(255),
+  CONSTRAINT fk_oauth_states_link_user FOREIGN KEY (link_user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE INDEX IF NOT EXISTS idx_oauth_states_expires_at ON oauth_states (expires_at);
@@ -23,7 +24,8 @@ CREATE TABLE IF NOT EXISTS oauth_accounts (
   refresh_token LONGTEXT,
   access_token_expires_at TIMESTAMP(6),
   created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
+  updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_oauth_accounts_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user_id ON oauth_accounts (user_id);
