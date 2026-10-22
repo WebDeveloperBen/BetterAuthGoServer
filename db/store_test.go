@@ -336,6 +336,12 @@ var testCounter int
 
 // setupTestStore creates a fresh store for a test with migrations applied.
 func setupTestStore(t *testing.T, sharedEnv *dialectTestEnv) *db.Store {
+	store, _ := setupTestStoreWithPlugins(t, sharedEnv)
+	return store
+}
+
+// setupTestStoreWithPlugins creates a test store with core and plugin migrations applied.
+func setupTestStoreWithPlugins(t *testing.T, sharedEnv *dialectTestEnv, pluginSources ...migrate.Source) (*db.Store, *sql.DB) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -395,12 +401,16 @@ func setupTestStore(t *testing.T, sharedEnv *dialectTestEnv) *db.Store {
 			_, _ = testDB.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 1")
 		})
 
-		// Create store and return early (migrations already run during setup)
+		if len(pluginSources) > 0 {
+			if err := migrate.Run(ctx, testDB, migrate.Dialect(sharedEnv.dialect), migrate.WithPlugins(pluginSources...)); err != nil {
+				t.Fatalf("failed to run plugin migrations: %v", err)
+			}
+		}
 		store, err := db.New(testDB, sharedEnv.dialect)
 		if err != nil {
 			t.Fatalf("failed to create store: %v", err)
 		}
-		return store
+		return store, testDB
 
 	case db.DialectSQLite:
 		// For SQLite, just use the shared database and clean tables after
@@ -413,19 +423,17 @@ func setupTestStore(t *testing.T, sharedEnv *dialectTestEnv) *db.Store {
 		})
 	}
 
-	// Run migrations
-	err = migrate.Run(ctx, testDB, migrate.Dialect(sharedEnv.dialect))
+	err = migrate.Run(ctx, testDB, migrate.Dialect(sharedEnv.dialect), migrate.WithPlugins(pluginSources...))
 	if err != nil {
 		t.Fatalf("failed to run migrations: %v", err)
 	}
 
-	// Create store
 	store, err := db.New(testDB, sharedEnv.dialect)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
 
-	return store
+	return store, testDB
 }
 
 // getDialects returns all enabled dialect environments for testing.
@@ -1046,11 +1054,8 @@ func TestOAuthDirectoryBatchLookups(t *testing.T) {
 	for _, dialectEnv := range getDialects() {
 		t.Run(string(dialectEnv.dialect), func(t *testing.T) {
 			ctx := context.Background()
-			if err := migrate.Up(ctx, dialectEnv.db, migrate.Dialect(dialectEnv.dialect), oauthplugin.Migrations()); err != nil {
-				t.Fatal(err)
-			}
-			coreStore := setupTestStore(t, dialectEnv)
-			oauthStore, err := oauthdb.New(dialectEnv.db, dialectEnv.dialect)
+			coreStore, testDB := setupTestStoreWithPlugins(t, dialectEnv, oauthplugin.Migrations())
+			oauthStore, err := oauthdb.New(testDB, dialectEnv.dialect)
 			if err != nil {
 				t.Fatal(err)
 			}
