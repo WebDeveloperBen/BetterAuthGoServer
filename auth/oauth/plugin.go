@@ -138,5 +138,11 @@ func (p *Plugin) Routes() []plugin.Route {
 			Path:    "/oauth/",
 			Handler: p.OAuthDynamicHandler(),
 		},
+		{
+			Method:      "POST",
+			Path:        "/oauth/{provider}/link",
+			Handler:     p.OAuthLinkBeginHandler(),
+			RequireAuth: true,
+		},
 	}
 }

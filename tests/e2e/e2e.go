@@ -26,6 +26,7 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/organization"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/otp"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/webauthn"
 	"github.com/webdeveloperben/BetterAuthGoServer/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/migrate"
@@ -74,6 +75,13 @@ func GetDialects() []*DialectEnv {
 // Call TruncateTables at the start of each test for isolation.
 func SetupWithDialect(t *testing.T, dialectEnv *DialectEnv) *TestEnv {
 	t.Helper()
+	return SetupWithDialectPlugins(t, dialectEnv)
+}
+
+// SetupWithDialectPlugins is SetupWithDialect with additional plugins registered
+// (via auth.Use) before the HTTP handler is built.
+func SetupWithDialectPlugins(t *testing.T, dialectEnv *DialectEnv, plugins ...plugin.Plugin) *TestEnv {
+	t.Helper()
 	ctx := context.Background()
 
 	if dialectEnv == nil || dialectEnv.DB == nil {
@@ -111,6 +119,11 @@ func SetupWithDialect(t *testing.T, dialectEnv *DialectEnv) *TestEnv {
 	)
 	if err != nil {
 		t.Fatalf("Failed to create auth instance: %v", err)
+	}
+	if len(plugins) > 0 {
+		if err := authInstance.Use(plugins...).Err(); err != nil {
+			t.Fatalf("Failed to register plugins: %v", err)
+		}
 	}
 
 	// Create test server
@@ -304,9 +317,8 @@ func (env *TestEnv) TruncateTables(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
 
-	// Core tables that are always created by migrations.
-	// Note: Plugin tables (oauth_states, etc.) are also created by migrations.
-	tables := []string{"verifications", "sessions", "accounts", "users"}
+	// Core tables plus plugin tables exercised by e2e tests; all are created by migrations.
+	tables := []string{"oauth_states", "oauth_accounts", "verifications", "sessions", "accounts", "users"}
 
 	for _, table := range tables {
 		var query string

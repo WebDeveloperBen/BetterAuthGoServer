@@ -19,12 +19,14 @@ func NewStoreAdapter(store *oauthdb.Store) *StoreAdapter {
 // CreateOAuthState creates a new OAuth state record.
 func (a *StoreAdapter) CreateOAuthState(ctx context.Context, state *State) error {
 	dbState := &oauthdb.State{
-		State:      state.State,
-		Provider:   state.Provider,
-		Verifier:   state.Verifier,
-		RedirectTo: state.RedirectTo,
-		ExpiresAt:  state.ExpiresAt,
-		CreatedAt:  state.CreatedAt,
+		State:         state.State,
+		Provider:      state.Provider,
+		Verifier:      state.Verifier,
+		RedirectTo:    state.RedirectTo,
+		ExpiresAt:     state.ExpiresAt,
+		CreatedAt:     state.CreatedAt,
+		LinkUserID:    state.LinkUserID,
+		LinkSessionID: state.LinkSessionID,
 	}
 	return a.store.CreateOAuthState(ctx, dbState)
 }
@@ -39,12 +41,14 @@ func (a *StoreAdapter) GetOAuthState(ctx context.Context, stateValue string) (*S
 		return nil, nil
 	}
 	return &State{
-		State:      dbState.State,
-		Provider:   dbState.Provider,
-		Verifier:   dbState.Verifier,
-		RedirectTo: dbState.RedirectTo,
-		ExpiresAt:  dbState.ExpiresAt,
-		CreatedAt:  dbState.CreatedAt,
+		State:         dbState.State,
+		Provider:      dbState.Provider,
+		Verifier:      dbState.Verifier,
+		RedirectTo:    dbState.RedirectTo,
+		ExpiresAt:     dbState.ExpiresAt,
+		CreatedAt:     dbState.CreatedAt,
+		LinkUserID:    dbState.LinkUserID,
+		LinkSessionID: dbState.LinkSessionID,
 	}, nil
 }
 

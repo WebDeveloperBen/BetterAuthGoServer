@@ -32,11 +32,20 @@ type State struct {
 	RedirectTo *string
 	CreatedAt  time.Time
 	ExpiresAt  time.Time
+	// LinkUserID and LinkSessionID bind an explicit account-linking flow to the
+	// signed-in user and session that started it. Both are nil for sign-in flows.
+	LinkUserID    *string
+	LinkSessionID *string
 }
 
 // IsExpired returns true if the state has expired
 func (s *State) IsExpired() bool {
 	return time.Now().After(s.ExpiresAt)
+}
+
+// IsLink reports whether the state belongs to an explicit account-linking flow.
+func (s *State) IsLink() bool {
+	return s.LinkUserID != nil || s.LinkSessionID != nil
 }
 
 // OAuthAccount represents an OAuth account linked to a user.
@@ -93,8 +102,22 @@ func (s *Service) ListProviders() []string {
 	return names
 }
 
-// Begin starts an OAuth flow for the given provider
+// Begin starts an OAuth sign-in flow for the given provider
 func (s *Service) Begin(ctx context.Context, providerName string, redirectTo string) (*AuthStart, error) {
+	return s.begin(ctx, providerName, redirectTo, "", "")
+}
+
+// BeginLink starts an OAuth flow that links the provider account to the signed-in
+// user. The state is bound to userID and sessionID; the callback must present the
+// same session for the link to be created.
+func (s *Service) BeginLink(ctx context.Context, providerName, redirectTo, userID, sessionID string) (*AuthStart, error) {
+	if userID == "" || sessionID == "" {
+		return nil, ErrLinkRequiresSession
+	}
+	return s.begin(ctx, providerName, redirectTo, userID, sessionID)
+}
+
+func (s *Service) begin(ctx context.Context, providerName, redirectTo, linkUserID, linkSessionID string) (*AuthStart, error) {
 	provider, ok := s.providers[providerName]
 	if !ok {
 		return nil, ErrProviderNotFound
@@ -139,6 +162,10 @@ func (s *Service) Begin(ctx context.Context, providerName string, redirectTo str
 	}
 	if redirectTo != "" {
 		state.RedirectTo = &redirectTo
+	}
+	if linkUserID != "" {
+		state.LinkUserID = &linkUserID
+		state.LinkSessionID = &linkSessionID
 	}
 
 	if err := s.stateStore.CreateOAuthState(ctx, state); err != nil {

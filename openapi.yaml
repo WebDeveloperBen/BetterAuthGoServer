@@ -592,8 +592,15 @@ paths:
         - OAuth
       summary: OAuth callback
       description: |
-        Handles the OAuth callback from the provider. Creates or links the user
-        account and establishes a session.
+        Handles the OAuth callback from the provider.
+
+        Sign-in flows (started with GET /oauth/{provider}) sign in the user the provider
+        identity is linked to, or create a new user and linked account when the provider
+        reports a verified email that no existing user has. A provider identity is never
+        attached to an existing user by email.
+
+        Link flows (started with POST /oauth/{provider}/link) require the same session that
+        started the link, link the provider identity to that user and do not create a session.
 
         For browser clients, redirects to the configured redirect URL or base URL.
         For API clients (Accept: application/json), returns JSON response.
@@ -680,12 +687,85 @@ paths:
                   value:
                     error: Bad Request
                     message: "access_denied: The user denied the request"
+        '403':
+          description: |
+            Sign-in with a new provider identity whose email is not verified (code
+            email_not_verified), or a link callback without the session that started the
+            link (code link_session_mismatch). Nothing is written.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthErrorResponse'
+        '409':
+          description: |
+            Sign-in whose verified email belongs to an existing user (code
+            account_exists_link_required; sign in and link instead), or a link of a provider
+            identity owned by another user (code account_already_linked). Nothing is written.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthErrorResponse'
+              example:
+                error: "oauth: an account with this email already exists; sign in and link this provider"
+                code: account_exists_link_required
         '404':
           description: OAuth provider not configured
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  /oauth/{provider}/link:
+    post:
+      tags:
+        - OAuth
+      summary: Begin linking a provider account
+      description: |
+        Starts an OAuth flow that links the provider account to the signed-in user.
+        The flow is bound to the current user and session. Navigate the browser to the
+        returned URL; the callback must carry the same session.
+      operationId: beginOAuthLink
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          description: OAuth provider name
+          schema:
+            type: string
+        - name: redirect_to
+          in: query
+          required: false
+          description: Where the callback redirects after linking. Must pass the redirect allow-list.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Provider authorization URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    format: uri
+        '400':
+          description: Unknown provider or redirect not allowed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Linking from an impersonation session is not allowed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthErrorResponse'
 
 components:
   securitySchemes:
@@ -868,6 +948,21 @@ components:
           type: string
           description: Detailed error message
           example: email and password are required
+
+    OAuthErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        code:
+          type: string
+          description: Stable error code, present for errors clients are expected to handle
+          enum:
+            - email_not_verified
+            - account_exists_link_required
+            - account_already_linked
+            - link_session_mismatch
 
   responses:
     Unauthorized:

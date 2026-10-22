@@ -5,7 +5,7 @@ A complete, embeddable authentication library for Go applications. Handles email
 ## Features
 
 - **Email/Password Authentication** - Sign up, sign in, password reset, password change
-- **OAuth2 Providers** - Google, GitHub, Discord (extensible for more)
+- **OAuth2 Providers** - Google, GitHub, GitLab (including self-managed), Microsoft Entra ID, Discord (extensible for more), with explicit account linking
 - **Session Management** - Cookie-based sessions with optional Bearer token support
 - **Email Verification** - Token-based email verification flow
 - **Plugin Architecture** - Extend with JWT, OAuth, Admin, and custom plugins
@@ -318,8 +318,9 @@ All endpoints are mounted under your chosen path (e.g., `/auth`).
 | DELETE | `/sessions` | Yes | Revoke all sessions |
 | DELETE | `/sessions/{id}` | Yes | Revoke specific session |
 | GET | `/oauth/providers` | No | List OAuth providers (with OAuth plugin) |
-| GET | `/oauth/{provider}` | No | Begin OAuth flow |
-| GET | `/oauth/{provider}/callback` | No | OAuth callback |
+| GET | `/oauth/{provider}` | No | Begin OAuth sign-in flow |
+| POST | `/oauth/{provider}/link` | Yes | Begin linking a provider account to the signed-in user |
+| GET | `/oauth/{provider}/callback` | No | OAuth callback (sign-in or link) |
 
 ## Hooks
 
@@ -399,6 +400,18 @@ oauthPlugin, err := oauth.NewPlugin(
         os.Getenv("GITHUB_CLIENT_SECRET"),
         "http://localhost:8080/auth/oauth/github/callback",
     ),
+    providers.NewGitLab(
+        os.Getenv("GITLAB_CLIENT_ID"),
+        os.Getenv("GITLAB_CLIENT_SECRET"),
+        "http://localhost:8080/auth/oauth/gitlab/callback",
+        // Self-managed GitLab; defaults to https://gitlab.com
+        providers.WithGitLabBaseURL("https://gitlab.example.com"),
+    ),
+    providers.NewAzure(
+        os.Getenv("AZURE_CLIENT_ID"),
+        os.Getenv("AZURE_CLIENT_SECRET"),
+        "http://localhost:8080/auth/oauth/azure/callback",
+    ),
     providers.NewDiscord(
         os.Getenv("DISCORD_CLIENT_ID"),
         os.Getenv("DISCORD_CLIENT_SECRET"),
@@ -415,6 +428,57 @@ if err := authService.Err(); err != nil {
     log.Fatal(err)
 }
 ```
+
+### Sign-in vs. Explicit Linking
+
+A provider identity (provider + provider account ID) is stored as a linked account of exactly one
+user. The plugin never attaches a provider identity to an existing user because their emails match.
+
+**Sign-in** (`GET /oauth/{provider}` → callback):
+
+1. If the provider identity is already linked, the user it is linked to is signed in (stored provider tokens are refreshed).
+2. Otherwise the provider must report a **verified** email. If it does not, the callback responds `403` with code `email_not_verified` and nothing is written.
+3. If a user with that email already exists, the callback responds `409` with code `account_exists_link_required` and nothing is written. The response does not reveal anything about the existing user. The user must sign in with a method they already have and then link the provider explicitly.
+4. Otherwise a new user (email marked verified) and the linked account are created in one database transaction, and a session is issued.
+
+**Explicit link** (`POST /oauth/{provider}/link` → callback), for a signed-in user:
+
+- The request needs a valid session (it is behind `RequireAuth`) and, like other `POST` endpoints, passes the CSRF plugin when enabled. It responds `{"url": "<authorize URL>"}`; navigate the browser to that URL. An optional `redirect_to` query parameter must pass the same redirect allow-list as sign-in.
+- The OAuth state is bound to the current user **and** session. The callback must carry that same session; otherwise it responds `403` with code `link_session_mismatch` and nothing is written. The session cookie reaches the callback on the top-level redirect back from the provider with the default `SameSite=Lax`; with `SameSite=Strict`, or with Bearer-only sessions, the callback cannot present the session and linking is rejected. Links cannot be started or completed from an impersonation session.
+- If the provider identity is already linked to a **different** user, the callback responds `409` with code `account_already_linked` and nothing is written. If it is already linked to the same user, the callback succeeds (only the stored provider tokens are refreshed).
+- Otherwise the link is created. Email verification is not required here: the user has proven control of both identities. No new session is created, and the `OnOAuthAccountLinked` hook fires. The callback redirects to `redirect_to` when given, or responds `{"linked": true, "provider": "...", "user": {...}}`.
+
+Error responses have the shape `{"error": "<message>", "code": "<code>"}`:
+
+| Status | Code | Meaning |
+|--------|------|---------|
+| 403 | `email_not_verified` | Sign-in with a new provider identity whose email the provider did not verify |
+| 409 | `account_exists_link_required` | Sign-in with a new provider identity whose email belongs to an existing user; sign in and link instead |
+| 409 | `account_already_linked` | Link of a provider identity that belongs to another user |
+| 403 | `link_session_mismatch` | Link callback without the user and session that started the link |
+
+```javascript
+// Signed-in user links GitHub to their account
+const res = await fetch('/auth/oauth/github/link?redirect_to=/settings/accounts', {
+  method: 'POST',
+  credentials: 'include',
+});
+const { url } = await res.json();
+window.location.href = url;
+```
+
+### Email Verification by Provider
+
+| Provider | `EmailVerified` is true when |
+|----------|------------------------------|
+| Google | Google's userinfo reports `verified_email` |
+| GitHub | The account's **primary** email is verified (other emails are never used) |
+| GitLab | The OIDC userinfo reports `email_verified` |
+| Microsoft (`azure`) | The ID token's `email` claim comes with `email_verified: true` or the optional `xms_edov` claim. Graph's `mail`/`userPrincipalName` are never treated as verified. Add the `xms_edov` optional claim to the app registration's ID token to let Microsoft users sign up through OAuth. |
+| Discord | Discord reports `verified` |
+
+The `0002` OAuth migration adds the link columns to `oauth_states` and a unique index on
+`oauth_accounts (provider, provider_account_id)`; it fails if duplicate provider identities already exist.
 
 ### Frontend Integration
 

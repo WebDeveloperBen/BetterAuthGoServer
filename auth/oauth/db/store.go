@@ -26,6 +26,9 @@ type State struct {
 	RedirectTo *string
 	CreatedAt  time.Time
 	ExpiresAt  time.Time
+	// LinkUserID and LinkSessionID are set only for explicit account-linking flows.
+	LinkUserID    *string
+	LinkSessionID *string
 }
 
 // Account represents an OAuth account linked to a user.
@@ -143,12 +146,14 @@ func newPgAdapter(db coredb.DBTX) *pgAdapter {
 
 func (a *pgAdapter) CreateOAuthState(ctx context.Context, state *State) error {
 	return a.q.CreateOAuthState(ctx, pgstore.CreateOAuthStateParams{
-		State:      state.State,
-		Provider:   state.Provider,
-		Verifier:   toNullString(state.Verifier),
-		RedirectTo: toNullString(state.RedirectTo),
-		CreatedAt:  state.CreatedAt,
-		ExpiresAt:  state.ExpiresAt,
+		State:         state.State,
+		Provider:      state.Provider,
+		Verifier:      toNullString(state.Verifier),
+		RedirectTo:    toNullString(state.RedirectTo),
+		CreatedAt:     state.CreatedAt,
+		ExpiresAt:     state.ExpiresAt,
+		LinkUserID:    toNullString(state.LinkUserID),
+		LinkSessionID: toNullString(state.LinkSessionID),
 	})
 }
 
@@ -161,12 +166,14 @@ func (a *pgAdapter) GetOAuthState(ctx context.Context, stateValue string) (*Stat
 		return nil, err
 	}
 	return &State{
-		State:      row.State,
-		Provider:   row.Provider,
-		Verifier:   fromNullString(row.Verifier),
-		RedirectTo: fromNullString(row.RedirectTo),
-		CreatedAt:  row.CreatedAt,
-		ExpiresAt:  row.ExpiresAt,
+		State:         row.State,
+		Provider:      row.Provider,
+		Verifier:      fromNullString(row.Verifier),
+		RedirectTo:    fromNullString(row.RedirectTo),
+		CreatedAt:     row.CreatedAt,
+		ExpiresAt:     row.ExpiresAt,
+		LinkUserID:    fromNullString(row.LinkUserID),
+		LinkSessionID: fromNullString(row.LinkSessionID),
 	}, nil
 }
 
@@ -248,12 +255,14 @@ func newMysqlAdapter(db coredb.DBTX) *mysqlAdapter {
 
 func (a *mysqlAdapter) CreateOAuthState(ctx context.Context, state *State) error {
 	return a.q.CreateOAuthState(ctx, mysqlstore.CreateOAuthStateParams{
-		State:      state.State,
-		Provider:   state.Provider,
-		Verifier:   toNullString(state.Verifier),
-		RedirectTo: toNullString(state.RedirectTo),
-		CreatedAt:  state.CreatedAt,
-		ExpiresAt:  state.ExpiresAt,
+		State:         state.State,
+		Provider:      state.Provider,
+		Verifier:      toNullString(state.Verifier),
+		RedirectTo:    toNullString(state.RedirectTo),
+		CreatedAt:     state.CreatedAt,
+		ExpiresAt:     state.ExpiresAt,
+		LinkUserID:    toNullString(state.LinkUserID),
+		LinkSessionID: toNullString(state.LinkSessionID),
 	})
 }
 
@@ -266,12 +275,14 @@ func (a *mysqlAdapter) GetOAuthState(ctx context.Context, stateValue string) (*S
 		return nil, err
 	}
 	return &State{
-		State:      row.State,
-		Provider:   row.Provider,
-		Verifier:   fromNullString(row.Verifier),
-		RedirectTo: fromNullString(row.RedirectTo),
-		CreatedAt:  row.CreatedAt,
-		ExpiresAt:  row.ExpiresAt,
+		State:         row.State,
+		Provider:      row.Provider,
+		Verifier:      fromNullString(row.Verifier),
+		RedirectTo:    fromNullString(row.RedirectTo),
+		CreatedAt:     row.CreatedAt,
+		ExpiresAt:     row.ExpiresAt,
+		LinkUserID:    fromNullString(row.LinkUserID),
+		LinkSessionID: fromNullString(row.LinkSessionID),
 	}, nil
 }
 
@@ -353,12 +364,14 @@ func newSqliteAdapter(db coredb.DBTX) *sqliteAdapter {
 
 func (a *sqliteAdapter) CreateOAuthState(ctx context.Context, state *State) error {
 	return a.q.CreateOAuthState(ctx, sqlitestore.CreateOAuthStateParams{
-		State:      state.State,
-		Provider:   state.Provider,
-		Verifier:   toNullString(state.Verifier),
-		RedirectTo: toNullString(state.RedirectTo),
-		CreatedAt:  state.CreatedAt.Format(time.RFC3339),
-		ExpiresAt:  state.ExpiresAt.Format(time.RFC3339),
+		State:         state.State,
+		Provider:      state.Provider,
+		Verifier:      toNullString(state.Verifier),
+		RedirectTo:    toNullString(state.RedirectTo),
+		CreatedAt:     state.CreatedAt.Format(time.RFC3339),
+		ExpiresAt:     state.ExpiresAt.Format(time.RFC3339),
+		LinkUserID:    toNullString(state.LinkUserID),
+		LinkSessionID: toNullString(state.LinkSessionID),
 	})
 }
 
@@ -375,12 +388,14 @@ func (a *sqliteAdapter) GetOAuthState(ctx context.Context, stateValue string) (*
 	expiresAt, _ := time.Parse(time.RFC3339, row.ExpiresAt)
 
 	return &State{
-		State:      row.State,
-		Provider:   row.Provider,
-		Verifier:   fromNullString(row.Verifier),
-		RedirectTo: fromNullString(row.RedirectTo),
-		CreatedAt:  createdAt,
-		ExpiresAt:  expiresAt,
+		State:         row.State,
+		Provider:      row.Provider,
+		Verifier:      fromNullString(row.Verifier),
+		RedirectTo:    fromNullString(row.RedirectTo),
+		CreatedAt:     createdAt,
+		ExpiresAt:     expiresAt,
+		LinkUserID:    fromNullString(row.LinkUserID),
+		LinkSessionID: fromNullString(row.LinkSessionID),
 	}, nil
 }
 

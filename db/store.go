@@ -6,6 +6,8 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -64,6 +66,54 @@ func (s *Store) Querier() Querier {
 // This allows the store to be used directly by plugins.
 func (s *Store) PluginStore() PluginStore {
 	return s
+}
+
+// ErrTxUnsupported is returned by InTx when the underlying connection cannot begin transactions
+// (for example when the Store was created on an existing *sql.Tx).
+var ErrTxUnsupported = errors.New("db: transactions not supported by the underlying connection")
+
+// txBeginner is implemented by *sql.DB.
+type txBeginner interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
+// InTx runs fn inside a database transaction. fn receives a Store bound to the transaction
+// and the transaction itself, so plugin stores can join the same unit of work.
+// The transaction is committed when fn returns nil and rolled back otherwise,
+// including when fn panics.
+func (s *Store) InTx(ctx context.Context, fn func(txStore *Store, tx DBTX) error) (err error) {
+	beginner, ok := s.db.(txBeginner)
+	if !ok {
+		return ErrTxUnsupported
+	}
+
+	tx, err := beginner.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("db: begin transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		if rbErr := tx.Rollback(); rbErr != nil && err != nil {
+			err = errors.Join(err, fmt.Errorf("db: rollback: %w", rbErr))
+		}
+	}()
+
+	txStore, err := New(tx, s.dialect)
+	if err != nil {
+		return err
+	}
+	if err := fn(txStore, tx); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("db: commit transaction: %w", err)
+	}
+	committed = true
+	return nil
 }
 
 // =============================================================================
