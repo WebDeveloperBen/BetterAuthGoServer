@@ -179,7 +179,9 @@ func (s *Service) begin(ctx context.Context, providerName, redirectTo, linkUserI
 	}, nil
 }
 
-// Complete completes an OAuth flow
+// Complete completes an OAuth flow. When the state was found for this provider, it is
+// returned even if the flow fails afterwards, so callers can tell which flow failed.
+// Token exchange and user info failures wrap ErrProviderError.
 func (s *Service) Complete(ctx context.Context, providerName, code, stateValue string) (*AuthResult, *State, error) {
 	provider, ok := s.providers[providerName]
 	if !ok {
@@ -202,7 +204,7 @@ func (s *Service) Complete(ctx context.Context, providerName, code, stateValue s
 
 	if state.IsExpired() {
 		_ = s.stateStore.DeleteOAuthState(ctx, stateValue)
-		return nil, nil, ErrStateExpired
+		return nil, state, ErrStateExpired
 	}
 
 	// Exchange code for token
@@ -215,13 +217,13 @@ func (s *Service) Complete(ctx context.Context, providerName, code, stateValue s
 		token, err = provider.Config().Exchange(ctx, code)
 	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to exchange code: %w", err)
+		return nil, state, fmt.Errorf("%w: failed to exchange code: %w", ErrProviderError, err)
 	}
 
 	// Get user info
 	userInfo, err := provider.GetUserInfo(ctx, token)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get user info: %w", err)
+		return nil, state, fmt.Errorf("%w: failed to get user info: %w", ErrProviderError, err)
 	}
 
 	// Delete used state
@@ -231,6 +233,30 @@ func (s *Service) Complete(ctx context.Context, providerName, code, stateValue s
 		UserInfo:   userInfo,
 		OAuthToken: token,
 	}, state, nil
+}
+
+// Discard consumes the state of a flow that the provider ended with an error response
+// (error=... on the callback) and returns it, so callers can tell which flow failed.
+// It returns ErrProviderNotFound for an unknown provider and a nil state when stateValue
+// is empty, unknown or belongs to another provider.
+func (s *Service) Discard(ctx context.Context, providerName, stateValue string) (*State, error) {
+	if _, ok := s.providers[providerName]; !ok {
+		return nil, ErrProviderNotFound
+	}
+	if stateValue == "" {
+		return nil, nil
+	}
+	state, err := s.stateStore.GetOAuthState(ctx, stateValue)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get state: %w", err)
+	}
+	if state == nil || subtle.ConstantTimeCompare([]byte(state.Provider), []byte(providerName)) != 1 {
+		return nil, nil
+	}
+	if err := s.stateStore.DeleteOAuthState(ctx, stateValue); err != nil {
+		return nil, fmt.Errorf("failed to delete state: %w", err)
+	}
+	return state, nil
 }
 
 // EncryptToken encrypts an OAuth token for storage

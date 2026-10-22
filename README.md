@@ -451,15 +451,28 @@ user. The plugin never attaches a provider identity to an existing user because 
 - If the provider identity is already linked to a **different** user, the callback responds `409` with code `account_already_linked` and nothing is written. This also applies when two users link the same identity concurrently: the unique index on `(provider, provider_account_id)` lets one insert win and the other gets `409`. If it is already linked to the same user, the callback succeeds (only the stored provider tokens are refreshed).
 - Otherwise the link is created. Email verification is not required here: the user has proven control of both identities. No new session is created, and the `OnOAuthAccountLinked` hook fires. The callback redirects to `redirect_to` when given, or responds `{"linked": true, "provider": "...", "user": {...}}`.
 
-Error responses have the shape `{"error": "<message>", "code": "<code>"}`:
+Every failure of `GET /oauth/{provider}` (begin), `GET /oauth/{provider}/callback` and
+`POST /oauth/{provider}/link` maps to exactly one stable code (exported as `oauth.Code*`
+constants). Error responses have the shape `{"error": "<message>", "code": "<code>"}`; the message
+never includes provider or internal details:
 
 | Status | Code | Meaning |
 |--------|------|---------|
+| 400 | `access_denied` | The provider redirected back with `error=access_denied` (the user cancelled or denied) |
+| 400 | `provider_error` | The provider redirected back with another `error`, or the token exchange or user info request failed or returned no user |
+| 400 | `invalid_state` | The state is missing, unknown, expired or belongs to another provider |
+| 400 | `invalid_callback` | The callback has no `code`/`state` and no provider `error` |
+| 400 | `provider_not_found` | The provider is not configured (`404` for malformed `/oauth/...` paths) |
+| 400 | `invalid_redirect` | `redirect_to` is not allowed |
 | 403 | `email_not_verified` | Sign-in with a new provider identity whose email the provider did not verify |
 | 409 | `account_exists_link_required` | Sign-in with a new provider identity whose email belongs to an existing user; sign in and link instead |
 | 409 | `account_already_linked` | Link of a provider identity that belongs to another user |
-| 403 | `link_session_mismatch` | Link callback without the user and session that started the link |
-| 403 | `user_banned` | Sign-in through a provider identity whose user is banned |
+| 403 | `link_session_mismatch` | Link callback without the user and session that started the link, or from an impersonation session (`401` when starting a link without a session) |
+| 403 | `user_banned` | Sign-in or link by a banned user |
+| 500 | `server_error` | Anything else; the message is the generic status text |
+
+When the provider redirects back with an OAuth error response (`error`, `error_description`,
+`state`), the state is consumed and `error_description` is never echoed.
 
 ```javascript
 // Signed-in user links GitHub to their account
@@ -470,6 +483,33 @@ const res = await fetch('/auth/oauth/github/link?redirect_to=/settings/accounts'
 const { url } = await res.json();
 window.location.href = url;
 ```
+
+### Callback Error Redirect
+
+The begin and callback endpoints are top-level browser navigations, so a JSON error leaves the user
+on a raw response. `WithCallbackErrorRedirect` sends them back to your app instead:
+
+```go
+oauthPlugin, err := oauth.NewPlugin(providers.NewGitHub(...))
+if err != nil {
+    log.Fatal(err)
+}
+oauthPlugin.WithCallbackErrorRedirect("https://app.example.com/login")
+```
+
+Every begin or callback failure then responds `302` to the target with the code in `error`, the
+provider name from the path in `provider` (omitted when empty) and `flow=link` when the failed
+callback belonged to a link flow. A query already on the target is preserved:
+
+```
+https://app.example.com/login?error=account_exists_link_required&provider=github
+/settings/accounts?error=account_already_linked&flow=link&provider=github&tab=linked
+```
+
+The target must be an absolute `http`/`https` URL or a path starting with a single `/`; anything
+else makes plugin registration fail with `oauth.ErrInvalidCallbackErrorRedirect` (reported by
+`authService.Err()`). `POST /oauth/{provider}/link` is called with `fetch`, so it keeps responding
+JSON. Without the option, all failures respond JSON as above.
 
 ### Listing and Unlinking Identities
 

@@ -117,5 +117,5 @@ func TestWriteError_IncludesStableCode(t *testing.T) {
 	var body map[string]string
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	assert.Equal(t, http.StatusText(http.StatusInternalServerError), body["error"])
-	assert.NotContains(t, body, "code")
+	assert.Equal(t, CodeServerError, body["code"])
 }
