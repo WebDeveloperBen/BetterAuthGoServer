@@ -6,6 +6,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/db/mysqlstore"
@@ -61,6 +63,7 @@ type Querier interface {
 	CreateAccount(ctx context.Context, account *Account) error
 	GetAccountByProvider(ctx context.Context, provider, providerAccountID string) (*Account, error)
 	GetAccountsByUserID(ctx context.Context, userID string) ([]*Account, error)
+	GetAccountsByUserIDs(ctx context.Context, userIDs []string) ([]*Account, error)
 	UpdateAccount(ctx context.Context, account *Account) error
 	DeleteAccount(ctx context.Context, id string) error
 }
@@ -135,6 +138,9 @@ func (s *Store) GetAccountByProvider(ctx context.Context, provider, providerAcco
 func (s *Store) GetAccountsByUserID(ctx context.Context, userID string) ([]*Account, error) {
 	return s.q.GetAccountsByUserID(ctx, userID)
 }
+func (s *Store) GetAccountsByUserIDs(ctx context.Context, userIDs []string) ([]*Account, error) {
+	return s.q.GetAccountsByUserIDs(ctx, userIDs)
+}
 
 func (s *Store) UpdateAccount(ctx context.Context, account *Account) error {
 	return s.q.UpdateAccount(ctx, account)
@@ -149,11 +155,27 @@ func (s *Store) DeleteAccount(ctx context.Context, id string) error {
 // =============================================================================
 
 type pgAdapter struct {
-	q *pgstore.Queries
+	db coredb.DBTX
+	q  *pgstore.Queries
 }
 
 func newPgAdapter(db coredb.DBTX) *pgAdapter {
-	return &pgAdapter{q: pgstore.New(db)}
+	return &pgAdapter{db: db, q: pgstore.New(db)}
+}
+
+func postgresIDPlaceholders(ids []string) (string, []any) {
+	var placeholders strings.Builder
+	placeholders.Grow(len(ids) * 4)
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		if i > 0 {
+			placeholders.WriteString(", ")
+		}
+		placeholders.WriteByte('$')
+		placeholders.WriteString(strconv.Itoa(i + 1))
+		args[i] = id
+	}
+	return placeholders.String(), args
 }
 
 func (a *pgAdapter) CreateOAuthState(ctx context.Context, state *State) error {
@@ -233,6 +255,40 @@ func (a *pgAdapter) GetAccountsByUserID(ctx context.Context, userID string) ([]*
 	accounts := make([]*Account, len(rows))
 	for i := range rows {
 		accounts[i] = pgAccountToDomain(&rows[i])
+	}
+	return accounts, nil
+}
+func (a *pgAdapter) GetAccountsByUserIDs(ctx context.Context, userIDs []string) ([]*Account, error) {
+	if len(userIDs) == 0 {
+		return []*Account{}, nil
+	}
+	placeholders, args := postgresIDPlaceholders(userIDs)
+	query := "SELECT id, user_id, provider, provider_account_id, access_token, refresh_token, access_token_expires_at, created_at, updated_at FROM oauth_accounts WHERE user_id IN (" + placeholders + ")"
+	rows, err := a.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	accounts := make([]*Account, 0)
+	for rows.Next() {
+		var account pgstore.OauthAccount
+		if err := rows.Scan(
+			&account.ID,
+			&account.UserID,
+			&account.Provider,
+			&account.ProviderAccountID,
+			&account.AccessToken,
+			&account.RefreshToken,
+			&account.AccessTokenExpiresAt,
+			&account.CreatedAt,
+			&account.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, pgAccountToDomain(&account))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return accounts, nil
 }
@@ -336,6 +392,20 @@ func (a *mysqlAdapter) GetAccountByProvider(ctx context.Context, provider, provi
 
 func (a *mysqlAdapter) GetAccountsByUserID(ctx context.Context, userID string) ([]*Account, error) {
 	rows, err := a.q.GetOAuthAccountsByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	accounts := make([]*Account, len(rows))
+	for i := range rows {
+		accounts[i] = mysqlAccountToDomain(&rows[i])
+	}
+	return accounts, nil
+}
+func (a *mysqlAdapter) GetAccountsByUserIDs(ctx context.Context, userIDs []string) ([]*Account, error) {
+	if len(userIDs) == 0 {
+		return []*Account{}, nil
+	}
+	rows, err := a.q.GetOAuthAccountsByUserIDs(ctx, userIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -449,6 +519,20 @@ func (a *sqliteAdapter) GetAccountByProvider(ctx context.Context, provider, prov
 
 func (a *sqliteAdapter) GetAccountsByUserID(ctx context.Context, userID string) ([]*Account, error) {
 	rows, err := a.q.GetOAuthAccountsByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	accounts := make([]*Account, len(rows))
+	for i := range rows {
+		accounts[i] = sqliteAccountToDomain(&rows[i])
+	}
+	return accounts, nil
+}
+func (a *sqliteAdapter) GetAccountsByUserIDs(ctx context.Context, userIDs []string) ([]*Account, error) {
+	if len(userIDs) == 0 {
+		return []*Account{}, nil
+	}
+	rows, err := a.q.GetOAuthAccountsByUserIDs(ctx, userIDs)
 	if err != nil {
 		return nil, err
 	}

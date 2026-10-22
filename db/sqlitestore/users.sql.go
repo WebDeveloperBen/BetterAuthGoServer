@@ -8,6 +8,7 @@ package sqlitestore
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const banUser = `-- name: BanUser :exec
@@ -224,6 +225,56 @@ func (q *Queries) GetUserWithAnonymousStatus(ctx context.Context, id string) (Ge
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getUsersByIDs = `-- name: GetUsersByIDs :many
+SELECT id, email, email_verified, name, image, banned, banned_at, ban_reason, role, is_anonymous, created_at, updated_at FROM users WHERE id IN (/*SLICE:user_ids*/?)
+`
+
+func (q *Queries) GetUsersByIDs(ctx context.Context, userIds []string) ([]User, error) {
+	query := getUsersByIDs
+	var queryParams []interface{}
+	if len(userIds) > 0 {
+		for _, v := range userIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:user_ids*/?", strings.Repeat(",?", len(userIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:user_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.EmailVerified,
+			&i.Name,
+			&i.Image,
+			&i.Banned,
+			&i.BannedAt,
+			&i.BanReason,
+			&i.Role,
+			&i.IsAnonymous,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAllUsers = `-- name: ListAllUsers :many

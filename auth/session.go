@@ -61,6 +61,42 @@ func (a *Auth) GetSessionInfoFromRequest(r *http.Request) *plugin.SessionInfo {
 	}
 }
 
+// ResolvedSession contains a validated session and its account profile.
+type ResolvedSession struct {
+	Session             *models.Session
+	User                *models.User
+	CookieAuthenticated bool
+}
+
+// ResolveSession extracts and validates the request's session credential and
+// loads its user. A missing credential, expired session, missing user, or
+// banned user is rejected with the corresponding models error.
+func (a *Auth) ResolveSession(r *http.Request) (*ResolvedSession, error) {
+	token := a.GetSessionToken(r)
+	if token == "" {
+		return nil, models.ErrSessionNotFound
+	}
+
+	session, err := a.ValidateSession(r.Context(), token)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := a.GetUser(r.Context(), session.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if user.Banned {
+		return nil, models.ErrUserBanned
+	}
+
+	cookie, cookieErr := r.Cookie(a.config.SessionCookie)
+	return &ResolvedSession{
+		Session: session, User: user,
+		CookieAuthenticated: cookieErr == nil && cookie.Value == token,
+	}, nil
+}
+
 // ValidateSession validates a session token and returns the session if valid
 func (a *Auth) ValidateSession(ctx context.Context, rawToken string) (*models.Session, error) {
 	tokenHash := a.tokenHasher.Hash(rawToken)

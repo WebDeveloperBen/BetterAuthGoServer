@@ -18,6 +18,7 @@ type Querier interface {
 	DeleteOAuthState(ctx context.Context, state string) error
 	GetOAuthAccountByProvider(ctx context.Context, arg GetOAuthAccountByProviderParams) (OauthAccount, error)
 	GetOAuthAccountsByUserID(ctx context.Context, userID string) ([]OauthAccount, error)
+	GetOAuthAccountsByUserIDs(ctx context.Context, userIds []string) ([]OauthAccount, error)
 	GetOAuthState(ctx context.Context, state string) (OauthState, error)
 	UpdateOAuthAccount(ctx context.Context, arg UpdateOAuthAccountParams) error
 }

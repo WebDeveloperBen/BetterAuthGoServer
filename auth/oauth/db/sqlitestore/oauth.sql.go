@@ -8,6 +8,7 @@ package sqlitestore
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const createOAuthAccount = `-- name: CreateOAuthAccount :exec
@@ -173,6 +174,53 @@ WHERE
 
 func (q *Queries) GetOAuthAccountsByUserID(ctx context.Context, userID string) ([]OauthAccount, error) {
 	rows, err := q.db.QueryContext(ctx, getOAuthAccountsByUserID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OauthAccount{}
+	for rows.Next() {
+		var i OauthAccount
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Provider,
+			&i.ProviderAccountID,
+			&i.AccessToken,
+			&i.RefreshToken,
+			&i.AccessTokenExpiresAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getOAuthAccountsByUserIDs = `-- name: GetOAuthAccountsByUserIDs :many
+SELECT id, user_id, provider, provider_account_id, access_token, refresh_token, access_token_expires_at, created_at, updated_at FROM oauth_accounts WHERE user_id IN (/*SLICE:user_ids*/?)
+`
+
+func (q *Queries) GetOAuthAccountsByUserIDs(ctx context.Context, userIds []string) ([]OauthAccount, error) {
+	query := getOAuthAccountsByUserIDs
+	var queryParams []interface{}
+	if len(userIds) > 0 {
+		for _, v := range userIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:user_ids*/?", strings.Repeat(",?", len(userIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:user_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}

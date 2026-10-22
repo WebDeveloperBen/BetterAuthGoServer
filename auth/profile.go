@@ -83,12 +83,10 @@ func (a *Auth) ListLinkedAccounts(ctx context.Context, userID string) ([]*models
 	if err != nil {
 		return nil, err
 	}
-
-	// Filter to only OAuth accounts (not email/password)
 	linked := make([]*models.Account, 0, len(accounts))
-	for _, acc := range accounts {
-		if acc.Provider != models.ProviderEmail {
-			linked = append(linked, acc)
+	for _, account := range accounts {
+		if account.Provider != models.ProviderEmail {
+			linked = append(linked, account)
 		}
 	}
 

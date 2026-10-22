@@ -11,6 +11,8 @@ const (
 	ProviderGoogle  ProviderType = "google"
 	ProviderGitHub  ProviderType = "github"
 	ProviderDiscord ProviderType = "discord"
+	ProviderGitLab  ProviderType = "gitlab"
+	ProviderAzure   ProviderType = "azure"
 )
 
 // VerificationType represents the type of verification token

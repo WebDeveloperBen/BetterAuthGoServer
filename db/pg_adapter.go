@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
@@ -12,12 +14,28 @@ import (
 
 // pgAdapter implements Querier using PostgreSQL-specific sqlc queries.
 type pgAdapter struct {
-	q *pgstore.Queries
+	db DBTX
+	q  *pgstore.Queries
 }
 
 // newPgAdapter creates a new PostgreSQL adapter.
 func newPgAdapter(db DBTX) *pgAdapter {
-	return &pgAdapter{q: pgstore.New(db)}
+	return &pgAdapter{db: db, q: pgstore.New(db)}
+}
+
+func postgresIDPlaceholders(ids []string) (string, []any) {
+	var placeholders strings.Builder
+	placeholders.Grow(len(ids) * 4)
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		if i > 0 {
+			placeholders.WriteString(", ")
+		}
+		placeholders.WriteByte('$')
+		placeholders.WriteString(strconv.Itoa(i + 1))
+		args[i] = id
+	}
+	return placeholders.String(), args
 }
 
 // =============================================================================
@@ -49,6 +67,43 @@ func (a *pgAdapter) GetUserByID(ctx context.Context, id string) (*models.User, e
 		return nil, err
 	}
 	return pgUserToModel(&u), nil
+}
+func (a *pgAdapter) GetUsersByIDs(ctx context.Context, userIDs []string) ([]*models.User, error) {
+	if len(userIDs) == 0 {
+		return []*models.User{}, nil
+	}
+	placeholders, args := postgresIDPlaceholders(userIDs)
+	query := "SELECT id, email, email_verified, name, image, banned, banned_at, ban_reason, role, is_anonymous, created_at, updated_at FROM users WHERE id IN (" + placeholders + ")"
+	rows, err := a.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	users := make([]*models.User, 0)
+	for rows.Next() {
+		var user pgstore.User
+		if err := rows.Scan(
+			&user.ID,
+			&user.Email,
+			&user.EmailVerified,
+			&user.Name,
+			&user.Image,
+			&user.Banned,
+			&user.BannedAt,
+			&user.BanReason,
+			&user.Role,
+			&user.IsAnonymous,
+			&user.CreatedAt,
+			&user.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		users = append(users, pgUserToModel(&user))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return users, nil
 }
 
 func (a *pgAdapter) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
@@ -162,6 +217,38 @@ func (a *pgAdapter) ListAccountsByUserID(ctx context.Context, userID string) ([]
 		result[i] = pgAccountToModel(&accounts[i])
 	}
 	return result, nil
+}
+func (a *pgAdapter) ListAccountsByUserIDs(ctx context.Context, userIDs []string) ([]*models.Account, error) {
+	if len(userIDs) == 0 {
+		return []*models.Account{}, nil
+	}
+	placeholders, args := postgresIDPlaceholders(userIDs)
+	query := "SELECT id, user_id, provider, provider_account_id, password_hash, created_at, updated_at FROM accounts WHERE user_id IN (" + placeholders + ")"
+	rows, err := a.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	accounts := make([]*models.Account, 0)
+	for rows.Next() {
+		var account pgstore.Account
+		if err := rows.Scan(
+			&account.ID,
+			&account.UserID,
+			&account.Provider,
+			&account.ProviderAccountID,
+			&account.PasswordHash,
+			&account.CreatedAt,
+			&account.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, pgAccountToModel(&account))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return accounts, nil
 }
 
 func (a *pgAdapter) UpdateAccount(ctx context.Context, account *models.Account) error {

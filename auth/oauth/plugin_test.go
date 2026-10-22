@@ -1,7 +1,17 @@
 package oauth
 
 import (
+	"context"
+	"database/sql"
+	"slices"
 	"testing"
+	"time"
+
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
+	oauthdb "github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/db"
+	coredb "github.com/webdeveloperben/BetterAuthGoServer/db"
+	"github.com/webdeveloperben/BetterAuthGoServer/migrate"
 )
 
 func TestPlugin_Name(t *testing.T) {
@@ -88,6 +98,80 @@ func TestPlugin_Routes_Enabled(t *testing.T) {
 		if !found {
 			t.Errorf("Plugin.Routes() missing expected path: %s", path)
 		}
+	}
+}
+
+func TestPlugin_ConfiguredProvidersSorted(t *testing.T) {
+	service := NewService(&mockStateStore{}, nil, nil)
+	service.RegisterProvider(&mockProvider{name: "zeta"})
+	service.RegisterProvider(&mockProvider{name: "alpha"})
+	plugin := &Plugin{service: service}
+
+	if providers := plugin.ConfiguredProviders(); !slices.Equal(providers, []string{"alpha", "zeta"}) {
+		t.Fatalf("ConfiguredProviders() = %v", providers)
+	}
+}
+
+func TestPlugin_ListLinkedAccountsByUserIDs(t *testing.T) {
+	ctx := context.Background()
+	database, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = database.Close() }()
+	database.SetMaxOpenConns(1)
+	if err := migrate.Run(ctx, database, migrate.DialectSQLite, migrate.WithPlugins(Migrations())); err != nil {
+		t.Fatal(err)
+	}
+	coreStore, err := coredb.New(database, coredb.DialectSQLite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().Truncate(time.Second)
+	for _, user := range []*models.User{
+		{ID: "directory-oauth-user-1", Email: "oauth-one@example.com", Role: "user", CreatedAt: now, UpdatedAt: now},
+		{ID: "directory-oauth-user-2", Email: "oauth-two@example.com", Role: "user", CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := coreStore.CreateUser(ctx, user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store, err := oauthdb.New(database, coredb.DialectSQLite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, account := range []*oauthdb.Account{
+		{ID: "oauth-account-z", UserID: "directory-oauth-user-1", Provider: "github", ProviderAccountID: "private-github-id", AccessToken: "secret", CreatedAt: now.Add(time.Minute), UpdatedAt: now},
+		{ID: "oauth-account-a", UserID: "directory-oauth-user-1", Provider: "google", ProviderAccountID: "private-google-id", AccessToken: "secret", CreatedAt: now, UpdatedAt: now},
+		{ID: "oauth-account-b", UserID: "directory-oauth-user-2", Provider: "gitlab", ProviderAccountID: "private-gitlab-id", AccessToken: "secret", CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := store.CreateAccount(ctx, account); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	plugin := &Plugin{store: store}
+	accounts, err := plugin.ListLinkedAccountsByUserIDs(ctx, []string{"directory-oauth-user-2", "directory-oauth-user-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	userAccounts := accounts["directory-oauth-user-1"]
+	if len(userAccounts) != 2 || userAccounts[0].ID != "oauth-account-a" || userAccounts[1].ID != "oauth-account-z" {
+		t.Fatalf("unexpected linked accounts: %#v", userAccounts)
+	}
+	if !slices.Equal([]string{userAccounts[0].Provider, userAccounts[1].Provider}, []string{"google", "github"}) {
+		t.Fatalf("unexpected provider order: %#v", userAccounts)
+	}
+	if len(accounts["directory-oauth-user-2"]) != 1 {
+		t.Fatalf("user 2 accounts = %#v", accounts["directory-oauth-user-2"])
+	}
+	if empty, err := plugin.ListLinkedAccountsByUserIDs(ctx, nil); err != nil || empty == nil || len(empty) != 0 {
+		t.Fatalf("empty batch = %#v, error = %v", empty, err)
+	}
+
+	linked, err := plugin.ListLinkedAccounts(ctx, "directory-oauth-user-1")
+	if err != nil || len(linked) != 2 {
+		t.Fatalf("ListLinkedAccounts() = %#v, error = %v", linked, err)
 	}
 }
 

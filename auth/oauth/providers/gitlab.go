@@ -48,7 +48,6 @@ func NewGitLab(clientID, clientSecret, redirectURL string, opts ...GitLabOption)
 	if p.baseURL == "" {
 		p.baseURL = DefaultGitLabBaseURL
 	}
-
 	p.config = &oauth2.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
