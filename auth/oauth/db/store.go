@@ -138,6 +138,7 @@ func (s *Store) GetAccountByProvider(ctx context.Context, provider, providerAcco
 func (s *Store) GetAccountsByUserID(ctx context.Context, userID string) ([]*Account, error) {
 	return s.q.GetAccountsByUserID(ctx, userID)
 }
+
 func (s *Store) GetAccountsByUserIDs(ctx context.Context, userIDs []string) ([]*Account, error) {
 	return s.q.GetAccountsByUserIDs(ctx, userIDs)
 }
@@ -258,7 +259,8 @@ func (a *pgAdapter) GetAccountsByUserID(ctx context.Context, userID string) ([]*
 	}
 	return accounts, nil
 }
-func (a *pgAdapter) GetAccountsByUserIDs(ctx context.Context, userIDs []string) ([]*Account, error) {
+
+func (a *pgAdapter) GetAccountsByUserIDs(ctx context.Context, userIDs []string) (accounts []*Account, returnedErr error) {
 	if len(userIDs) == 0 {
 		return []*Account{}, nil
 	}
@@ -268,8 +270,12 @@ func (a *pgAdapter) GetAccountsByUserIDs(ctx context.Context, userIDs []string) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	accounts := make([]*Account, 0)
+	defer func() {
+		if err := rows.Close(); returnedErr == nil {
+			returnedErr = err
+		}
+	}()
+	accounts = make([]*Account, 0)
 	for rows.Next() {
 		var account pgstore.OauthAccount
 		if err := rows.Scan(
@@ -401,6 +407,7 @@ func (a *mysqlAdapter) GetAccountsByUserID(ctx context.Context, userID string) (
 	}
 	return accounts, nil
 }
+
 func (a *mysqlAdapter) GetAccountsByUserIDs(ctx context.Context, userIDs []string) ([]*Account, error) {
 	if len(userIDs) == 0 {
 		return []*Account{}, nil
@@ -528,6 +535,7 @@ func (a *sqliteAdapter) GetAccountsByUserID(ctx context.Context, userID string) 
 	}
 	return accounts, nil
 }
+
 func (a *sqliteAdapter) GetAccountsByUserIDs(ctx context.Context, userIDs []string) ([]*Account, error) {
 	if len(userIDs) == 0 {
 		return []*Account{}, nil

@@ -68,7 +68,8 @@ func (a *pgAdapter) GetUserByID(ctx context.Context, id string) (*models.User, e
 	}
 	return pgUserToModel(&u), nil
 }
-func (a *pgAdapter) GetUsersByIDs(ctx context.Context, userIDs []string) ([]*models.User, error) {
+
+func (a *pgAdapter) GetUsersByIDs(ctx context.Context, userIDs []string) (users []*models.User, returnedErr error) {
 	if len(userIDs) == 0 {
 		return []*models.User{}, nil
 	}
@@ -78,8 +79,12 @@ func (a *pgAdapter) GetUsersByIDs(ctx context.Context, userIDs []string) ([]*mod
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	users := make([]*models.User, 0)
+	defer func() {
+		if err := rows.Close(); returnedErr == nil {
+			returnedErr = err
+		}
+	}()
+	users = make([]*models.User, 0)
 	for rows.Next() {
 		var user pgstore.User
 		if err := rows.Scan(
@@ -218,7 +223,8 @@ func (a *pgAdapter) ListAccountsByUserID(ctx context.Context, userID string) ([]
 	}
 	return result, nil
 }
-func (a *pgAdapter) ListAccountsByUserIDs(ctx context.Context, userIDs []string) ([]*models.Account, error) {
+
+func (a *pgAdapter) ListAccountsByUserIDs(ctx context.Context, userIDs []string) (accounts []*models.Account, returnedErr error) {
 	if len(userIDs) == 0 {
 		return []*models.Account{}, nil
 	}
@@ -228,8 +234,12 @@ func (a *pgAdapter) ListAccountsByUserIDs(ctx context.Context, userIDs []string)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	accounts := make([]*models.Account, 0)
+	defer func() {
+		if err := rows.Close(); returnedErr == nil {
+			returnedErr = err
+		}
+	}()
+	accounts = make([]*models.Account, 0)
 	for rows.Next() {
 		var account pgstore.Account
 		if err := rows.Scan(
