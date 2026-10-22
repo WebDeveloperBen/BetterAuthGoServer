@@ -317,6 +317,9 @@ All endpoints are mounted under your chosen path (e.g., `/auth`).
 | GET | `/sessions` | Yes | List all sessions |
 | DELETE | `/sessions` | Yes | Revoke all sessions |
 | DELETE | `/sessions/{id}` | Yes | Revoke specific session |
+| GET | `/accounts` | Yes | List linked sign-in identities (`[{"id", "provider"}]`), including OAuth accounts |
+| DELETE | `/accounts/{provider}` | Yes | Unlink the user's only account of that provider |
+| DELETE | `/accounts/{provider}/{id}` | Yes | Unlink a specific linked account (by `id` from `GET /accounts`) |
 | GET | `/oauth/providers` | No | List OAuth providers (with OAuth plugin) |
 | GET | `/oauth/{provider}` | No | Begin OAuth sign-in flow |
 | POST | `/oauth/{provider}/link` | Yes | Begin linking a provider account to the signed-in user |
@@ -436,16 +439,16 @@ user. The plugin never attaches a provider identity to an existing user because 
 
 **Sign-in** (`GET /oauth/{provider}` → callback):
 
-1. If the provider identity is already linked, the user it is linked to is signed in (stored provider tokens are refreshed).
+1. If the provider identity is already linked, the user it is linked to is signed in (stored provider tokens are refreshed). Banned users get `403` with code `user_banned` and no session.
 2. Otherwise the provider must report a **verified** email. If it does not, the callback responds `403` with code `email_not_verified` and nothing is written.
-3. If a user with that email already exists, the callback responds `409` with code `account_exists_link_required` and nothing is written. The response does not reveal anything about the existing user. The user must sign in with a method they already have and then link the provider explicitly.
-4. Otherwise a new user (email marked verified) and the linked account are created in one database transaction, and a session is issued.
+3. If a user with that email already exists, the callback responds `409` with code `account_exists_link_required` and nothing is written. Emails are compared case-insensitively (see below). The response does not reveal anything about the existing user. The user must sign in with a method they already have and then link the provider explicitly.
+4. Otherwise a new user (email marked verified) and the linked account are created in one database transaction, and a session is issued. If two sign-ins through the same new provider identity race, the one that loses the insert signs in as the user the winner created.
 
 **Explicit link** (`POST /oauth/{provider}/link` → callback), for a signed-in user:
 
 - The request needs a valid session (it is behind `RequireAuth`) and, like other `POST` endpoints, passes the CSRF plugin when enabled. It responds `{"url": "<authorize URL>"}`; navigate the browser to that URL. An optional `redirect_to` query parameter must pass the same redirect allow-list as sign-in.
 - The OAuth state is bound to the current user **and** session. The callback must carry that same session; otherwise it responds `403` with code `link_session_mismatch` and nothing is written. The session cookie reaches the callback on the top-level redirect back from the provider with the default `SameSite=Lax`; with `SameSite=Strict`, or with Bearer-only sessions, the callback cannot present the session and linking is rejected. Links cannot be started or completed from an impersonation session.
-- If the provider identity is already linked to a **different** user, the callback responds `409` with code `account_already_linked` and nothing is written. If it is already linked to the same user, the callback succeeds (only the stored provider tokens are refreshed).
+- If the provider identity is already linked to a **different** user, the callback responds `409` with code `account_already_linked` and nothing is written. This also applies when two users link the same identity concurrently: the unique index on `(provider, provider_account_id)` lets one insert win and the other gets `409`. If it is already linked to the same user, the callback succeeds (only the stored provider tokens are refreshed).
 - Otherwise the link is created. Email verification is not required here: the user has proven control of both identities. No new session is created, and the `OnOAuthAccountLinked` hook fires. The callback redirects to `redirect_to` when given, or responds `{"linked": true, "provider": "...", "user": {...}}`.
 
 Error responses have the shape `{"error": "<message>", "code": "<code>"}`:
@@ -456,6 +459,7 @@ Error responses have the shape `{"error": "<message>", "code": "<code>"}`:
 | 409 | `account_exists_link_required` | Sign-in with a new provider identity whose email belongs to an existing user; sign in and link instead |
 | 409 | `account_already_linked` | Link of a provider identity that belongs to another user |
 | 403 | `link_session_mismatch` | Link callback without the user and session that started the link |
+| 403 | `user_banned` | Sign-in through a provider identity whose user is banned |
 
 ```javascript
 // Signed-in user links GitHub to their account
@@ -466,6 +470,28 @@ const res = await fetch('/auth/oauth/github/link?redirect_to=/settings/accounts'
 const { url } = await res.json();
 window.location.href = url;
 ```
+
+### Listing and Unlinking Identities
+
+`GET /accounts` lists the user's linked identities: OAuth provider accounts and other non-password
+accounts. A user can link several accounts of one provider, so unlink a specific one with
+`DELETE /accounts/{provider}/{id}`; `DELETE /accounts/{provider}` works only when the user has exactly
+one account of that provider (otherwise `409`). Unknown accounts and accounts of other users give `404`.
+
+Unlinking is refused with `400` (`cannot unlink last authentication method`) when the user would be
+left without a usable sign-in method. Usable methods are linked identities plus the password
+credential, which counts only when the password plugin is registered and the user has a password.
+Other sign-in methods (passkeys, magic links, OTP) are not counted. With the bundled SQL store the
+count and the delete run in one transaction that locks the user's row (SQLite: the database write
+lock), so concurrent unlinks cannot remove a user's last two identities together.
+
+### Email Addresses Are Case-Insensitive
+
+Emails are stored and looked up in normalized form: surrounding whitespace removed and lower-cased.
+`Ada@Example.com` and `ada@example.com` are the same user for sign-up, password sign-in and the OAuth
+conflict check. The core `0002` migration normalizes existing rows; it fails if two existing users
+differ only in email case or whitespace, so merge or rename such users first. (SQLite's `LOWER()`
+in that migration folds only ASCII letters.)
 
 ### Email Verification by Provider
 

@@ -963,6 +963,7 @@ components:
             - account_exists_link_required
             - account_already_linked
             - link_session_mismatch
+            - user_banned
 
   responses:
     Unauthorized:
