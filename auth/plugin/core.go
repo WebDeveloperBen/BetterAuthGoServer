@@ -85,6 +85,13 @@ func (s *Session) IsImpersonation() bool {
 	return s.ImpersonatedBy != nil
 }
 
+// LinkedAccount is the public, non-secret identity data for a linked provider account.
+type LinkedAccount struct {
+	ID        string
+	Provider  string
+	CreatedAt time.Time
+}
+
 // SessionManager provides session operations for plugins.
 // This allows plugins to create, retrieve, and manage sessions without
 // directly depending on the auth package internals.

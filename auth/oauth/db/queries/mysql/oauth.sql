@@ -65,6 +65,8 @@ FROM
   oauth_accounts
 WHERE
   user_id = ?;
+-- name: GetOAuthAccountsByUserIDs :many
+SELECT * FROM oauth_accounts WHERE user_id IN (sqlc.slice('user_ids'));
 
 -- name: UpdateOAuthAccount :exec
 UPDATE oauth_accounts

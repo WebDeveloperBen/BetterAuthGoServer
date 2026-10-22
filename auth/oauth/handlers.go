@@ -28,7 +28,7 @@ type oauthProvidersResponse struct {
 // ListOAuthProvidersHandler returns a handler for GET /oauth/providers
 func (p *Plugin) ListOAuthProvidersHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		providers := p.service.ListProviders()
+		providers := p.ConfiguredProviders()
 		_ = writeJSON(w, http.StatusOK, oauthProvidersResponse{
 			Providers: providers,
 		})

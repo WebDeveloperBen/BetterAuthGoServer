@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -141,6 +142,7 @@ type mockSessionStore struct {
 	sessions          map[string]*models.Session
 	sessionsByToken   map[string]*models.Session
 	sessionsByUser    map[string][]*models.Session
+	users             map[string]*models.User
 	createSessionErr  error
 	getSessionErr     error
 	deleteSessionErr  error
@@ -153,6 +155,7 @@ func newMockSessionStore() *mockSessionStore {
 		sessions:        make(map[string]*models.Session),
 		sessionsByToken: make(map[string]*models.Session),
 		sessionsByUser:  make(map[string][]*models.Session),
+		users:           make(map[string]*models.User),
 	}
 }
 
@@ -230,7 +233,7 @@ func (m *mockSessionStore) DeleteExpiredSessions(ctx context.Context) error {
 func (m *mockSessionStore) CreateUser(ctx context.Context, user *models.User) error { return nil }
 
 func (m *mockSessionStore) GetUserByID(ctx context.Context, id string) (*models.User, error) {
-	return nil, nil
+	return m.users[id], nil
 }
 
 func (m *mockSessionStore) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
@@ -245,6 +248,7 @@ func (m *mockSessionStore) SetEmailVerified(ctx context.Context, userID string, 
 func (m *mockSessionStore) CreateAccount(ctx context.Context, account *models.Account) error {
 	return nil
 }
+
 func (m *mockSessionStore) GetAccountByID(ctx context.Context, id string) (*models.Account, error) {
 	return nil, nil
 }
@@ -260,6 +264,7 @@ func (m *mockSessionStore) GetAccountByUserIDAndProvider(ctx context.Context, us
 func (m *mockSessionStore) ListAccountsByUserID(ctx context.Context, userID string) ([]*models.Account, error) {
 	return nil, nil
 }
+
 func (m *mockSessionStore) UpdateAccount(ctx context.Context, account *models.Account) error {
 	return nil
 }
@@ -271,6 +276,7 @@ func (m *mockSessionStore) DeleteAccountsByUserID(ctx context.Context, userID st
 func (m *mockSessionStore) CreateVerification(ctx context.Context, v *models.Verification) error {
 	return nil
 }
+
 func (m *mockSessionStore) GetVerificationByTokenHash(ctx context.Context, tokenHash string) (*models.Verification, error) {
 	return nil, nil
 }
@@ -370,6 +376,56 @@ func TestValidateSession_StoreError(t *testing.T) {
 	if err == nil {
 		t.Error("expected error from store")
 	}
+}
+
+func TestResolveSession(t *testing.T) {
+	auth := newAuthForTest(t)
+	defer auth.Close()
+	store := auth.store.(*mockSessionStore)
+
+	rawToken := "resolve-session-token"
+	session := &models.Session{
+		ID: "session-id", UserID: "user-id",
+		TokenHash: auth.tokenHasher.Hash(rawToken),
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	store.sessions[session.ID] = session
+	store.sessionsByToken[session.TokenHash] = session
+	store.users[session.UserID] = &models.User{ID: session.UserID, Email: "user@example.com"}
+
+	t.Run("cookie", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodGet, "/", nil)
+		request.AddCookie(&http.Cookie{Name: auth.config.SessionCookie, Value: rawToken})
+		resolved, err := auth.ResolveSession(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved.Session.ID != session.ID || resolved.User.ID != session.UserID || !resolved.CookieAuthenticated {
+			t.Fatalf("unexpected resolved identity: %#v", resolved)
+		}
+	})
+
+	t.Run("bearer", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodGet, "/", nil)
+		request.Header.Set("Authorization", "Bearer "+rawToken)
+		resolved, err := auth.ResolveSession(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved.CookieAuthenticated {
+			t.Fatal("bearer authentication reported as cookie-authenticated")
+		}
+	})
+
+	t.Run("banned user", func(t *testing.T) {
+		store.users[session.UserID].Banned = true
+		request := httptest.NewRequest(http.MethodGet, "/", nil)
+		request.AddCookie(&http.Cookie{Name: auth.config.SessionCookie, Value: rawToken})
+		_, err := auth.ResolveSession(request)
+		if !errors.Is(err, models.ErrUserBanned) {
+			t.Fatalf("error = %v, want ErrUserBanned", err)
+		}
+	})
 }
 
 func TestListSessions_Active(t *testing.T) {

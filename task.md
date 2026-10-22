@@ -5,18 +5,21 @@
 - [x] Define migration UX for SDK consumers (CLI and/or library API, default migration dir, env var support)
 - [x] Decide migration packaging strategy (ship migrations inside SDK, embed via `embed.FS`, expose versioned paths)
 - [x] Implement migration runner for consumers (up/down/step/status, locking, dry-run, timeout)
-- [ ] Add stable migration versioning and compatibility notes in docs
-- [ ] Update tests to use the migration runner as the single source of truth
-- [ ] Remove hardcoded SQL fixtures once tests use migrations
+- [x] Add stable migration versioning and compatibility notes in docs
+- [x] Update tests to use the migration runner as the single source of truth
+- [x] Remove hardcoded SQL fixtures once tests use migrations
 - [ ] Document upgrade flow for SDK users (examples for local dev and CI)
 
 ## Multi-Dialect Integration Testing
 
-- [ ] Create shared test infrastructure for all three dialects
-- [ ] Update E2E tests to run against PostgreSQL, MySQL, and SQLite
-- [ ] Add plugin store integration tests for each dialect
-- [ ] Add migration integration tests for each dialect
+- [x] Create shared test infrastructure for all three dialects
+- [x] Update E2E tests to run against PostgreSQL, MySQL, and SQLite
+- [x] Add plugin store integration tests for each dialect
+- [x] Add migration integration tests for each dialect
 
+## Implement Media Router
+
+- [ ] Implement a media plugin to allow users to store profiles agaisnt their user
 ---
 
 # Integration Testing Plan

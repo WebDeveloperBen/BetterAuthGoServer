@@ -1,0 +1,32 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/vitepress.css';
+@import 'fumadocs-ui/css/preset.css';
+
+
+#nd-docs-layout {
+  --fd-sidebar-width: 220px;
+  --fd-toc-width: 240px;
+}
+
+@media (min-width: 768px) {
+  #nd-docs-layout {
+    --fd-sidebar-width: 220px !important;
+  }
+
+  #nd-sidebar {
+    --fd-sidebar-width: 220px !important;
+  }
+}
+
+body {
+  margin: 0;
+  font-family: 'Instrument Sans', 'Segoe UI', sans-serif;
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}

@@ -22,10 +22,10 @@ const (
 // DBTX is the database interface used by the store.
 // Satisfied by *sql.DB, *sql.Tx, and other compatible types.
 type DBTX interface {
-	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
 	PrepareContext(context.Context, string) (*sql.Stmt, error)
-	QueryContext(context.Context, string, ...interface{}) (*sql.Rows, error)
-	QueryRowContext(context.Context, string, ...interface{}) *sql.Row
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
 // Querier defines all database operations for the auth package.
@@ -34,6 +34,7 @@ type Querier interface {
 	// User operations
 	CreateUser(ctx context.Context, user *models.User) error
 	GetUserByID(ctx context.Context, id string) (*models.User, error)
+	GetUsersByIDs(ctx context.Context, userIDs []string) ([]*models.User, error)
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
 	UpdateUser(ctx context.Context, user *models.User) error
 	SetEmailVerified(ctx context.Context, userID string, verified bool) error
@@ -48,6 +49,7 @@ type Querier interface {
 	GetAccountByUserIDAndProvider(ctx context.Context, userID string, provider models.ProviderType) (*models.Account, error)
 	GetAccountByProvider(ctx context.Context, provider models.ProviderType, providerAccountID string) (*models.Account, error)
 	ListAccountsByUserID(ctx context.Context, userID string) ([]*models.Account, error)
+	ListAccountsByUserIDs(ctx context.Context, userIDs []string) ([]*models.Account, error)
 	UpdateAccount(ctx context.Context, account *models.Account) error
 	DeleteAccount(ctx context.Context, id string) error
 	DeleteAccountsByUserID(ctx context.Context, userID string) error

@@ -8,6 +8,7 @@ package mysqlstore
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -130,6 +131,51 @@ SELECT id, user_id, provider, provider_account_id, password_hash, created_at, up
 
 func (q *Queries) ListAccountsByUserID(ctx context.Context, userID string) ([]Account, error) {
 	rows, err := q.db.QueryContext(ctx, listAccountsByUserID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Account{}
+	for rows.Next() {
+		var i Account
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Provider,
+			&i.ProviderAccountID,
+			&i.PasswordHash,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAccountsByUserIDs = `-- name: ListAccountsByUserIDs :many
+SELECT id, user_id, provider, provider_account_id, password_hash, created_at, updated_at FROM accounts WHERE user_id IN (/*SLICE:user_ids*/?)
+`
+
+func (q *Queries) ListAccountsByUserIDs(ctx context.Context, userIds []string) ([]Account, error) {
+	query := listAccountsByUserIDs
+	var queryParams []interface{}
+	if len(userIds) > 0 {
+		for _, v := range userIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:user_ids*/?", strings.Repeat(",?", len(userIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:user_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}

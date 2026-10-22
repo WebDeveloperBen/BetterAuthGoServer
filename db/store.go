@@ -131,6 +131,9 @@ func (s *Store) CreateUser(ctx context.Context, user *models.User) error {
 func (s *Store) GetUserByID(ctx context.Context, id string) (*models.User, error) {
 	return s.q.GetUserByID(ctx, id)
 }
+func (s *Store) GetUsersByIDs(ctx context.Context, userIDs []string) ([]*models.User, error) {
+	return s.q.GetUsersByIDs(ctx, userIDs)
+}
 
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	return s.q.GetUserByEmail(ctx, models.NormalizeEmail(email))
@@ -178,6 +181,10 @@ func (s *Store) GetAccountByProvider(ctx context.Context, provider models.Provid
 
 func (s *Store) ListAccountsByUserID(ctx context.Context, userID string) ([]*models.Account, error) {
 	return s.q.ListAccountsByUserID(ctx, userID)
+}
+
+func (s *Store) ListAccountsByUserIDs(ctx context.Context, userIDs []string) ([]*models.Account, error) {
+	return s.q.ListAccountsByUserIDs(ctx, userIDs)
 }
 
 func (s *Store) UpdateAccount(ctx context.Context, account *models.Account) error {

@@ -18,6 +18,8 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
+	oauthplugin "github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
+	oauthdb "github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/migrate"
 )
@@ -334,6 +336,12 @@ var testCounter int
 
 // setupTestStore creates a fresh store for a test with migrations applied.
 func setupTestStore(t *testing.T, sharedEnv *dialectTestEnv) *db.Store {
+	store, _ := setupTestStoreWithPlugins(t, sharedEnv)
+	return store
+}
+
+// setupTestStoreWithPlugins creates a test store with core and plugin migrations applied.
+func setupTestStoreWithPlugins(t *testing.T, sharedEnv *dialectTestEnv, pluginSources ...migrate.Source) (*db.Store, *sql.DB) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -393,12 +401,16 @@ func setupTestStore(t *testing.T, sharedEnv *dialectTestEnv) *db.Store {
 			_, _ = testDB.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 1")
 		})
 
-		// Create store and return early (migrations already run during setup)
+		if len(pluginSources) > 0 {
+			if err := migrate.Run(ctx, testDB, migrate.Dialect(sharedEnv.dialect), migrate.WithPlugins(pluginSources...)); err != nil {
+				t.Fatalf("failed to run plugin migrations: %v", err)
+			}
+		}
 		store, err := db.New(testDB, sharedEnv.dialect)
 		if err != nil {
 			t.Fatalf("failed to create store: %v", err)
 		}
-		return store
+		return store, testDB
 
 	case db.DialectSQLite:
 		// For SQLite, just use the shared database and clean tables after
@@ -411,19 +423,17 @@ func setupTestStore(t *testing.T, sharedEnv *dialectTestEnv) *db.Store {
 		})
 	}
 
-	// Run migrations
-	err = migrate.Run(ctx, testDB, migrate.Dialect(sharedEnv.dialect))
+	err = migrate.Run(ctx, testDB, migrate.Dialect(sharedEnv.dialect), migrate.WithPlugins(pluginSources...))
 	if err != nil {
 		t.Fatalf("failed to run migrations: %v", err)
 	}
 
-	// Create store
 	store, err := db.New(testDB, sharedEnv.dialect)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
 
-	return store
+	return store, testDB
 }
 
 // getDialects returns all enabled dialect environments for testing.
@@ -977,6 +987,121 @@ func TestAccountStore_ListByUserID(t *testing.T) {
 
 			if len(accounts) != 2 {
 				t.Errorf("expected 2 accounts, got %d", len(accounts))
+			}
+		})
+	}
+}
+
+func TestDirectoryBatchLookups(t *testing.T) {
+	for _, dialectEnv := range getDialects() {
+		t.Run(string(dialectEnv.dialect), func(t *testing.T) {
+			store := setupTestStore(t, dialectEnv)
+			ctx := context.Background()
+			now := time.Now().Truncate(time.Second)
+			for _, user := range []*models.User{
+				{ID: "directory-user-1", Email: "directory-1@example.com", Name: "One", Role: "user", CreatedAt: now, UpdatedAt: now},
+				{ID: "directory-user-2", Email: "directory-2@example.com", Name: "Two", Role: "user", CreatedAt: now, UpdatedAt: now},
+			} {
+				if err := store.CreateUser(ctx, user); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, account := range []*models.Account{
+				{ID: "directory-account-1", UserID: "directory-user-1", Provider: models.ProviderEmail, CreatedAt: now, UpdatedAt: now},
+				{ID: "directory-account-2", UserID: "directory-user-2", Provider: models.ProviderGitHub, CreatedAt: now, UpdatedAt: now},
+			} {
+				if err := store.CreateAccount(ctx, account); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			users, err := store.GetUsersByIDs(ctx, []string{"directory-user-2", "missing", "directory-user-1", "directory-user-1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			foundUsers := make(map[string]bool, len(users))
+			for _, user := range users {
+				foundUsers[user.ID] = true
+			}
+			if len(foundUsers) != 2 || !foundUsers["directory-user-1"] || !foundUsers["directory-user-2"] {
+				t.Fatalf("GetUsersByIDs returned unexpected users: %#v", users)
+			}
+			accounts, err := store.ListAccountsByUserIDs(ctx, []string{"directory-user-2", "directory-user-1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			foundAccounts := make(map[string]bool, len(accounts))
+			for _, account := range accounts {
+				foundAccounts[account.ID] = true
+			}
+			if len(foundAccounts) != 2 || !foundAccounts["directory-account-1"] || !foundAccounts["directory-account-2"] {
+				t.Fatalf("ListAccountsByUserIDs returned unexpected accounts: %#v", accounts)
+			}
+
+			emptyUsers, err := store.GetUsersByIDs(ctx, nil)
+			if err != nil || emptyUsers == nil || len(emptyUsers) != 0 {
+				t.Fatalf("empty GetUsersByIDs = %#v, error = %v", emptyUsers, err)
+			}
+			emptyAccounts, err := store.ListAccountsByUserIDs(ctx, nil)
+			if err != nil || emptyAccounts == nil || len(emptyAccounts) != 0 {
+				t.Fatalf("empty ListAccountsByUserIDs = %#v, error = %v", emptyAccounts, err)
+			}
+		})
+	}
+}
+
+func TestOAuthDirectoryBatchLookups(t *testing.T) {
+	for _, dialectEnv := range getDialects() {
+		t.Run(string(dialectEnv.dialect), func(t *testing.T) {
+			ctx := context.Background()
+			coreStore, testDB := setupTestStoreWithPlugins(t, dialectEnv, oauthplugin.Migrations())
+			oauthStore, err := oauthdb.New(testDB, dialectEnv.dialect)
+			if err != nil {
+				t.Fatal(err)
+			}
+			userOne := "oauth-directory-" + string(dialectEnv.dialect) + "-1"
+			userTwo := "oauth-directory-" + string(dialectEnv.dialect) + "-2"
+			accountOne := "oauth-directory-account-" + string(dialectEnv.dialect) + "-1"
+			accountTwo := "oauth-directory-account-" + string(dialectEnv.dialect) + "-2"
+			defer func() {
+				_ = oauthStore.DeleteAccount(ctx, accountOne)
+				_ = oauthStore.DeleteAccount(ctx, accountTwo)
+				_ = coreStore.DeleteUser(ctx, userOne)
+				_ = coreStore.DeleteUser(ctx, userTwo)
+			}()
+
+			now := time.Now().UTC().Truncate(time.Second)
+			for i, userID := range []string{userOne, userTwo} {
+				if err := coreStore.CreateUser(ctx, &models.User{
+					ID: userID, Email: fmt.Sprintf("%s@example.com", userID), Name: fmt.Sprintf("User %d", i),
+					Role: "user", CreatedAt: now, UpdatedAt: now,
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, account := range []*oauthdb.Account{
+				{ID: accountOne, UserID: userOne, Provider: "github", ProviderAccountID: "private-1", CreatedAt: now, UpdatedAt: now},
+				{ID: accountTwo, UserID: userTwo, Provider: "google", ProviderAccountID: "private-2", CreatedAt: now, UpdatedAt: now},
+			} {
+				if err := oauthStore.CreateAccount(ctx, account); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			accounts, err := oauthStore.GetAccountsByUserIDs(ctx, []string{userTwo, "missing", userOne})
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := make(map[string]string, len(accounts))
+			for _, account := range accounts {
+				found[account.UserID] = account.ID
+			}
+			if len(found) != 2 || found[userOne] != accountOne || found[userTwo] != accountTwo {
+				t.Fatalf("GetAccountsByUserIDs returned unexpected accounts: %#v", accounts)
+			}
+			empty, err := oauthStore.GetAccountsByUserIDs(ctx, nil)
+			if err != nil || empty == nil || len(empty) != 0 {
+				t.Fatalf("empty GetAccountsByUserIDs = %#v, error = %v", empty, err)
 			}
 		})
 	}

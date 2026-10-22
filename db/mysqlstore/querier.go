@@ -37,8 +37,10 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id string) (User, error)
 	GetUserWithAnonymousStatus(ctx context.Context, id string) (GetUserWithAnonymousStatusRow, error)
+	GetUsersByIDs(ctx context.Context, userIds []string) ([]User, error)
 	GetVerificationByTokenHash(ctx context.Context, tokenHash string) (Verification, error)
 	ListAccountsByUserID(ctx context.Context, userID string) ([]Account, error)
+	ListAccountsByUserIDs(ctx context.Context, userIds []string) ([]Account, error)
 	ListAllUsers(ctx context.Context, arg ListAllUsersParams) ([]User, error)
 	ListSessionsByUserID(ctx context.Context, userID string) ([]Session, error)
 	// Admin operations

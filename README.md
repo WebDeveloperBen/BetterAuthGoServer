@@ -562,6 +562,32 @@ window.location.href = '/auth/oauth/google?redirect_to=/dashboard';
 const popup = window.open('/auth/oauth/google', 'oauth', 'width=500,height=600');
 ```
 
+## Identity Directory
+
+The built-in SQL store loads multiple users and their sign-in methods in batches:
+
+```go
+directoryUsers, err := authService.LookupUsers(ctx, memberIDs)
+if err != nil {
+    return err
+}
+for _, entry := range directoryUsers {
+    for _, method := range entry.SignInMethods {
+        // method.Provider, method.LinkedAt, method.CanUnlink
+    }
+}
+
+providers := authService.ConfiguredOAuthProviders()
+```
+
+`LookupUsers` returns a map keyed by user ID and omits unknown users. Each entry
+includes the user, normalized sign-in methods, and distinct linked OAuth
+provider names (`Providers`, excluding email/password). `CanUnlink` is true
+only for OAuth methods when another sign-in method remains. OAuth account
+tokens and provider account identifiers are not included. `ConfiguredOAuthProviders`
+returns an empty list when OAuth is not registered. For administrative
+pagination and filtering, use the `admin` plugin's user-list API.
+
 ## Middleware
 
 ### Require Authentication
@@ -574,6 +600,9 @@ mux.Handle("GET /api/private", authService.AuthMiddleware()(handler))
 session := auth.SessionFromContext(r.Context())
 userID := session.UserID
 ```
+
+
+For code that needs both the validated session and its user in one call, `authService.ResolveSession(r)` validates the cookie or bearer credential and rejects expired sessions, missing users, and banned users.
 
 ### Optional Authentication
 

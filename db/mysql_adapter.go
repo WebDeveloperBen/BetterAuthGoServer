@@ -50,6 +50,20 @@ func (a *mysqlAdapter) GetUserByID(ctx context.Context, id string) (*models.User
 	}
 	return mysqlUserToModel(&u), nil
 }
+func (a *mysqlAdapter) GetUsersByIDs(ctx context.Context, userIDs []string) ([]*models.User, error) {
+	if len(userIDs) == 0 {
+		return []*models.User{}, nil
+	}
+	users, err := a.q.GetUsersByIDs(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*models.User, len(users))
+	for i := range users {
+		result[i] = mysqlUserToModel(&users[i])
+	}
+	return result, nil
+}
 
 func (a *mysqlAdapter) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	u, err := a.q.GetUserByEmail(ctx, email)
@@ -154,6 +168,20 @@ func (a *mysqlAdapter) GetAccountByProvider(ctx context.Context, provider models
 
 func (a *mysqlAdapter) ListAccountsByUserID(ctx context.Context, userID string) ([]*models.Account, error) {
 	accounts, err := a.q.ListAccountsByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]*models.Account, len(accounts))
+	for i := range accounts {
+		result[i] = mysqlAccountToModel(&accounts[i])
+	}
+	return result, nil
+}
+func (a *mysqlAdapter) ListAccountsByUserIDs(ctx context.Context, userIDs []string) ([]*models.Account, error) {
+	if len(userIDs) == 0 {
+		return []*models.Account{}, nil
+	}
+	accounts, err := a.q.ListAccountsByUserIDs(ctx, userIDs)
 	if err != nil {
 		return nil, err
 	}

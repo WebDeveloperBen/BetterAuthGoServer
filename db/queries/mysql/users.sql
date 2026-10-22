@@ -4,6 +4,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetUserByID :one
 SELECT * FROM users WHERE id = ?;
+-- name: GetUsersByIDs :many
+SELECT * FROM users WHERE id IN (sqlc.slice('user_ids'));
 
 -- name: GetUserByEmail :one
 SELECT * FROM users WHERE email = ?;

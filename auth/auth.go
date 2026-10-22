@@ -1,5 +1,5 @@
 // Package auth provides a complete authentication system for Go web applications.
-// It supports email/password authentication, OAuth providers (Google, GitHub, Discord),
+// It supports email/password authentication, OAuth providers (Google, GitHub, Discord, GitLab, Azure),
 // session management, CSRF protection, rate limiting, and a plugin system for extensibility.
 package auth
 

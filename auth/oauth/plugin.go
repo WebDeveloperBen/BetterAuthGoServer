@@ -3,10 +3,13 @@
 package oauth
 
 import (
+	"context"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	oauthdb "github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 )
@@ -197,4 +200,99 @@ func (p *Plugin) Routes() []plugin.Route {
 			RequireAuth: true,
 		},
 	}
+}
+
+// ConfiguredProviders returns the configured provider names in stable order.
+func (p *Plugin) ConfiguredProviders() []string {
+	if p.service == nil {
+		return []string{}
+	}
+	providers := p.service.ListProviders()
+	slices.Sort(providers)
+	return providers
+}
+
+// ListLinkedAccounts returns safe provider identity metadata for a user.
+// OAuth access and refresh tokens are never exposed.
+func (p *Plugin) ListLinkedAccounts(ctx context.Context, userID string) ([]plugin.LinkedAccount, error) {
+	if p.store == nil {
+		return nil, ErrStoreRequired
+	}
+	accounts, err := p.store.GetAccountsByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]plugin.LinkedAccount, 0, len(accounts))
+	for _, account := range accounts {
+		result = append(result, plugin.LinkedAccount{
+			ID: account.ID, Provider: account.Provider, CreatedAt: account.CreatedAt,
+		})
+	}
+	slices.SortFunc(result, compareLinkedAccounts)
+	return result, nil
+}
+
+// ListLinkedAccountsByUserIDs loads provider metadata for multiple users in one
+// database query. OAuth secrets and provider account identifiers are omitted.
+func (p *Plugin) ListLinkedAccountsByUserIDs(
+	ctx context.Context,
+	userIDs []string,
+) (map[string][]plugin.LinkedAccount, error) {
+	result := make(map[string][]plugin.LinkedAccount, len(userIDs))
+	if len(userIDs) == 0 {
+		return result, nil
+	}
+	if p.store == nil {
+		return nil, ErrStoreRequired
+	}
+	accounts, err := p.store.GetAccountsByUserIDs(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, account := range accounts {
+		result[account.UserID] = append(result[account.UserID], plugin.LinkedAccount{
+			ID: account.ID, Provider: account.Provider, CreatedAt: account.CreatedAt,
+		})
+	}
+	for userID := range result {
+		slices.SortFunc(result[userID], compareLinkedAccounts)
+	}
+	return result, nil
+}
+
+func compareLinkedAccounts(left, right plugin.LinkedAccount) int {
+	if order := left.CreatedAt.Compare(right.CreatedAt); order != 0 {
+		return order
+	}
+	if left.Provider < right.Provider {
+		return -1
+	}
+	if left.Provider > right.Provider {
+		return 1
+	}
+	if left.ID < right.ID {
+		return -1
+	}
+	if left.ID > right.ID {
+		return 1
+	}
+	return 0
+}
+
+// UnlinkLinkedAccount removes an OAuth identity only when it belongs to the
+// specified user.
+func (p *Plugin) UnlinkLinkedAccount(ctx context.Context, userID, accountID string) error {
+	if p.store == nil {
+		return ErrStoreRequired
+	}
+	accounts, err := p.store.GetAccountsByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	for _, account := range accounts {
+		if account.ID == accountID {
+			return p.store.DeleteAccount(ctx, account.ID)
+		}
+	}
+	return models.ErrAccountNotFound
 }
