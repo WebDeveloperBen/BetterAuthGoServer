@@ -228,9 +228,10 @@ func (a *Auth) GetUser(ctx context.Context, userID string) (*models.User, error)
 	return user, nil
 }
 
-// GetUserByEmail retrieves a user by email
+// GetUserByEmail retrieves a user by email. The email is normalized (trimmed,
+// lower-cased) before the lookup, so the match is case-insensitive.
 func (a *Auth) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
-	user, err := a.store.GetUserByEmail(ctx, email)
+	user, err := a.store.GetUserByEmail(ctx, models.NormalizeEmail(email))
 	if err != nil {
 		return nil, err
 	}
@@ -565,8 +566,10 @@ func (a *Auth) CreatePluginUserTx(ctx context.Context, req plugin.CreateUserRequ
 }
 
 // newPluginUser builds a user for a plugin request, rejecting emails that are already registered.
+// The email is stored normalized (trimmed, lower-cased).
 func (a *Auth) newPluginUser(ctx context.Context, req plugin.CreateUserRequest) (*models.User, error) {
-	existing, err := a.store.GetUserByEmail(ctx, req.Email)
+	email := models.NormalizeEmail(req.Email)
+	existing, err := a.store.GetUserByEmail(ctx, email)
 	if err != nil {
 		return nil, err
 	}
@@ -577,7 +580,7 @@ func (a *Auth) newPluginUser(ctx context.Context, req plugin.CreateUserRequest) 
 	now := time.Now()
 	return &models.User{
 		ID:            uuid.New().String(),
-		Email:         req.Email,
+		Email:         email,
 		Name:          req.Name,
 		EmailVerified: req.EmailVerified,
 		Image:         req.Image,

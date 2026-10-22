@@ -2,8 +2,16 @@ package models
 
 import (
 	"context"
+	"strings"
 	"time"
 )
+
+// NormalizeEmail returns the canonical form in which emails are stored and looked up:
+// surrounding whitespace removed and lower-cased, so addresses differing only in case
+// identify the same user.
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
 
 // User represents an authenticated user
 type User struct {

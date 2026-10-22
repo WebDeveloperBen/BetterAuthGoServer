@@ -169,6 +169,40 @@ func (e *oauthEnv) signIn(t *testing.T, email, password string) []*http.Cookie {
 	return resp.Cookies()
 }
 
+// do sends a request with cookies and returns the response (redirects are not followed).
+func (e *oauthEnv) do(t *testing.T, method, path string, cookies []*http.Cookie) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(method, e.Server.URL+path, nil)
+	require.NoError(t, err)
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
+// signInWithIDP signs in through the fake provider and returns the session cookies.
+func (e *oauthEnv) signInWithIDP(t *testing.T, code string, info oauth.UserInfo) []*http.Cookie {
+	t.Helper()
+	e.idp.issue(code, info)
+	resp := e.callback(t, code, e.beginSignIn(t), nil)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	cookie := GetSessionCookie(resp)
+	require.NotNil(t, cookie)
+	return []*http.Cookie{cookie}
+}
+
+// link links a provider identity to the user of cookies.
+func (e *oauthEnv) link(t *testing.T, code string, info oauth.UserInfo, cookies []*http.Cookie) {
+	t.Helper()
+	e.idp.issue(code, info)
+	resp := e.callback(t, code, e.beginLink(t, "", cookies), cookies)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
 func rebind(dialect db.Dialect, query string) string {
 	if dialect != db.DialectPostgres {
 		return query

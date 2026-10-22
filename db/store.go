@@ -118,9 +118,13 @@ func (s *Store) InTx(ctx context.Context, fn func(txStore *Store, tx DBTX) error
 
 // =============================================================================
 // UserStore Implementation - delegates to Querier
+//
+// Emails are stored and looked up in normalized form (models.NormalizeEmail), so
+// addresses that differ only in case or surrounding whitespace match the same user.
 // =============================================================================
 
 func (s *Store) CreateUser(ctx context.Context, user *models.User) error {
+	user.Email = models.NormalizeEmail(user.Email)
 	return s.q.CreateUser(ctx, user)
 }
 
@@ -129,10 +133,11 @@ func (s *Store) GetUserByID(ctx context.Context, id string) (*models.User, error
 }
 
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
-	return s.q.GetUserByEmail(ctx, email)
+	return s.q.GetUserByEmail(ctx, models.NormalizeEmail(email))
 }
 
 func (s *Store) UpdateUser(ctx context.Context, user *models.User) error {
+	user.Email = models.NormalizeEmail(user.Email)
 	return s.q.UpdateUser(ctx, user)
 }
 
@@ -349,7 +354,7 @@ func (s *Store) AdminGetUser(ctx context.Context, id string) (*AdminUser, error)
 func (s *Store) AdminUpdateUser(ctx context.Context, user *AdminUser) error {
 	return s.q.UpdateUser(ctx, &models.User{
 		ID:            user.ID,
-		Email:         user.Email,
+		Email:         models.NormalizeEmail(user.Email),
 		EmailVerified: user.EmailVerified,
 		Name:          user.Name,
 		Image:         user.Image,
