@@ -12,6 +12,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/database/mysql"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
+	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 )
 
@@ -71,17 +72,17 @@ func Up(ctx context.Context, db *sql.DB, dialect Dialect, src Source, opts ...Op
 }
 
 // Down rolls back the last migration for the given source.
-func Down(ctx context.Context, db *sql.DB, dialect Dialect, src Source, opts ...Option) error {
+func Down(ctx context.Context, db *sql.DB, dialect Dialect, src Source, opts ...Option) (err error) {
 	cfg := defaultConfig()
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 
-	m, err := createMigrator(db, dialect, src)
+	m, err := createMigrator(ctx, db, dialect, src)
 	if err != nil {
 		return err
 	}
-	// Note: We don't call m.Close() - see comment in runSource()
+	defer func() { err = errors.Join(err, m.close()) }()
 
 	if cfg.dryRun {
 		version, dirty, err := m.Version()
@@ -109,11 +110,11 @@ func Down(ctx context.Context, db *sql.DB, dialect Dialect, src Source, opts ...
 
 // Status returns the current migration version for a source.
 func Status(ctx context.Context, db *sql.DB, dialect Dialect, src Source) (version uint, dirty bool, err error) {
-	m, err := createMigrator(db, dialect, src)
+	m, err := createMigrator(ctx, db, dialect, src)
 	if err != nil {
 		return 0, false, err
 	}
-	// Note: We don't call m.Close() - see comment in runSource()
+	defer func() { err = errors.Join(err, m.close()) }()
 
 	version, dirty, err = m.Version()
 	if errors.Is(err, migrate.ErrNilVersion) {
@@ -123,20 +124,17 @@ func Status(ctx context.Context, db *sql.DB, dialect Dialect, src Source) (versi
 }
 
 // runSource runs all pending migrations for a single source.
-func runSource(ctx context.Context, db *sql.DB, dialect Dialect, src Source, cfg Config) error {
+func runSource(ctx context.Context, db *sql.DB, dialect Dialect, src Source, cfg Config) (err error) {
 	cfg.logger.Info("running migrations for source",
 		"source", src.Name(),
 		"dependencies", src.Dependencies(),
 	)
 
-	m, err := createMigrator(db, dialect, src)
+	m, err := createMigrator(ctx, db, dialect, src)
 	if err != nil {
 		return fmt.Errorf("failed to create migrator for %s: %w", src.Name(), err)
 	}
-	// Note: We intentionally don't call m.Close() here because golang-migrate's
-	// database drivers close the underlying DB connection, which prevents us from
-	// running subsequent migrations on the same connection. The source driver
-	// will be garbage collected, and the DB connection is managed by the caller.
+	defer func() { err = errors.Join(err, m.close()) }()
 
 	if cfg.dryRun {
 		version, dirty, err := m.Version()
@@ -174,8 +172,27 @@ func runSource(ctx context.Context, db *sql.DB, dialect Dialect, src Source, cfg
 	return nil
 }
 
-// createMigrator creates a golang-migrate instance for the given source.
-func createMigrator(db *sql.DB, dialect Dialect, src Source) (*migrate.Migrate, error) {
+// migrator is a golang-migrate instance plus the resources opened for it.
+type migrator struct {
+	*migrate.Migrate
+	source source.Driver
+	conn   *sql.Conn // dedicated connection (postgres, mysql); nil for sqlite
+}
+
+// close releases the source driver and the dedicated connection. It deliberately does
+// not call migrate.Migrate.Close: golang-migrate drivers created with WithInstance close
+// the caller's *sql.DB, which must stay open for the application.
+func (m *migrator) close() error {
+	err := m.source.Close()
+	if m.conn != nil {
+		err = errors.Join(err, m.conn.Close())
+	}
+	return err
+}
+
+// createMigrator creates a golang-migrate instance for the given source. The caller must
+// call close on the result; on error everything opened here is already released.
+func createMigrator(ctx context.Context, db *sql.DB, dialect Dialect, src Source) (*migrator, error) {
 	// Get subdirectory for dialect
 	subFS, err := fs.Sub(src.FS(), string(dialect))
 	if err != nil {
@@ -187,35 +204,53 @@ func createMigrator(db *sql.DB, dialect Dialect, src Source) (*migrate.Migrate, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create iofs source for %s: %w", src.Name(), err)
 	}
+	m := &migrator{source: sourceDriver}
 
 	// Create database driver with source-specific table name
 	tableName := "schema_migrations_" + src.Name()
-	dbDriver, err := createDBDriver(db, dialect, tableName)
+	dbDriver, err := m.createDBDriver(ctx, db, dialect, tableName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create database driver for %s: %w", src.Name(), err)
+		return nil, errors.Join(
+			fmt.Errorf("failed to create database driver for %s: %w", src.Name(), err),
+			m.close(),
+		)
 	}
 
-	return migrate.NewWithInstance("iofs", sourceDriver, string(dialect), dbDriver)
+	m.Migrate, err = migrate.NewWithInstance("iofs", sourceDriver, string(dialect), dbDriver)
+	if err != nil {
+		return nil, errors.Join(err, m.close())
+	}
+	return m, nil
 }
 
-// createDBDriver creates a database-specific migrate driver.
-func createDBDriver(db *sql.DB, dialect Dialect, tableName string) (database.Driver, error) {
+// createDBDriver creates a database-specific migrate driver. PostgreSQL and MySQL drivers
+// are bound to a dedicated connection taken from db (recorded in m.conn) instead of db
+// itself, so closing them never closes db. The SQLite driver holds no connection.
+func (m *migrator) createDBDriver(ctx context.Context, db *sql.DB, dialect Dialect, tableName string) (database.Driver, error) {
 	switch dialect {
-	case DialectPostgres:
-		return postgres.WithInstance(db, &postgres.Config{
-			MigrationsTable: tableName,
-		})
+	case DialectPostgres, DialectMySQL:
 	case DialectSQLite:
 		return sqlite3.WithInstance(db, &sqlite3.Config{
-			MigrationsTable: tableName,
-		})
-	case DialectMySQL:
-		return mysql.WithInstance(db, &mysql.Config{
 			MigrationsTable: tableName,
 		})
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedDialect, dialect)
 	}
+
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m.conn = conn
+
+	if dialect == DialectPostgres {
+		return postgres.WithConnection(ctx, conn, &postgres.Config{
+			MigrationsTable: tableName,
+		})
+	}
+	return mysql.WithConnection(ctx, conn, &mysql.Config{
+		MigrationsTable: tableName,
+	})
 }
 
 // sourceNames extracts names from a slice of sources.

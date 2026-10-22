@@ -46,13 +46,14 @@ func (a *Auth) Handler() http.Handler {
 	mux.Handle("PATCH /profile", a.RequireAuth(http.HandlerFunc(a.wrapHandler("/profile", a.handleUpdateProfile))))
 	mux.Handle("DELETE /account", a.RequireAuth(http.HandlerFunc(a.wrapHandler("/account", a.handleDeleteAccount))))
 	mux.Handle("GET /accounts", a.RequireAuth(http.HandlerFunc(a.wrapHandler("/accounts", a.handleListLinkedAccounts))))
+	// DELETE /accounts/{provider} or DELETE /accounts/{provider}/{accountID}
 	mux.Handle("DELETE /accounts/", a.RequireAuth(http.HandlerFunc(a.wrapHandler("/accounts/:provider", func(w http.ResponseWriter, r *http.Request) {
-		provider := parseAccountProvider(r.URL.Path)
-		if provider == "" {
+		provider, accountID, ok := parseAccountPath(r.URL.Path)
+		if !ok {
 			WriteError(w, http.StatusNotFound, models.ErrAccountNotFound)
 			return
 		}
-		a.handleUnlinkAccount(w, r, provider)
+		a.handleUnlinkAccount(w, r, provider, accountID)
 	}))))
 
 	// Mount plugin routes
@@ -197,7 +198,16 @@ func parseSessionID(path string) string {
 	return strings.TrimPrefix(path, "/sessions/")
 }
 
-// parseAccountProvider extracts the provider from the path
-func parseAccountProvider(path string) string {
-	return strings.TrimPrefix(path, "/accounts/")
+// parseAccountPath extracts the provider and optional account ID from
+// /accounts/{provider} or /accounts/{provider}/{accountID}.
+func parseAccountPath(path string) (provider, accountID string, ok bool) {
+	parts := strings.Split(strings.TrimPrefix(path, "/accounts/"), "/")
+	switch {
+	case len(parts) == 1 && parts[0] != "":
+		return parts[0], "", true
+	case len(parts) == 2 && parts[0] != "" && parts[1] != "":
+		return parts[0], parts[1], true
+	default:
+		return "", "", false
+	}
 }

@@ -17,6 +17,8 @@ func TestParseOAuthPath(t *testing.T) {
 		{"github_callback", "/oauth/github/callback", "github", true},
 		{"trailing_slash", "/oauth/", "", false},
 		{"no_trailing_slash", "/oauth", "", false},
+		{"link_is_not_a_get_route", "/oauth/github/link", "", false},
+		{"extra_segments", "/oauth/github/callback/extra", "", false},
 	}
 
 	for _, tt := range tests {

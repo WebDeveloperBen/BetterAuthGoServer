@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"reflect"
 	"time"
-
-	"log/slog"
 
 	libwebauthn "github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
@@ -465,7 +464,7 @@ func credentialSignCount(cred *libwebauthn.Credential) uint32 {
 	if !authenticator.IsValid() {
 		return 0
 	}
-	if authenticator.Kind() == reflect.Ptr {
+	if authenticator.Kind() == reflect.Pointer {
 		if authenticator.IsNil() {
 			return 0
 		}
@@ -493,7 +492,7 @@ func setCredentialSignCount(cred *libwebauthn.Credential, count uint32) {
 	if !authenticator.IsValid() || !authenticator.CanSet() {
 		return
 	}
-	if authenticator.Kind() == reflect.Ptr {
+	if authenticator.Kind() == reflect.Pointer {
 		if authenticator.IsNil() {
 			authenticator.Set(reflect.New(authenticator.Type().Elem()))
 		}

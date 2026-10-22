@@ -80,3 +80,7 @@ DELETE FROM users WHERE is_anonymous = true AND created_at < $1;
 -- name: GetUserWithAnonymousStatus :one
 SELECT id, email, email_verified, name, image, role, banned, ban_reason, is_anonymous, created_at, updated_at
 FROM users WHERE id = $1;
+
+-- LockUser takes a row lock on the user for the rest of the transaction.
+-- name: LockUser :one
+SELECT id FROM users WHERE id = $1 FOR UPDATE;

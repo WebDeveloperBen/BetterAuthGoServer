@@ -6,6 +6,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
+	"github.com/webdeveloperben/BetterAuthGoServer/db"
 )
 
 // Auth is the main authentication orchestrator
@@ -226,9 +228,10 @@ func (a *Auth) GetUser(ctx context.Context, userID string) (*models.User, error)
 	return user, nil
 }
 
-// GetUserByEmail retrieves a user by email
+// GetUserByEmail retrieves a user by email. The email is normalized (trimmed,
+// lower-cased) before the lookup, so the match is case-insensitive.
 func (a *Auth) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
-	user, err := a.store.GetUserByEmail(ctx, email)
+	user, err := a.store.GetUserByEmail(ctx, models.NormalizeEmail(email))
 	if err != nil {
 		return nil, err
 	}
@@ -498,31 +501,12 @@ func (a *Auth) GetPluginUserByEmail(ctx context.Context, email string) (*plugin.
 }
 
 // CreatePluginUser creates a new user from a plugin request.
-// This is used by OAuth and other plugins that need to create users without passwords.
-// Implements oauth.AuthProvider.
+// This is used by plugins that need to create users without passwords
+// (password, webauthn, anonymous, organization).
 func (a *Auth) CreatePluginUser(ctx context.Context, req plugin.CreateUserRequest) (*plugin.User, error) {
-	// Check if user already exists
-	existing, err := a.store.GetUserByEmail(ctx, req.Email)
+	user, err := a.newPluginUser(ctx, req)
 	if err != nil {
 		return nil, err
-	}
-	if existing != nil {
-		return nil, models.ErrUserAlreadyExists
-	}
-
-	now := time.Now()
-
-	// Create user
-	user := &models.User{
-		ID:            uuid.New().String(),
-		Email:         req.Email,
-		Name:          req.Name,
-		EmailVerified: req.EmailVerified,
-		Image:         req.Image,
-		Role:          "user",
-		Banned:        false,
-		CreatedAt:     now,
-		UpdatedAt:     now,
 	}
 
 	if err := a.store.CreateUser(ctx, user); err != nil {
@@ -533,6 +517,98 @@ func (a *Auth) CreatePluginUser(ctx context.Context, req plugin.CreateUserReques
 	a.publishEvent(ctx, models.EventUserCreated, models.UserCreatedPayload{User: user})
 
 	return toPluginUser(user), nil
+}
+
+// CreatePluginUserTx creates a new user and runs fn as part of the same unit of work.
+//
+// When the store is a *db.Store backed by a connection that can begin transactions,
+// the user insert and fn share one database transaction: fn receives the transaction
+// as tx and must perform its writes through it. Otherwise fn receives a nil tx, and if
+// fn fails the user is deleted again so no orphan user is left behind.
+// The user created event is published only after fn succeeded.
+// Implements oauth.AuthProvider.
+func (a *Auth) CreatePluginUserTx(ctx context.Context, req plugin.CreateUserRequest, fn func(ctx context.Context, tx db.DBTX, user *plugin.User) error) (*plugin.User, error) {
+	user, err := a.newPluginUser(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	pluginUser := toPluginUser(user)
+
+	if txStore, ok := a.store.(*db.Store); ok {
+		err := txStore.InTx(ctx, func(s *db.Store, tx db.DBTX) error {
+			if err := s.CreateUser(ctx, user); err != nil {
+				return err
+			}
+			return fn(ctx, tx, pluginUser)
+		})
+		switch {
+		case err == nil:
+			a.publishEvent(ctx, models.EventUserCreated, models.UserCreatedPayload{User: user})
+			return pluginUser, nil
+		case !errors.Is(err, db.ErrTxUnsupported):
+			return nil, err
+		}
+	}
+
+	// No transaction available: create, then compensate on failure.
+	if err := a.store.CreateUser(ctx, user); err != nil {
+		return nil, err
+	}
+	if err := fn(ctx, nil, pluginUser); err != nil {
+		if delErr := a.store.DeleteUser(ctx, user.ID); delErr != nil {
+			return nil, errors.Join(err, delErr)
+		}
+		return nil, err
+	}
+
+	a.publishEvent(ctx, models.EventUserCreated, models.UserCreatedPayload{User: user})
+	return pluginUser, nil
+}
+
+// newPluginUser builds a user for a plugin request, rejecting emails that are already registered.
+// The email is stored normalized (trimmed, lower-cased).
+func (a *Auth) newPluginUser(ctx context.Context, req plugin.CreateUserRequest) (*models.User, error) {
+	email := models.NormalizeEmail(req.Email)
+	existing, err := a.store.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, models.ErrUserAlreadyExists
+	}
+
+	now := time.Now()
+	return &models.User{
+		ID:            uuid.New().String(),
+		Email:         email,
+		Name:          req.Name,
+		EmailVerified: req.EmailVerified,
+		Image:         req.Image,
+		Role:          "user",
+		Banned:        false,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}, nil
+}
+
+// GetPluginSessionFromRequest validates the session token carried by the request
+// (cookie or bearer token) and returns the session. It returns nil, nil when the
+// request carries no session or the session is unknown or expired.
+// Implements oauth.AuthProvider.
+func (a *Auth) GetPluginSessionFromRequest(r *http.Request) (*plugin.Session, error) {
+	rawToken := a.GetSessionToken(r)
+	if rawToken == "" {
+		return nil, nil
+	}
+
+	session, err := a.ValidateSession(r.Context(), rawToken)
+	if err != nil {
+		if errors.Is(err, models.ErrSessionNotFound) || errors.Is(err, models.ErrSessionExpired) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return toPluginSession(session), nil
 }
 
 // toPluginUser converts a models.User to plugin.User

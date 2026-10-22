@@ -27,13 +27,16 @@ type Source interface {
 	Dependencies() []string
 }
 
+// coreSourceName is the name of the core migration source.
+const coreSourceName = "core"
+
 // coreSource is the migration source for core authentication tables.
 type coreSource struct {
 	fs fs.FS
 }
 
 func (s *coreSource) Name() string {
-	return "core"
+	return coreSourceName
 }
 
 func (s *coreSource) FS() fs.FS {

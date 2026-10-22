@@ -6,6 +6,8 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -66,11 +68,63 @@ func (s *Store) PluginStore() PluginStore {
 	return s
 }
 
+// ErrTxUnsupported is returned by InTx when the underlying connection cannot begin transactions
+// (for example when the Store was created on an existing *sql.Tx).
+var ErrTxUnsupported = errors.New("db: transactions not supported by the underlying connection")
+
+// txBeginner is implemented by *sql.DB.
+type txBeginner interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
+// InTx runs fn inside a database transaction. fn receives a Store bound to the transaction
+// and the transaction itself, so plugin stores can join the same unit of work.
+// The transaction is committed when fn returns nil and rolled back otherwise,
+// including when fn panics.
+func (s *Store) InTx(ctx context.Context, fn func(txStore *Store, tx DBTX) error) (err error) {
+	beginner, ok := s.db.(txBeginner)
+	if !ok {
+		return ErrTxUnsupported
+	}
+
+	tx, err := beginner.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("db: begin transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		if rbErr := tx.Rollback(); rbErr != nil && err != nil {
+			err = errors.Join(err, fmt.Errorf("db: rollback: %w", rbErr))
+		}
+	}()
+
+	txStore, err := New(tx, s.dialect)
+	if err != nil {
+		return err
+	}
+	if err := fn(txStore, tx); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("db: commit transaction: %w", err)
+	}
+	committed = true
+	return nil
+}
+
 // =============================================================================
 // UserStore Implementation - delegates to Querier
+//
+// Emails are stored and looked up in normalized form (models.NormalizeEmail), so
+// addresses that differ only in case or surrounding whitespace match the same user.
 // =============================================================================
 
 func (s *Store) CreateUser(ctx context.Context, user *models.User) error {
+	user.Email = models.NormalizeEmail(user.Email)
 	return s.q.CreateUser(ctx, user)
 }
 
@@ -79,10 +133,11 @@ func (s *Store) GetUserByID(ctx context.Context, id string) (*models.User, error
 }
 
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
-	return s.q.GetUserByEmail(ctx, email)
+	return s.q.GetUserByEmail(ctx, models.NormalizeEmail(email))
 }
 
 func (s *Store) UpdateUser(ctx context.Context, user *models.User) error {
+	user.Email = models.NormalizeEmail(user.Email)
 	return s.q.UpdateUser(ctx, user)
 }
 
@@ -92,6 +147,13 @@ func (s *Store) SetEmailVerified(ctx context.Context, userID string, verified bo
 
 func (s *Store) DeleteUser(ctx context.Context, id string) error {
 	return s.q.DeleteUser(ctx, id)
+}
+
+// LockUser locks the user's row until the enclosing transaction ends (SQLite: takes the
+// database write lock). Use it inside InTx to serialise read-check-write sequences per user.
+// Returns models.ErrUserNotFound if the user does not exist.
+func (s *Store) LockUser(ctx context.Context, id string) error {
+	return s.q.LockUser(ctx, id)
 }
 
 // =============================================================================
@@ -299,7 +361,7 @@ func (s *Store) AdminGetUser(ctx context.Context, id string) (*AdminUser, error)
 func (s *Store) AdminUpdateUser(ctx context.Context, user *AdminUser) error {
 	return s.q.UpdateUser(ctx, &models.User{
 		ID:            user.ID,
-		Email:         user.Email,
+		Email:         models.NormalizeEmail(user.Email),
 		EmailVerified: user.EmailVerified,
 		Name:          user.Name,
 		Image:         user.Image,

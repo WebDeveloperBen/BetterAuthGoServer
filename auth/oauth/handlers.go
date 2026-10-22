@@ -5,13 +5,18 @@ package oauth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
+	oauthdb "github.com/webdeveloperben/BetterAuthGoServer/auth/oauth/db"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/plugin"
+	"github.com/webdeveloperben/BetterAuthGoServer/db"
+	"golang.org/x/oauth2"
 )
 
 // Response types
@@ -49,7 +54,44 @@ func (p *Plugin) OAuthBeginHandler() func(http.ResponseWriter, *http.Request, st
 	}
 }
 
-// OAuthCallbackHandler returns a handler for GET /oauth/:provider/callback
+// OAuthLinkBeginHandler returns a handler for POST /oauth/{provider}/link.
+// The route requires an authenticated session. It starts an OAuth flow whose state is
+// bound to the current user and session and responds with {"url": "<provider authorize URL>"};
+// the client navigates the browser to that URL.
+func (p *Plugin) OAuthLinkBeginHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		session := p.ctx.Sessions.GetFromRequest(r)
+		if session == nil {
+			writeError(w, http.StatusUnauthorized, ErrLinkRequiresSession)
+			return
+		}
+		if session.IsImpersonation() {
+			writeError(w, http.StatusForbidden, ErrLinkNotAllowed)
+			return
+		}
+
+		redirectTo := r.URL.Query().Get("redirect_to")
+		if redirectTo != "" && !p.isRedirectAllowed(redirectTo) {
+			writeError(w, http.StatusBadRequest, ErrRedirectNotAllowed)
+			return
+		}
+
+		result, err := p.service.BeginLink(r.Context(), r.PathValue("provider"), redirectTo, session.UserID, session.ID)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, ErrProviderNotFound) {
+				status = http.StatusBadRequest
+			}
+			writeError(w, status, err)
+			return
+		}
+
+		_ = writeJSON(w, http.StatusOK, map[string]string{"url": result.URL})
+	}
+}
+
+// OAuthCallbackHandler returns a handler for GET /oauth/:provider/callback.
+// Sign-in states run the sign-in rules; link states run the explicit-link rules.
 func (p *Plugin) OAuthCallbackHandler() func(http.ResponseWriter, *http.Request, string) {
 	return func(w http.ResponseWriter, r *http.Request, provider string) {
 		code := r.URL.Query().Get("code")
@@ -66,168 +108,342 @@ func (p *Plugin) OAuthCallbackHandler() func(http.ResponseWriter, *http.Request,
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-
-		// Create or update user account
-		user, err := p.completeOAuthUserCreation(r.Context(), provider, oauthResult)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
+		if oauthResult.UserInfo == nil || oauthResult.UserInfo.ID == "" {
+			writeError(w, http.StatusBadRequest, ErrNoUserInfo)
 			return
 		}
 
-		if p.requireEmailVerification && !user.EmailVerified {
-			writeError(w, http.StatusForbidden, ErrEmailNotVerified)
+		if oauthState.IsLink() {
+			p.completeLink(w, r, provider, oauthResult, oauthState)
 			return
 		}
-
-		// Create session
-		session, err := p.auth.CreateSessionForUser(r.Context(), user.ID, r)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		// WriteAuthResponse handles both cookie and JWT modes
-		if err := p.ctx.Sessions.WriteAuthResponse(r.Context(), w, session, user); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		// Redirect to the URL from state if provided, otherwise return JSON
-		redirectTo := ""
-		if oauthState != nil && oauthState.RedirectTo != nil {
-			redirectTo = *oauthState.RedirectTo
-		}
-
-		if redirectTo != "" {
-			if !p.isRedirectAllowed(redirectTo) {
-				writeError(w, http.StatusBadRequest, ErrRedirectNotAllowed)
-				return
-			}
-			http.Redirect(w, r, redirectTo, http.StatusFound)
-			return
-		}
-
-		_ = writeJSON(w, http.StatusOK, map[string]any{
-			"user":    toUserResponse(user),
-			"session": toSessionResponse(session),
-		})
+		p.completeSignIn(w, r, provider, oauthResult, oauthState)
 	}
 }
 
-// completeOAuthUserCreation handles the OAuth user creation/update logic
-func (p *Plugin) completeOAuthUserCreation(ctx context.Context, provider string, result *AuthResult) (*plugin.User, error) {
-	userInfo := result.UserInfo
-	if userInfo == nil {
-		return nil, ErrNoUserInfo
+// completeSignIn resolves the user for a sign-in callback, creates a session and responds.
+func (p *Plugin) completeSignIn(w http.ResponseWriter, r *http.Request, provider string, result *AuthResult, state *State) {
+	user, err := p.signInUser(r.Context(), provider, result)
+	if err != nil {
+		writeError(w, statusForError(err), err)
+		return
 	}
 
-	// Use the account store initialized in Init
-	accountStore := p.accountStore
+	// Create session
+	session, err := p.auth.CreateSessionForUser(r.Context(), user.ID, r)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 
-	// Try to find existing OAuth account by provider and provider account ID
-	existingAccount, err := accountStore.GetAccountByProvider(ctx, provider, userInfo.ID)
+	// WriteAuthResponse handles both cookie and JWT modes
+	if err := p.ctx.Sessions.WriteAuthResponse(r.Context(), w, session, user); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	if p.redirectAfterCallback(w, r, state) {
+		return
+	}
+
+	_ = writeJSON(w, http.StatusOK, map[string]any{
+		"user":    toUserResponse(user),
+		"session": toSessionResponse(session),
+	})
+}
+
+// signInUser applies the sign-in rules:
+//  1. a provider account that is already linked signs in as its user (unless banned);
+//  2. otherwise the provider must report a verified email;
+//  3. an email that already belongs to a user is a conflict: the user must sign in and link explicitly;
+//  4. otherwise a new user and provider account are created atomically.
+//
+// Rejections write nothing. If a concurrent sign-in through the same provider identity
+// wins the race to create the user, the loser re-resolves and signs in as that user (rule 1).
+func (p *Plugin) signInUser(ctx context.Context, provider string, result *AuthResult) (*plugin.User, error) {
+	info := result.UserInfo
+
+	existingAccount, err := p.accountStore.GetAccountByProvider(ctx, provider, info.ID)
+	if err != nil {
+		return nil, err
+	}
+	if existingAccount != nil {
+		return p.signInLinkedAccount(ctx, existingAccount, result)
+	}
+
+	if info.Email == "" || !info.EmailVerified {
+		return nil, ErrEmailNotVerified
+	}
+
+	_, err = p.auth.GetPluginUserByEmail(ctx, info.Email)
+	switch {
+	case err == nil:
+		return nil, ErrAccountExistsLinkRequired
+	case !errors.Is(err, models.ErrUserNotFound):
+		return nil, err
+	}
+
+	account, err := p.newAccount("", provider, info.ID, result.OAuthToken)
 	if err != nil {
 		return nil, err
 	}
 
-	if existingAccount != nil {
-		// Update existing account and return user
-		user, err := p.auth.GetPluginUser(ctx, existingAccount.UserID)
-		if err != nil {
-			return nil, err
-		}
-
-		// Update OAuth tokens
-		if result.OAuthToken.AccessToken != "" {
-			encrypted, err := p.service.EncryptToken(result.OAuthToken.AccessToken)
-			if err != nil {
-				return nil, err
-			}
-			existingAccount.AccessToken = encrypted
-		}
-
-		if result.OAuthToken.RefreshToken != "" {
-			encrypted, err := p.service.EncryptToken(result.OAuthToken.RefreshToken)
-			if err != nil {
-				return nil, err
-			}
-			existingAccount.RefreshToken = encrypted
-		}
-
-		if !result.OAuthToken.Expiry.IsZero() {
-			existingAccount.AccessTokenExpiresAt = &result.OAuthToken.Expiry
-		}
-
-		// Update account in database
-		if err := accountStore.UpdateAccount(ctx, existingAccount); err != nil {
-			return nil, err
-		}
-
-		return user, nil
-	}
-
-	// Check if user exists by email
-	existingUser, err := p.auth.GetPluginUserByEmail(ctx, userInfo.Email)
-	if err != nil {
-		// ErrUserNotFound is expected if user doesn't exist
-		existingUser = nil
+	var image *string
+	if info.Picture != "" {
+		image = &info.Picture
 	}
 
 	var user *plugin.User
-	if existingUser != nil {
-		// Use existing user
-		user = existingUser
-	} else {
-		// Create new user
-		imagePtr := &userInfo.Picture
-		user, err = p.auth.CreatePluginUser(ctx, plugin.CreateUserRequest{
-			Email:         userInfo.Email,
-			Name:          userInfo.Name,
-			EmailVerified: userInfo.EmailVerified,
-			Image:         imagePtr,
+	err = p.retryOnDeadlock(func() error {
+		var createErr error
+		user, createErr = p.auth.CreatePluginUserTx(ctx, plugin.CreateUserRequest{
+			Email:         info.Email,
+			Name:          info.Name,
+			EmailVerified: true,
+			Image:         image,
+		}, func(ctx context.Context, tx db.DBTX, user *plugin.User) error {
+			accounts, err := p.accountStoreFor(tx)
+			if err != nil {
+				return err
+			}
+			account.UserID = user.ID
+			return accounts.CreateAccount(ctx, account)
 		})
-		if err != nil {
+		return createErr
+	})
+	if err != nil {
+		if !errors.Is(err, models.ErrUserAlreadyExists) && !p.accountStore.IsUniqueViolation(err) {
 			return nil, err
 		}
-	}
-
-	// Create OAuth account to link the provider
-	account := &OAuthAccount{
-		ID:                generateID(),
-		UserID:            user.ID,
-		Provider:          provider,
-		ProviderAccountID: userInfo.ID,
-	}
-
-	if result.OAuthToken.AccessToken != "" {
-		encrypted, err := p.service.EncryptToken(result.OAuthToken.AccessToken)
-		if err != nil {
-			return nil, err
+		// A concurrent request created the user (email) or the provider account first.
+		// The transaction rolled back, so re-resolve against what was committed.
+		existingAccount, lookupErr := p.accountStore.GetAccountByProvider(ctx, provider, info.ID)
+		if lookupErr != nil {
+			return nil, lookupErr
 		}
-		account.AccessToken = encrypted
-	}
-
-	if result.OAuthToken.RefreshToken != "" {
-		encrypted, err := p.service.EncryptToken(result.OAuthToken.RefreshToken)
-		if err != nil {
-			return nil, err
+		if existingAccount != nil {
+			return p.signInLinkedAccount(ctx, existingAccount, result)
 		}
-		account.RefreshToken = encrypted
-	}
-
-	if !result.OAuthToken.Expiry.IsZero() {
-		account.AccessTokenExpiresAt = &result.OAuthToken.Expiry
-	}
-
-	// Create OAuth account in database
-	if err := accountStore.CreateAccount(ctx, account); err != nil {
-		return nil, err
+		return nil, ErrAccountExistsLinkRequired
 	}
 
 	// Fire OAuth account linked hook (ignore errors - hook is for notifications/side effects)
-	_ = p.auth.FireOAuthAccountLinked(ctx, user.ID, provider, userInfo.ID)
+	_ = p.auth.FireOAuthAccountLinked(ctx, user.ID, provider, info.ID)
 
 	return user, nil
+}
+
+// signInLinkedAccount signs in as the user an already-linked provider account belongs to.
+// Banned users are refused before any session is created.
+func (p *Plugin) signInLinkedAccount(ctx context.Context, account *OAuthAccount, result *AuthResult) (*plugin.User, error) {
+	user, err := p.auth.GetPluginUser(ctx, account.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if user.Banned {
+		return nil, models.ErrUserBanned
+	}
+	if p.requireEmailVerification && !user.EmailVerified {
+		return nil, ErrEmailNotVerified
+	}
+	if err := p.refreshAccountTokens(ctx, account, result.OAuthToken); err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+// completeLink applies the explicit-link rules to a callback whose state was started by
+// POST /oauth/{provider}/link. No session is created.
+func (p *Plugin) completeLink(w http.ResponseWriter, r *http.Request, provider string, result *AuthResult, state *State) {
+	ctx := r.Context()
+
+	session, err := p.auth.GetPluginSessionFromRequest(r)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if session == nil || state.LinkUserID == nil || state.LinkSessionID == nil ||
+		session.ID != *state.LinkSessionID || session.UserID != *state.LinkUserID {
+		writeError(w, http.StatusForbidden, ErrLinkRequiresSession)
+		return
+	}
+	if session.IsImpersonation() {
+		writeError(w, http.StatusForbidden, ErrLinkNotAllowed)
+		return
+	}
+
+	user, err := p.auth.GetPluginUser(ctx, session.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if user.Banned {
+		writeError(w, http.StatusForbidden, models.ErrUserBanned)
+		return
+	}
+
+	if err := p.linkAccount(ctx, user.ID, provider, result); err != nil {
+		writeError(w, statusForError(err), err)
+		return
+	}
+
+	if p.redirectAfterCallback(w, r, state) {
+		return
+	}
+
+	_ = writeJSON(w, http.StatusOK, map[string]any{
+		"linked":   true,
+		"provider": provider,
+		"user":     toUserResponse(user),
+	})
+}
+
+// linkAccount links the provider account to userID. Linking an account the user already
+// owns is idempotent; linking an account owned by another user is a conflict.
+// Email verification is not required: the user proved control of both identities.
+func (p *Plugin) linkAccount(ctx context.Context, userID, provider string, result *AuthResult) error {
+	info := result.UserInfo
+
+	existing, err := p.accountStore.GetAccountByProvider(ctx, provider, info.ID)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		if existing.UserID != userID {
+			return ErrAccountAlreadyLinked
+		}
+		return p.refreshAccountTokens(ctx, existing, result.OAuthToken)
+	}
+
+	account, err := p.newAccount(userID, provider, info.ID, result.OAuthToken)
+	if err != nil {
+		return err
+	}
+	if err := p.retryOnDeadlock(func() error { return p.accountStore.CreateAccount(ctx, account) }); err != nil {
+		if !p.accountStore.IsUniqueViolation(err) {
+			return err
+		}
+		// A concurrent link or sign-in created this provider account first.
+		winner, lookupErr := p.accountStore.GetAccountByProvider(ctx, provider, info.ID)
+		if lookupErr != nil {
+			return lookupErr
+		}
+		if winner != nil && winner.UserID == userID {
+			return nil
+		}
+		return ErrAccountAlreadyLinked
+	}
+
+	// Fire OAuth account linked hook (ignore errors - hook is for notifications/side effects)
+	_ = p.auth.FireOAuthAccountLinked(ctx, userID, provider, info.ID)
+	return nil
+}
+
+// retryOnDeadlock runs fn again, up to three attempts in total, while the database aborts
+// it as a deadlock or serialization victim. Concurrent inserts of the same unique key can
+// deadlock on MySQL; retrying turns that into the ordinary unique-violation outcome.
+func (p *Plugin) retryOnDeadlock(fn func() error) error {
+	var err error
+	for range 3 {
+		if err = fn(); err == nil || !p.accountStore.IsDeadlock(err) {
+			return err
+		}
+	}
+	return err
+}
+
+// redirectAfterCallback redirects to the state's redirect target when one was requested.
+// It reports whether a response was written.
+func (p *Plugin) redirectAfterCallback(w http.ResponseWriter, r *http.Request, state *State) bool {
+	if state == nil || state.RedirectTo == nil || *state.RedirectTo == "" {
+		return false
+	}
+	redirectTo := *state.RedirectTo
+	if !p.isRedirectAllowed(redirectTo) {
+		writeError(w, http.StatusBadRequest, ErrRedirectNotAllowed)
+		return true
+	}
+	http.Redirect(w, r, redirectTo, http.StatusFound)
+	return true
+}
+
+// newAccount builds a provider account with encrypted tokens.
+func (p *Plugin) newAccount(userID, provider, providerAccountID string, token *oauth2.Token) (*OAuthAccount, error) {
+	now := time.Now()
+	account := &OAuthAccount{
+		ID:                generateID(),
+		UserID:            userID,
+		Provider:          provider,
+		ProviderAccountID: providerAccountID,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	if err := p.applyTokens(account, token); err != nil {
+		return nil, err
+	}
+	return account, nil
+}
+
+// refreshAccountTokens stores the latest provider tokens on an existing account.
+func (p *Plugin) refreshAccountTokens(ctx context.Context, account *OAuthAccount, token *oauth2.Token) error {
+	if err := p.applyTokens(account, token); err != nil {
+		return err
+	}
+	account.UpdatedAt = time.Now()
+	return p.accountStore.UpdateAccount(ctx, account)
+}
+
+func (p *Plugin) applyTokens(account *OAuthAccount, token *oauth2.Token) error {
+	if token == nil {
+		return nil
+	}
+	if token.AccessToken != "" {
+		encrypted, err := p.service.EncryptToken(token.AccessToken)
+		if err != nil {
+			return err
+		}
+		account.AccessToken = encrypted
+	}
+	if token.RefreshToken != "" {
+		encrypted, err := p.service.EncryptToken(token.RefreshToken)
+		if err != nil {
+			return err
+		}
+		account.RefreshToken = encrypted
+	}
+	if !token.Expiry.IsZero() {
+		expiry := token.Expiry
+		account.AccessTokenExpiresAt = &expiry
+	}
+	return nil
+}
+
+// accountStoreFor returns an account store bound to tx, or the plugin's store when tx is nil.
+func (p *Plugin) accountStoreFor(tx db.DBTX) (*AccountStoreAdapter, error) {
+	if tx == nil {
+		return p.accountStore, nil
+	}
+	store, err := oauthdb.New(tx, p.ctx.Dialect)
+	if err != nil {
+		return nil, err
+	}
+	return NewAccountStoreAdapter(store), nil
+}
+
+// statusForError maps OAuth flow errors to HTTP status codes.
+func statusForError(err error) int {
+	switch {
+	case errors.Is(err, ErrEmailNotVerified),
+		errors.Is(err, ErrLinkRequiresSession),
+		errors.Is(err, ErrLinkNotAllowed),
+		errors.Is(err, models.ErrUserBanned):
+		return http.StatusForbidden
+	case errors.Is(err, ErrAccountExistsLinkRequired),
+		errors.Is(err, ErrAccountAlreadyLinked):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
 }
 
 // Helper functions (adapted from handlers package)
@@ -237,12 +453,18 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 	return json.NewEncoder(w).Encode(v)
 }
 
+// writeError writes {"error": message} plus a stable "code" for errors that have one.
+// Messages of 5xx responses are replaced by the status text.
 func writeError(w http.ResponseWriter, status int, err error) {
 	message := err.Error()
 	if status >= http.StatusInternalServerError {
 		message = http.StatusText(status)
 	}
-	_ = writeJSON(w, status, map[string]string{"error": message})
+	body := map[string]string{"error": message}
+	if code := errorCode(err); code != "" {
+		body["code"] = code
+	}
+	_ = writeJSON(w, status, body)
 }
 
 // OAuthDynamicHandler handles dynamic OAuth routes (/oauth/:provider and /oauth/:provider/callback)
@@ -265,18 +487,24 @@ func (p *Plugin) OAuthDynamicHandler() http.HandlerFunc {
 	}
 }
 
-// parseOAuthPath extracts provider and action from /oauth/:provider or /oauth/:provider/callback
+// parseOAuthPath extracts provider and action from /oauth/:provider or /oauth/:provider/callback.
+// Any other shape yields an empty provider.
 func parseOAuthPath(path string) (provider string, isCallback bool) {
 	path = strings.TrimPrefix(path, "/oauth/")
 	parts := strings.Split(path, "/")
 
-	if len(parts) == 0 || parts[0] == "" {
+	if parts[0] == "" {
 		return "", false
 	}
 
-	provider = parts[0]
-	isCallback = len(parts) >= 2 && parts[1] == "callback"
-	return provider, isCallback
+	switch {
+	case len(parts) == 1:
+		return parts[0], false
+	case len(parts) == 2 && parts[1] == "callback":
+		return parts[0], true
+	default:
+		return "", false
+	}
 }
 
 // Response helper functions

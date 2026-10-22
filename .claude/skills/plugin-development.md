@@ -448,9 +448,14 @@ When defining your AuthProvider interface, you can include any of these methods 
 GetPluginUser(ctx context.Context, userID string) (*plugin.User, error)
 GetPluginUserByEmail(ctx context.Context, email string) (*plugin.User, error)
 CreatePluginUser(ctx context.Context, req plugin.CreateUserRequest) (*plugin.User, error)
+// Creates the user and runs fn in the same DB transaction (tx is nil without transaction support;
+// the user is then deleted again if fn fails)
+CreatePluginUserTx(ctx context.Context, req plugin.CreateUserRequest, fn func(ctx context.Context, tx db.DBTX, user *plugin.User) error) (*plugin.User, error)
 
 // Session operations
 CreateSessionForUser(ctx context.Context, userID string, r *http.Request) (*plugin.Session, error)
+// Validates the session token on a route without RequireAuth; nil, nil when absent/invalid
+GetPluginSessionFromRequest(r *http.Request) (*plugin.Session, error)
 
 // Password operations
 VerifyPassword(ctx context.Context, userID string, password string) (bool, error)

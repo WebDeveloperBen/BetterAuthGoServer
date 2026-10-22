@@ -7,10 +7,12 @@ INSERT INTO
     verifier,
     redirect_to,
     created_at,
-    expires_at
+    expires_at,
+    link_user_id,
+    link_session_id
   )
 VALUES
-  (?, ?, ?, ?, ?, ?);
+  (?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetOAuthState :one
 SELECT

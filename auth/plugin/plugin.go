@@ -7,6 +7,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
@@ -177,4 +178,29 @@ type PasswordResetTokenProvider interface {
 
 	// ConsumePasswordResetToken validates and consumes a token, returning the user ID.
 	ConsumePasswordResetToken(ctx context.Context, rawToken string) (userID string, err error)
+}
+
+// Identity is a sign-in identity a plugin stores for a user outside the core accounts
+// table, such as a linked OAuth provider account.
+type Identity struct {
+	ID                string
+	UserID            string
+	Provider          string
+	ProviderAccountID string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+// IdentityProvider is implemented by plugins that store sign-in identities outside the
+// core accounts table. Core lists these identities under GET /accounts, lets users
+// unlink them, and counts them when protecting the last sign-in method.
+//
+// tx is the transaction core runs the operation in, or nil when the store has no
+// transaction support; implementations must use it when it is non-nil.
+type IdentityProvider interface {
+	// ListIdentities returns the user's identities.
+	ListIdentities(ctx context.Context, tx db.DBTX, userID string) ([]Identity, error)
+
+	// DeleteIdentity deletes the identity with the given ID.
+	DeleteIdentity(ctx context.Context, tx db.DBTX, identityID string) error
 }

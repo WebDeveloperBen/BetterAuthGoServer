@@ -1,0 +1,30 @@
+name: release-please
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # This module is a library: a release is the vX.Y.Z tag plus the GitHub release and
+  # CHANGELOG.md entry. There are no binary assets to build or upload.
+  release-please:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Run Release Please
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

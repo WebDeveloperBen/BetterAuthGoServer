@@ -61,14 +61,21 @@ func TestPlugin_Routes_Enabled(t *testing.T) {
 	}
 
 	routes := plugin.Routes()
-	if len(routes) != 2 {
-		t.Errorf("Plugin.Routes() returned %d routes, want 2", len(routes))
+	if len(routes) != 3 {
+		t.Errorf("Plugin.Routes() returned %d routes, want 3", len(routes))
 	}
 
 	// Check route paths
 	expectedPaths := map[string]bool{
-		"/oauth/providers": false,
-		"/oauth/":          false,
+		"/oauth/providers":       false,
+		"/oauth/":                false,
+		"/oauth/{provider}/link": false,
+	}
+
+	for _, route := range routes {
+		if route.Path == "/oauth/{provider}/link" && (route.Method != "POST" || !route.RequireAuth) {
+			t.Errorf("link route must be POST and require auth, got %s RequireAuth=%t", route.Method, route.RequireAuth)
+		}
 	}
 
 	for _, route := range routes {

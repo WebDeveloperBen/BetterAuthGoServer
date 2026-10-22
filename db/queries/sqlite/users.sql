@@ -80,3 +80,8 @@ DELETE FROM users WHERE is_anonymous = 1 AND created_at < ?;
 -- name: GetUserWithAnonymousStatus :one
 SELECT id, email, email_verified, name, image, role, banned, ban_reason, is_anonymous, created_at, updated_at
 FROM users WHERE id = ?;
+
+-- LockUser takes SQLite's database write lock for the rest of the transaction
+-- (SQLite has no row locks or FOR UPDATE; a no-op write serialises writers).
+-- name: LockUser :execrows
+UPDATE users SET updated_at = updated_at WHERE id = ?;

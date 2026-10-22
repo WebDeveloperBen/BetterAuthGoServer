@@ -19,12 +19,14 @@ func NewStoreAdapter(store *oauthdb.Store) *StoreAdapter {
 // CreateOAuthState creates a new OAuth state record.
 func (a *StoreAdapter) CreateOAuthState(ctx context.Context, state *State) error {
 	dbState := &oauthdb.State{
-		State:      state.State,
-		Provider:   state.Provider,
-		Verifier:   state.Verifier,
-		RedirectTo: state.RedirectTo,
-		ExpiresAt:  state.ExpiresAt,
-		CreatedAt:  state.CreatedAt,
+		State:         state.State,
+		Provider:      state.Provider,
+		Verifier:      state.Verifier,
+		RedirectTo:    state.RedirectTo,
+		ExpiresAt:     state.ExpiresAt,
+		CreatedAt:     state.CreatedAt,
+		LinkUserID:    state.LinkUserID,
+		LinkSessionID: state.LinkSessionID,
 	}
 	return a.store.CreateOAuthState(ctx, dbState)
 }
@@ -39,12 +41,14 @@ func (a *StoreAdapter) GetOAuthState(ctx context.Context, stateValue string) (*S
 		return nil, nil
 	}
 	return &State{
-		State:      dbState.State,
-		Provider:   dbState.Provider,
-		Verifier:   dbState.Verifier,
-		RedirectTo: dbState.RedirectTo,
-		ExpiresAt:  dbState.ExpiresAt,
-		CreatedAt:  dbState.CreatedAt,
+		State:         dbState.State,
+		Provider:      dbState.Provider,
+		Verifier:      dbState.Verifier,
+		RedirectTo:    dbState.RedirectTo,
+		ExpiresAt:     dbState.ExpiresAt,
+		CreatedAt:     dbState.CreatedAt,
+		LinkUserID:    dbState.LinkUserID,
+		LinkSessionID: dbState.LinkSessionID,
 	}, nil
 }
 
@@ -113,6 +117,34 @@ func (a *AccountStoreAdapter) UpdateAccount(ctx context.Context, account *OAuthA
 		UpdatedAt:            account.UpdatedAt,
 	}
 	return a.store.UpdateAccount(ctx, dbAccount)
+}
+
+// ListAccountsByUserID returns the OAuth accounts linked to a user.
+func (a *AccountStoreAdapter) ListAccountsByUserID(ctx context.Context, userID string) ([]*OAuthAccount, error) {
+	dbAccounts, err := a.store.GetAccountsByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	accounts := make([]*OAuthAccount, len(dbAccounts))
+	for i, acc := range dbAccounts {
+		accounts[i] = dbAccountToLocal(acc)
+	}
+	return accounts, nil
+}
+
+// DeleteAccount deletes an OAuth account by ID.
+func (a *AccountStoreAdapter) DeleteAccount(ctx context.Context, id string) error {
+	return a.store.DeleteAccount(ctx, id)
+}
+
+// IsUniqueViolation reports whether err is a unique-constraint violation.
+func (a *AccountStoreAdapter) IsUniqueViolation(err error) bool {
+	return a.store.IsUniqueViolation(err)
+}
+
+// IsDeadlock reports whether err is a retryable deadlock or serialization failure.
+func (a *AccountStoreAdapter) IsDeadlock(err error) bool {
+	return a.store.IsDeadlock(err)
 }
 
 // dbAccountToLocal converts a db.Account to the local OAuthAccount type.

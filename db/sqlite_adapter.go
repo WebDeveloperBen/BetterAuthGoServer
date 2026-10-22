@@ -88,6 +88,17 @@ func (a *sqliteAdapter) DeleteUser(ctx context.Context, id string) error {
 	return a.q.DeleteUser(ctx, id)
 }
 
+func (a *sqliteAdapter) LockUser(ctx context.Context, id string) error {
+	n, err := a.q.LockUser(ctx, id)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return models.ErrUserNotFound
+	}
+	return nil
+}
+
 // =============================================================================
 // Account operations
 // =============================================================================
