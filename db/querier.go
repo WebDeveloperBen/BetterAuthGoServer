@@ -38,6 +38,9 @@ type Querier interface {
 	UpdateUser(ctx context.Context, user *models.User) error
 	SetEmailVerified(ctx context.Context, userID string, verified bool) error
 	DeleteUser(ctx context.Context, id string) error
+	// LockUser locks the user's row (SQLite: the database for writing) until the
+	// enclosing transaction ends. Returns models.ErrUserNotFound if the user does not exist.
+	LockUser(ctx context.Context, id string) error
 
 	// Account operations
 	CreateAccount(ctx context.Context, account *models.Account) error

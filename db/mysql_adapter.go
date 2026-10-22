@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
@@ -86,6 +87,14 @@ func (a *mysqlAdapter) SetEmailVerified(ctx context.Context, userID string, veri
 
 func (a *mysqlAdapter) DeleteUser(ctx context.Context, id string) error {
 	return a.q.DeleteUser(ctx, id)
+}
+
+func (a *mysqlAdapter) LockUser(ctx context.Context, id string) error {
+	_, err := a.q.LockUser(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.ErrUserNotFound
+	}
+	return err
 }
 
 // =============================================================================

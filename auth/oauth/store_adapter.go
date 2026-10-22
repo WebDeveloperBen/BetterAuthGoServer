@@ -119,6 +119,24 @@ func (a *AccountStoreAdapter) UpdateAccount(ctx context.Context, account *OAuthA
 	return a.store.UpdateAccount(ctx, dbAccount)
 }
 
+// ListAccountsByUserID returns the OAuth accounts linked to a user.
+func (a *AccountStoreAdapter) ListAccountsByUserID(ctx context.Context, userID string) ([]*OAuthAccount, error) {
+	dbAccounts, err := a.store.GetAccountsByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	accounts := make([]*OAuthAccount, len(dbAccounts))
+	for i, acc := range dbAccounts {
+		accounts[i] = dbAccountToLocal(acc)
+	}
+	return accounts, nil
+}
+
+// DeleteAccount deletes an OAuth account by ID.
+func (a *AccountStoreAdapter) DeleteAccount(ctx context.Context, id string) error {
+	return a.store.DeleteAccount(ctx, id)
+}
+
 // dbAccountToLocal converts a db.Account to the local OAuthAccount type.
 func dbAccountToLocal(a *oauthdb.Account) *OAuthAccount {
 	if a == nil {

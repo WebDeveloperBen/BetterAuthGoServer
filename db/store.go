@@ -149,6 +149,13 @@ func (s *Store) DeleteUser(ctx context.Context, id string) error {
 	return s.q.DeleteUser(ctx, id)
 }
 
+// LockUser locks the user's row until the enclosing transaction ends (SQLite: takes the
+// database write lock). Use it inside InTx to serialise read-check-write sequences per user.
+// Returns models.ErrUserNotFound if the user does not exist.
+func (s *Store) LockUser(ctx context.Context, id string) error {
+	return s.q.LockUser(ctx, id)
+}
+
 // =============================================================================
 // AccountStore Implementation - delegates to Querier
 // =============================================================================

@@ -93,21 +93,23 @@ func (a *Auth) handleListLinkedAccounts(w http.ResponseWriter, r *http.Request) 
 	WriteJSON(w, http.StatusOK, response)
 }
 
-// handleUnlinkAccount handles DELETE /accounts/:provider
-func (a *Auth) handleUnlinkAccount(w http.ResponseWriter, r *http.Request, provider string) {
+// handleUnlinkAccount handles DELETE /accounts/{provider} and DELETE /accounts/{provider}/{accountID}
+func (a *Auth) handleUnlinkAccount(w http.ResponseWriter, r *http.Request, provider, accountID string) {
 	user := GetUserFromContext(r.Context())
 	if user == nil {
 		WriteError(w, http.StatusUnauthorized, models.ErrSessionNotFound)
 		return
 	}
 
-	err := a.UnlinkAccount(r.Context(), user.ID, provider)
+	err := a.UnlinkAccount(r.Context(), user.ID, provider, accountID)
 	if err != nil {
 		switch {
 		case errors.Is(err, models.ErrAccountNotFound):
 			WriteError(w, http.StatusNotFound, err)
 		case errors.Is(err, models.ErrCannotUnlinkLastAccount):
 			WriteError(w, http.StatusBadRequest, err)
+		case errors.Is(err, models.ErrAccountAmbiguous):
+			WriteError(w, http.StatusConflict, err)
 		default:
 			WriteError(w, http.StatusInternalServerError, err)
 		}

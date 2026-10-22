@@ -27,6 +27,7 @@ var (
 	ErrAccountNotFound         = errors.New("auth: account not found")
 	ErrAccountAlreadyLinked    = errors.New("auth: account already linked")
 	ErrCannotUnlinkLastAccount = errors.New("auth: cannot unlink last authentication method")
+	ErrAccountAmbiguous        = errors.New("auth: several accounts are linked for this provider; specify the account id")
 
 	// General errors
 	ErrInvalidRequest       = errors.New("auth: invalid request")
