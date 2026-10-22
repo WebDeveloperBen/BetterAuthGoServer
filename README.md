@@ -55,10 +55,10 @@ func main() {
 
 ### Migration Features
 
-- **Standalone API**: `migrate.Run()` runs before Auth creation
+- **Standalone API**: `migrate.Run()` runs before Auth creation; it is safe to call at every start. It returns every connection it takes to your pool and never closes your `*sql.DB`
 - **Embedded migrations**: All SQL files embedded via `embed.FS` - no file copying needed
 - **Separate tracking tables**: Each source has its own `schema_migrations_<name>` table
-- **Topological sorting**: Plugins declare dependencies, sorted automatically
+- **Topological sorting**: Core always runs first; plugins declare dependencies on each other and are sorted automatically (independent plugins keep the order you pass them)
 - **Multi-dialect support**: PostgreSQL, SQLite, MySQL
 - **Dry-run mode**: `migrate.WithDryRun(true)` to preview changes
 

@@ -119,10 +119,8 @@ func setupPostgresContainer(ctx context.Context) (*DialectEnv, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Configure connection pool to prevent exhaustion. Each migration source's
-	// golang-migrate driver keeps one connection checked out (migrate.Run does not close
-	// them), so leave room above the number of sources for concurrent tests.
-	sqlDB.SetMaxOpenConns(32)
+	// Configure connection pool to prevent exhaustion
+	sqlDB.SetMaxOpenConns(10)
 	sqlDB.SetMaxIdleConns(5)
 	sqlDB.SetConnMaxLifetime(5 * time.Minute)
 
@@ -236,8 +234,8 @@ func setupMySQLContainer(ctx context.Context) (*DialectEnv, error) {
 		return nil, fmt.Errorf("failed to open isolated database: %w", err)
 	}
 
-	// Configure connection pool (see the PostgreSQL pool comment for the size).
-	sqlDB.SetMaxOpenConns(32)
+	// Configure connection pool
+	sqlDB.SetMaxOpenConns(10)
 	sqlDB.SetMaxIdleConns(5)
 	sqlDB.SetConnMaxLifetime(5 * time.Minute)
 

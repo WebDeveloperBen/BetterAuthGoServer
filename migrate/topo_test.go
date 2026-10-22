@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"fmt"
 	"io/fs"
 	"testing"
 )
@@ -14,6 +15,33 @@ type mockSource struct {
 func (m *mockSource) Name() string           { return m.name }
 func (m *mockSource) FS() fs.FS              { return nil }
 func (m *mockSource) Dependencies() []string { return m.deps }
+
+// Core must come first even when other sources have no dependencies, and the order of
+// independent sources must be stable (their input order).
+func TestTopoSort_CoreFirstAndDeterministic(t *testing.T) {
+	sources := []Source{
+		&mockSource{name: "oauth", deps: nil},
+		&mockSource{name: "jwt", deps: nil},
+		&mockSource{name: "core", deps: nil},
+		&mockSource{name: "organization", deps: []string{"oauth"}},
+		&mockSource{name: "apikey", deps: nil},
+	}
+	want := []string{"core", "oauth", "jwt", "apikey", "organization"}
+
+	for range 50 {
+		result, err := topoSort(sources)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		got := make([]string, len(result))
+		for i, s := range result {
+			got[i] = s.Name()
+		}
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Fatalf("order = %v, want %v", got, want)
+		}
+	}
+}
 
 func TestTopoSort_NoDependencies(t *testing.T) {
 	sources := []Source{

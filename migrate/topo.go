@@ -41,11 +41,16 @@ func topoSort(sources []Source) ([]Source, error) {
 		}
 	}
 
-	// Find all sources with no dependencies (in-degree 0)
+	// Seed the queue with sources that have no dependencies, core first and the rest in
+	// input order. Every source implicitly depends on core (see Source.Dependencies), and
+	// plugin migrations may reference core tables, so core must never run after a plugin.
 	var queue []string
-	for name, degree := range inDegree {
-		if degree == 0 {
-			queue = append(queue, name)
+	if _, ok := byName[coreSourceName]; ok && inDegree[coreSourceName] == 0 {
+		queue = append(queue, coreSourceName)
+	}
+	for _, s := range sources {
+		if s.Name() != coreSourceName && inDegree[s.Name()] == 0 {
+			queue = append(queue, s.Name())
 		}
 	}
 
