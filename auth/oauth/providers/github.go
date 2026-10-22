@@ -97,10 +97,10 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 		return nil, fmt.Errorf("failed to decode user info: %w", err)
 	}
 
-	// Get primary verified email
+	// Use the primary email; it counts as verified only when GitHub marks it verified.
 	email, emailVerified, err := p.getPrimaryEmail(ctx, client)
 	if err != nil {
-		// Fall back to user email if available
+		// Fall back to the public profile email, never treated as verified
 		email = user.Email
 		emailVerified = false
 	}
@@ -119,7 +119,7 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 	}, nil
 }
 
-// getPrimaryEmail fetches the primary verified email from GitHub
+// getPrimaryEmail fetches the user's primary email and whether GitHub verified it.
 func (p *GitHubProvider) getPrimaryEmail(ctx context.Context, client *http.Client) (string, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", githubEmailsURL, nil)
 	if err != nil {
@@ -140,31 +140,16 @@ func (p *GitHubProvider) getPrimaryEmail(ctx context.Context, client *http.Clien
 		return "", false, err
 	}
 
-	// Find primary verified email
-	for _, e := range emails {
-		if e.Primary && e.Verified {
-			return e.Email, true, nil
-		}
-	}
+	return selectGitHubEmail(emails)
+}
 
-	// Fall back to any verified email
-	for _, e := range emails {
-		if e.Verified {
-			return e.Email, true, nil
-		}
-	}
-
-	// Fall back to primary email (unverified)
+// selectGitHubEmail returns the primary email. It is reported as verified only when the
+// primary email is verified; secondary emails are never used, verified or not.
+func selectGitHubEmail(emails []githubEmail) (string, bool, error) {
 	for _, e := range emails {
 		if e.Primary {
-			return e.Email, false, nil
+			return e.Email, e.Verified, nil
 		}
 	}
-
-	// Fall back to first email
-	if len(emails) > 0 {
-		return emails[0].Email, emails[0].Verified, nil
-	}
-
-	return "", false, fmt.Errorf("no email found")
+	return "", false, fmt.Errorf("no primary email found")
 }

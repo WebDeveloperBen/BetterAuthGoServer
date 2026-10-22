@@ -3,10 +3,12 @@ package providers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/oauth"
 	"golang.org/x/oauth2"
@@ -46,8 +48,9 @@ const azureGraphMeURL = "https://graph.microsoft.com/v1.0/me"
 
 // AzureProvider implements the Provider interface for Azure Entra ID (formerly Azure AD)
 type AzureProvider struct {
-	config *oauth2.Config
-	tenant AzureTenant
+	config     *oauth2.Config
+	tenant     AzureTenant
+	graphMeURL string
 }
 
 // AzureOption is a functional option for configuring the Azure provider
@@ -71,7 +74,8 @@ func WithAzureTenant(tenant AzureTenant) AzureOption {
 //   - Use WithAzureTenant(AzureTenant("your-tenant-id")) for a specific tenant/organization
 func NewAzure(clientID, clientSecret, redirectURL string, opts ...AzureOption) *AzureProvider {
 	p := &AzureProvider{
-		tenant: AzureTenantCommon, // Default to common for maximum compatibility
+		tenant:     AzureTenantCommon, // Default to common for maximum compatibility
+		graphMeURL: azureGraphMeURL,
 	}
 
 	// Apply options
@@ -148,10 +152,15 @@ type azureUser struct {
 
 // GetUserInfo fetches user information from Microsoft Graph API.
 // Uses the /me endpoint which works for both personal and organizational accounts.
+//
+// EmailVerified is true only when the ID token returned by the token endpoint proves
+// it: an "email" claim together with "email_verified": true or the optional
+// "xms_edov" (email domain owner verified) claim. Graph's mail and userPrincipalName
+// are directory attributes that are not verified, so on their own they are reported unverified.
 func (p *AzureProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (*oauth.UserInfo, error) {
 	client := p.config.Client(ctx, token)
 
-	resp, err := client.Get(azureGraphMeURL)
+	resp, err := client.Get(p.graphMeURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user info: %w", err)
 	}
@@ -187,11 +196,11 @@ func (p *AzureProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (*
 		}
 	}
 
-	// Azure doesn't return email verification status via Graph API.
-	// For organizational accounts, emails are typically verified by the org.
-	// For personal accounts with Microsoft, the email is verified by Microsoft.
-	// We set this to true as Microsoft requires email verification for all accounts.
-	emailVerified := email != ""
+	emailVerified := false
+	if verifiedEmail := azureVerifiedEmail(token, p.config.ClientID); verifiedEmail != "" {
+		email = verifiedEmail
+		emailVerified = true
+	}
 
 	return &oauth.UserInfo{
 		ID:            user.ID,
@@ -202,6 +211,81 @@ func (p *AzureProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (*
 		// which returns binary data, not a URL. Leaving empty for now.
 		Picture: "",
 	}, nil
+}
+
+// azureIDTokenClaims holds the ID token claims used to prove email verification.
+type azureIDTokenClaims struct {
+	Audience      json.RawMessage `json:"aud"`
+	Email         string          `json:"email"`
+	EmailVerified claimBool       `json:"email_verified"`
+	EDOV          claimBool       `json:"xms_edov"`
+}
+
+// azureVerifiedEmail returns the email from the token's ID token when a claim proves it
+// is verified, or "" otherwise.
+//
+// The ID token is received directly from the Microsoft token endpoint over TLS by this
+// confidential client, so per OpenID Connect Core 3.1.3.7 its signature does not need
+// to be checked here; the audience must still match the client ID.
+func azureVerifiedEmail(token *oauth2.Token, clientID string) string {
+	if token == nil {
+		return ""
+	}
+	rawIDToken, _ := token.Extra("id_token").(string)
+	parts := strings.Split(rawIDToken, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+
+	var claims azureIDTokenClaims
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+	if !audienceContains(claims.Audience, clientID) {
+		return ""
+	}
+	if claims.Email == "" || (!claims.EmailVerified && !claims.EDOV) {
+		return ""
+	}
+	return claims.Email
+}
+
+// audienceContains reports whether the "aud" claim (string or array) contains clientID.
+func audienceContains(aud json.RawMessage, clientID string) bool {
+	if clientID == "" {
+		return false
+	}
+	var single string
+	if err := json.Unmarshal(aud, &single); err == nil {
+		return single == clientID
+	}
+	var many []string
+	if err := json.Unmarshal(aud, &many); err == nil {
+		for _, a := range many {
+			if a == clientID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// claimBool decodes boolean claims that providers emit as true, "true", "1" or 1.
+type claimBool bool
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (b *claimBool) UnmarshalJSON(data []byte) error {
+	switch strings.Trim(string(data), `"`) {
+	case "true", "1":
+		*b = true
+	default:
+		*b = false
+	}
+	return nil
 }
 
 // isValidEmailFormat performs a basic check if the string looks like an email.
