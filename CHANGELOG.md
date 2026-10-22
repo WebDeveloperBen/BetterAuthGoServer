@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/WebDeveloperBen/BetterAuthGoServer/compare/v0.1.0...v0.2.0) (2026-10-22)
+
+
+### Features
+
+* **oauth:** redirect browser callback failures with stable error codes ([#5](https://github.com/WebDeveloperBen/BetterAuthGoServer/issues/5)) ([1c048e5](https://github.com/WebDeveloperBen/BetterAuthGoServer/commit/1c048e5b847a44e56d4e555ad5821a83002d128c))
+
 ## 0.1.0 (2026-10-22)
 
 
