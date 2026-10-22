@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
 	"github.com/webdeveloperben/BetterAuthGoServer/auth/token"
 	"golang.org/x/oauth2"
 )
@@ -82,6 +83,7 @@ func TestStatusForError(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, statusForError(ErrEmailNotVerified))
 	assert.Equal(t, http.StatusForbidden, statusForError(ErrLinkRequiresSession))
 	assert.Equal(t, http.StatusForbidden, statusForError(ErrLinkNotAllowed))
+	assert.Equal(t, http.StatusForbidden, statusForError(models.ErrUserBanned))
 	assert.Equal(t, http.StatusConflict, statusForError(ErrAccountExistsLinkRequired))
 	assert.Equal(t, http.StatusConflict, statusForError(ErrAccountAlreadyLinked))
 	assert.Equal(t, http.StatusInternalServerError, statusForError(errors.New("db down")))
@@ -96,6 +98,7 @@ func TestWriteError_IncludesStableCode(t *testing.T) {
 		{ErrAccountExistsLinkRequired, CodeAccountExistsLinkRequired},
 		{ErrAccountAlreadyLinked, CodeAccountAlreadyLinked},
 		{ErrLinkRequiresSession, CodeLinkSessionMismatch},
+		{models.ErrUserBanned, CodeUserBanned},
 	}
 	for _, tt := range tests {
 		t.Run(tt.code, func(t *testing.T) {

@@ -2,7 +2,11 @@
 // It handles OAuth provider configuration, user account linking, and authentication flows.
 package oauth
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/webdeveloperben/BetterAuthGoServer/auth/models"
+)
 
 // OAuth plugin errors
 var (
@@ -40,6 +44,7 @@ const (
 	CodeAccountExistsLinkRequired = "account_exists_link_required"
 	CodeAccountAlreadyLinked      = "account_already_linked"
 	CodeLinkSessionMismatch       = "link_session_mismatch"
+	CodeUserBanned                = "user_banned"
 )
 
 // errorCode returns the stable client-facing code for err, or "" when it has none.
@@ -53,6 +58,8 @@ func errorCode(err error) string {
 		return CodeAccountAlreadyLinked
 	case errors.Is(err, ErrLinkRequiresSession):
 		return CodeLinkSessionMismatch
+	case errors.Is(err, models.ErrUserBanned):
+		return CodeUserBanned
 	default:
 		return ""
 	}

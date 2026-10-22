@@ -71,7 +71,8 @@ type Querier interface {
 
 // Store handles OAuth persistence.
 type Store struct {
-	q Querier
+	q       Querier
+	dialect coredb.Dialect
 }
 
 // New creates a new OAuth store.
@@ -89,7 +90,18 @@ func New(db coredb.DBTX, dialect coredb.Dialect) (*Store, error) {
 		return nil, fmt.Errorf("unsupported dialect: %s", dialect)
 	}
 
-	return &Store{q: q}, nil
+	return &Store{q: q, dialect: dialect}, nil
+}
+
+// IsUniqueViolation reports whether err is a unique-constraint violation, e.g. a second
+// account for the same (provider, provider_account_id).
+func (s *Store) IsUniqueViolation(err error) bool {
+	return coredb.IsUniqueViolation(s.dialect, err)
+}
+
+// IsDeadlock reports whether err is a retryable deadlock or serialization failure.
+func (s *Store) IsDeadlock(err error) bool {
+	return coredb.IsDeadlock(s.dialect, err)
 }
 
 // State operations - delegate to Querier

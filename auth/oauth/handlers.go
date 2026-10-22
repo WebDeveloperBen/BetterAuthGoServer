@@ -153,12 +153,13 @@ func (p *Plugin) completeSignIn(w http.ResponseWriter, r *http.Request, provider
 }
 
 // signInUser applies the sign-in rules:
-//  1. a provider account that is already linked signs in as its user;
+//  1. a provider account that is already linked signs in as its user (unless banned);
 //  2. otherwise the provider must report a verified email;
 //  3. an email that already belongs to a user is a conflict: the user must sign in and link explicitly;
 //  4. otherwise a new user and provider account are created atomically.
 //
-// Rejections write nothing.
+// Rejections write nothing. If a concurrent sign-in through the same provider identity
+// wins the race to create the user, the loser re-resolves and signs in as that user (rule 1).
 func (p *Plugin) signInUser(ctx context.Context, provider string, result *AuthResult) (*plugin.User, error) {
 	info := result.UserInfo
 
@@ -167,17 +168,7 @@ func (p *Plugin) signInUser(ctx context.Context, provider string, result *AuthRe
 		return nil, err
 	}
 	if existingAccount != nil {
-		user, err := p.auth.GetPluginUser(ctx, existingAccount.UserID)
-		if err != nil {
-			return nil, err
-		}
-		if p.requireEmailVerification && !user.EmailVerified {
-			return nil, ErrEmailNotVerified
-		}
-		if err := p.refreshAccountTokens(ctx, existingAccount, result.OAuthToken); err != nil {
-			return nil, err
-		}
-		return user, nil
+		return p.signInLinkedAccount(ctx, existingAccount, result)
 	}
 
 	if info.Email == "" || !info.EmailVerified {
@@ -202,30 +193,62 @@ func (p *Plugin) signInUser(ctx context.Context, provider string, result *AuthRe
 		image = &info.Picture
 	}
 
-	user, err := p.auth.CreatePluginUserTx(ctx, plugin.CreateUserRequest{
-		Email:         info.Email,
-		Name:          info.Name,
-		EmailVerified: true,
-		Image:         image,
-	}, func(ctx context.Context, tx db.DBTX, user *plugin.User) error {
-		accounts, err := p.accountStoreFor(tx)
-		if err != nil {
-			return err
-		}
-		account.UserID = user.ID
-		return accounts.CreateAccount(ctx, account)
+	var user *plugin.User
+	err = p.retryOnDeadlock(func() error {
+		var createErr error
+		user, createErr = p.auth.CreatePluginUserTx(ctx, plugin.CreateUserRequest{
+			Email:         info.Email,
+			Name:          info.Name,
+			EmailVerified: true,
+			Image:         image,
+		}, func(ctx context.Context, tx db.DBTX, user *plugin.User) error {
+			accounts, err := p.accountStoreFor(tx)
+			if err != nil {
+				return err
+			}
+			account.UserID = user.ID
+			return accounts.CreateAccount(ctx, account)
+		})
+		return createErr
 	})
 	if err != nil {
-		if errors.Is(err, models.ErrUserAlreadyExists) {
-			// Another request registered the email between the lookup and the insert.
-			return nil, ErrAccountExistsLinkRequired
+		if !errors.Is(err, models.ErrUserAlreadyExists) && !p.accountStore.IsUniqueViolation(err) {
+			return nil, err
 		}
-		return nil, err
+		// A concurrent request created the user (email) or the provider account first.
+		// The transaction rolled back, so re-resolve against what was committed.
+		existingAccount, lookupErr := p.accountStore.GetAccountByProvider(ctx, provider, info.ID)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		if existingAccount != nil {
+			return p.signInLinkedAccount(ctx, existingAccount, result)
+		}
+		return nil, ErrAccountExistsLinkRequired
 	}
 
 	// Fire OAuth account linked hook (ignore errors - hook is for notifications/side effects)
 	_ = p.auth.FireOAuthAccountLinked(ctx, user.ID, provider, info.ID)
 
+	return user, nil
+}
+
+// signInLinkedAccount signs in as the user an already-linked provider account belongs to.
+// Banned users are refused before any session is created.
+func (p *Plugin) signInLinkedAccount(ctx context.Context, account *OAuthAccount, result *AuthResult) (*plugin.User, error) {
+	user, err := p.auth.GetPluginUser(ctx, account.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if user.Banned {
+		return nil, models.ErrUserBanned
+	}
+	if p.requireEmailVerification && !user.EmailVerified {
+		return nil, ErrEmailNotVerified
+	}
+	if err := p.refreshAccountTokens(ctx, account, result.OAuthToken); err != nil {
+		return nil, err
+	}
 	return user, nil
 }
 
@@ -296,13 +319,37 @@ func (p *Plugin) linkAccount(ctx context.Context, userID, provider string, resul
 	if err != nil {
 		return err
 	}
-	if err := p.accountStore.CreateAccount(ctx, account); err != nil {
-		return err
+	if err := p.retryOnDeadlock(func() error { return p.accountStore.CreateAccount(ctx, account) }); err != nil {
+		if !p.accountStore.IsUniqueViolation(err) {
+			return err
+		}
+		// A concurrent link or sign-in created this provider account first.
+		winner, lookupErr := p.accountStore.GetAccountByProvider(ctx, provider, info.ID)
+		if lookupErr != nil {
+			return lookupErr
+		}
+		if winner != nil && winner.UserID == userID {
+			return nil
+		}
+		return ErrAccountAlreadyLinked
 	}
 
 	// Fire OAuth account linked hook (ignore errors - hook is for notifications/side effects)
 	_ = p.auth.FireOAuthAccountLinked(ctx, userID, provider, info.ID)
 	return nil
+}
+
+// retryOnDeadlock runs fn again, up to three attempts in total, while the database aborts
+// it as a deadlock or serialization victim. Concurrent inserts of the same unique key can
+// deadlock on MySQL; retrying turns that into the ordinary unique-violation outcome.
+func (p *Plugin) retryOnDeadlock(fn func() error) error {
+	var err error
+	for range 3 {
+		if err = fn(); err == nil || !p.accountStore.IsDeadlock(err) {
+			return err
+		}
+	}
+	return err
 }
 
 // redirectAfterCallback redirects to the state's redirect target when one was requested.
@@ -388,7 +435,8 @@ func statusForError(err error) int {
 	switch {
 	case errors.Is(err, ErrEmailNotVerified),
 		errors.Is(err, ErrLinkRequiresSession),
-		errors.Is(err, ErrLinkNotAllowed):
+		errors.Is(err, ErrLinkNotAllowed),
+		errors.Is(err, models.ErrUserBanned):
 		return http.StatusForbidden
 	case errors.Is(err, ErrAccountExistsLinkRequired),
 		errors.Is(err, ErrAccountAlreadyLinked):

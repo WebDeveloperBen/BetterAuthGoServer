@@ -137,6 +137,16 @@ func (a *AccountStoreAdapter) DeleteAccount(ctx context.Context, id string) erro
 	return a.store.DeleteAccount(ctx, id)
 }
 
+// IsUniqueViolation reports whether err is a unique-constraint violation.
+func (a *AccountStoreAdapter) IsUniqueViolation(err error) bool {
+	return a.store.IsUniqueViolation(err)
+}
+
+// IsDeadlock reports whether err is a retryable deadlock or serialization failure.
+func (a *AccountStoreAdapter) IsDeadlock(err error) bool {
+	return a.store.IsDeadlock(err)
+}
+
 // dbAccountToLocal converts a db.Account to the local OAuthAccount type.
 func dbAccountToLocal(a *oauthdb.Account) *OAuthAccount {
 	if a == nil {
